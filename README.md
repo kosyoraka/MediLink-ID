@@ -1,3 +1,4 @@
+
 # MediLink ID / HealthConnect ID
 
 ## Project Summary
@@ -68,22 +69,94 @@ In the future, this system could:
 
 ## Project Status
 
-Currently in development - MVP (Minimum Viable Product) phase for pilot testing
+MediLink is currently in **active development** and has reached an **MVP (Minimum Viable Product)** stage.
+
+The MVP demonstrates:
+- Core authentication and user onboarding
+- Patient profile and emergency health profile management
+- QR-based emergency access to critical health information
+- Initial AI-powered symptom guidance
+- A foundation for future provider and health record integrations
 
 ---
 
 ## Technology Stack
 
-*[To be updated as project progresses]*
+**Frontend**
+- React + TypeScript
+- Vite
+- Tailwind CSS
+- Component-based UI architecture
+
+**Backend**
+- Node.js
+- Express
+- TypeScript
+- PostgreSQL (via Docker)
+- Prisma ORM
+
+**AI Integration**
+- OpenAI API
+
+**Infrastructure / Tooling**
+- Docker (PostgreSQL)
+- GitHub for version control
+- Environment-based configuration (`.env`, `.env.local`)
+---
+
+## Current Features
+
+- User signup and login
+- Personal health profile management
+- Emergency profile with share controls
+- QR code generation for emergency access
+- Wallet preview (Apple Wallet integration planned)
+- Health summary UI (vitals, allergies, immunizations, family history)
+- AI-powered symptom checker (guidance, not diagnosis)
 
 ---
 
-## Getting Started
+## Planned / In-Progress Features
 
-*[Installation and setup instructions to be added]*
+- Connected healthcare providers (simulated and/or FHIR-based)
+- Provider-side portal (hospital/clinic simulation)
+- Medical record synchronization
+- Enhanced access controls and permissions
+- Apple Wallet / NFC-based access
+- PDF export and sharing improvements
 
 ---
 
-## License
+## Getting Started (Development)
 
-*[Add license information]*
+### Prerequisites
+- Node.js (v18+ recommended)
+- Docker
+- PostgreSQL (via Docker)
+- An OpenAI API key: Ask Kennie for api key
+
+---
+
+### Frontend Setup
+
+```bash
+npm install
+npm run dev
+
+The frontend runs on:
+
+http://localhost:3000
+
+### Frontend Setup
+cd backend
+npm install
+npm run dev
+
+
+The backend runs on:
+
+http://localhost:4000
+
+
+Note: You must create a backend/.env file with required environment variables (database URL, OpenAI API key, etc.).
+.env files are intentionally not committed to version control.
