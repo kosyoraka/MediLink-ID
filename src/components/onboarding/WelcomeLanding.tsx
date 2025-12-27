@@ -9,6 +9,21 @@ interface WelcomeLandingProps {
 }
 
 export default function WelcomeLanding({ onGetStarted, onSignIn }: WelcomeLandingProps) {
+
+  // 🔹 TEMP: visible proof that click handler runs
+  async function testBackend() {
+    alert("clicked");
+    console.log("clicked testBackend");
+
+    try {
+      const response = await fetch("http://localhost:4000/api/health");
+      const data = await response.json();
+      console.log("Backend response:", data);
+    } catch (err) {
+      console.error("Error calling backend:", err);
+    }
+  }
+
   return (
     <div className="flex flex-col h-screen">
       <div className="flex-1 flex flex-col items-center justify-center px-6 pt-12">
@@ -38,6 +53,15 @@ export default function WelcomeLanding({ onGetStarted, onSignIn }: WelcomeLandin
           </Button>
           <Button onClick={onSignIn} variant="outline" className="w-full h-12">
             Sign In
+          </Button>
+
+          {/* 🔹 TEMP test button */}
+          <Button
+            onClick={testBackend}
+            variant="outline"
+            className="w-full h-12"
+          >
+            Test Backend
           </Button>
         </div>
       </div>
