@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
+import { API_BASE } from "@/config/api";
 
 interface SignInProps {
   onSignIn: (userData: { email: string; name: string; healthCard: string; dob: string; connectedProviders: string[] }) => void;
@@ -13,28 +14,40 @@ export default function SignIn({ onSignIn, onBack }: SignInProps) {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (email && password) {
-      // For demo purposes, any sign-in will use John Doe's data with pre-connected providers
-      // In production, this would authenticate against a real backend
-      onSignIn({ 
-        email: email,
-        name: 'John Doe',
-        healthCard: '1234-567-890',
-        dob: '1985-06-15',
-        connectedProviders: [
-          'Sunnybrook Hospital',
-          'Mount Sinai Hospital',
-          'Toronto General Hospital',
-          'Toronto Western Hospital',
-          'LifeLabs',
-          'Shoppers Drug Mart',
-          'Dr. Sarah Johnson'
-        ]
-      });
+  const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+
+  if (!email || !password) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/signin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data?.message || 'Sign in failed');
     }
-  };
+
+    localStorage.setItem('patientId', data.id);
+    localStorage.setItem('email', data.email);
+
+    onSignIn({
+      email: data.email,
+      name: '',
+      healthCard: '',
+      dob: '',
+      connectedProviders: [],
+    });
+  } catch (err: any) {
+    alert(err.message || 'Unable to sign in');
+  }
+};
+
+
 
   return (
     <div className="min-h-screen p-6">

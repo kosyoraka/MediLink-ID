@@ -7,8 +7,10 @@ services:
       POSTGRES_PASSWORD: medilinkpw
       POSTGRES_DB: medilink
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
       - medilink_pg:/var/lib/postgresql/data
+
 volumes:
   medilink_pg:

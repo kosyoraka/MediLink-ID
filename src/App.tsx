@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Home, FolderOpen, Calendar, MessageSquare, MoreHorizontal } from 'lucide-react';
 import WelcomeLanding from './components/onboarding/WelcomeLanding';
 import SignIn from './components/onboarding/SignIn';
@@ -24,6 +24,11 @@ import SymptomChecker from './components/SymptomChecker';
 import MedicalHistory from './components/MedicalHistory';
 import CommunicationPreferences from './components/CommunicationPreferences';
 import ManageProviders from './components/ManageProviders';
+import EmergencyPublic from './components/EmergencyPublic';
+import PersonalInformationPage from './components/PersonalInformationPage';
+import { API_BASE } from "@/config/api";
+console.log("API_BASE =", API_BASE);
+
 
 type Screen = 
   | 'welcome' 
@@ -39,8 +44,10 @@ type Screen =
   | 'appointments'
   | 'messages'
   | 'more'
+  | 'personal-information'
   | 'medications'
   | 'emergency-profile'
+  | 'emergency-public'
   | 'health-tasks'
   | 'health-summary'
   | 'care-journeys'
@@ -63,6 +70,7 @@ export default function App() {
   const [selectedProvider, setSelectedProvider] = useState('');
   const [isOnboarded, setIsOnboarded] = useState(false);
   const [connectedProviders, setConnectedProviders] = useState<string[]>([]);
+  const [emergencyToken, setEmergencyToken] = useState('');
   const [authorizationReturnScreen, setAuthorizationReturnScreen] = useState<Screen>('connect-providers');
 
   const handleNavigation = (screen: Screen, navItem?: NavItem) => {
@@ -97,6 +105,16 @@ export default function App() {
     'communication-preferences',
     'manage-providers'
   ].includes(currentScreen);
+
+  useEffect(() => {
+  const path = window.location.pathname;
+  const match = path.match(/^\/e\/([^/]+)$/);
+  if (match) {
+    setEmergencyToken(match[1]);
+    setCurrentScreen('emergency-public');
+  }
+}, []);
+
 
   const renderScreen = () => {
     switch (currentScreen) {
@@ -168,6 +186,15 @@ export default function App() {
           userEmail={userEmail}
           userHealthCard={userHealthCard}
         />;
+        case 'personal-information':
+  return (
+    <PersonalInformationPage
+      onBack={() => handleNavigation('more', 'more')}
+      userEmail={userEmail}
+      userHealthCard={userHealthCard}
+      userName={userName}
+    />
+  );
       case 'records':
         return <MedicalRecords />;
       case 'appointments':
@@ -190,7 +217,9 @@ export default function App() {
           userName={userName}
           userHealthCard={userHealthCard}
           userDOB={userDOB}
-        />; 
+        />;
+      case 'emergency-public':
+        return <EmergencyPublic token={emergencyToken} />;
       case 'health-tasks':
         return <HealthTasks onBack={() => handleNavigation('dashboard', 'home')} />;
       case 'health-summary':

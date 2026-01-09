@@ -1,6 +1,34 @@
-import { AlertCircle, Calendar, Activity, Pill, MapPin, ChevronRight, Cloud, Sun, Settings, Bell, Edit, CalendarPlus, Upload, Search, TestTube, Stethoscope, CheckCircle2, TrendingUp, FileText } from 'lucide-react';
+import {
+  AlertCircle,
+  Calendar,
+  Activity,
+  Pill,
+  MapPin,
+  ChevronRight,
+  Sun,
+  Settings,
+  Bell,
+  CalendarPlus,
+  Upload,
+  Search,
+  TestTube,
+  Stethoscope,
+  CheckCircle2,
+  TrendingUp,
+  FileText,
+  Wallet, // ✅ NEW icon for Apple Wallet tile
+  X,      // ✅ close icon for modal
+  ExternalLink,
+  Copy,
+} from 'lucide-react';
+
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
+import { useEffect, useMemo, useState } from 'react';
+import { API_BASE } from "@/config/api";
+import { createPortal } from "react-dom";
+import { QRCodeCanvas } from "qrcode.react";
+
 
 interface DashboardProps {
   onNavigate: (screen: string) => void;
@@ -9,43 +37,155 @@ interface DashboardProps {
   userHealthCard?: string;
 }
 
-export default function Dashboard({ onNavigate, userName = '', userEmail = '', userHealthCard = '' }: DashboardProps) {
+type ProfileResponse = {
+  patient_id: string;
+  email: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  dob: string | null;
+  health_card: string | null;
+  phone_number: string | null;
+};
+
+type EmergencyLinkResponse = {
+  token: string;
+  url: string;
+};
+
+export default function Dashboard({
+  onNavigate,
+  userName = '',
+  userEmail = '',
+  userHealthCard = ''
+}: DashboardProps) {
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
-  
-  // Use fallback values only if not provided
-  const displayName = userName || 'Guest User';
-  const displayEmail = userEmail || 'user@email.com';
-  const displayHealthCard = userHealthCard || '0000-000-000';
-  
-  // Get user initials from name
+
+  const [profile, setProfile] = useState<ProfileResponse | null>(null);
+
+  // ✅ Emergency link modal state
+  const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
+  const [walletLoading, setWalletLoading] = useState(false);
+  const [walletError, setWalletError] = useState('');
+  const [emergencyUrl, setEmergencyUrl] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    const patientId = localStorage.getItem('patientId');
+    if (!patientId) return;
+
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/patients/${patientId}/profile`);
+        if (!res.ok) return;
+        const data = (await res.json()) as ProfileResponse;
+        setProfile(data);
+      } catch (e) {
+        console.error('DASHBOARD PROFILE FETCH ERROR:', e);
+      }
+    })();
+  }, []);
+
+  const displayName = useMemo(() => {
+    const dbName = [profile?.first_name, profile?.last_name].filter(Boolean).join(' ').trim();
+    return dbName || userName || profile?.email || 'Guest User';
+  }, [profile, userName]);
+
+  const displayEmail = useMemo(() => {
+    return profile?.email || userEmail || 'user@email.com';
+  }, [profile, userEmail]);
+
+  const displayHealthCard = useMemo(() => {
+    return profile?.health_card || userHealthCard || '0000-000-000';
+  }, [profile, userHealthCard]);
+
   const getInitials = (name: string) => {
-    const parts = name.split(' ');
-    if (parts.length >= 2) {
-      return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
-    }
-    return name.substring(0, 2).toUpperCase();
+    const parts = name.split(' ').filter(Boolean);
+    if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+    if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
+    return 'GU';
   };
 
-  // Mask health card number (show last 3 digits)
   const maskHealthCard = (healthCard: string) => {
     const digits = healthCard.replace(/\D/g, '');
-    if (digits.length >= 3) {
-      return `****${digits.slice(-3)}`;
-    }
+    if (digits.length >= 3) return `****${digits.slice(-3)}`;
     return '****';
   };
+
+  // ✅ Fetch emergency link + open modal
+  const openWalletModal = async () => {
+    const patientId = localStorage.getItem('patientId');
+    if (!patientId) {
+      setWalletError('You must be signed in to create a Wallet emergency link.');
+      setIsWalletModalOpen(true);
+      return;
+    }
+
+    setWalletError('');
+    setCopied(false);
+    setWalletLoading(true);
+    setIsWalletModalOpen(true);
+
+    try {
+      const res = await fetch(`${API_BASE}/api/patients/${patientId}/emergency-link`);
+      const data = (await res.json()) as EmergencyLinkResponse;
+
+      if (!res.ok) {
+        throw new Error((data as any)?.message || 'Failed to create emergency link');
+      }
+
+      setEmergencyUrl(data.url);
+    } catch (e: any) {
+      setWalletError(e?.message || 'Failed to create emergency link');
+      setEmergencyUrl('');
+    } finally {
+      setWalletLoading(false);
+    }
+  };
+
+  const copyLink = async () => {
+    if (!emergencyUrl) return;
+
+    try {
+      await navigator.clipboard.writeText(emergencyUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Fallback for older Safari
+      const el = document.createElement('textarea');
+      el.value = emergencyUrl;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }
+  };
+
+  const openLink = () => {
+    if (!emergencyUrl) return;
+    window.open(emergencyUrl, '_blank', 'noopener,noreferrer');
+  };
+  const formatDOB = (dob?: string | null) => {
+  if (!dob) return "—";
+  const d = new Date(dob);
+  return d.toLocaleDateString("en-CA"); // YYYY-MM-DD
+};
+
 
   const quickActions = [
     { icon: CalendarPlus, label: 'Schedule', color: 'bg-blue-100 text-blue-600' },
     { icon: Upload, label: 'Upload', color: 'bg-purple-100 text-purple-600' },
-    { icon: Search, label: 'Find Care', color: 'bg-orange-100 text-orange-600', action: 'symptom-checker' },
+    { icon: Search, label: 'Find Care AI', color: 'bg-orange-100 text-orange-600', action: 'symptom-checker' },
     { icon: FileText, label: 'Medical History', color: 'bg-pink-100 text-pink-600', action: 'medical-history' },
-    { icon: TestTube, label: 'Book Lab', color: 'bg-teal-100 text-teal-600' },
-  ];
+
+    // ✅ REPLACED: Book Lab -> Apple Wallet (opens modal)
+    { icon: Wallet, label: 'Emergency ID', color: 'bg-teal-100 text-teal-600', onClick: openWalletModal },
+  ] as const;
 
   return (
     <div className="min-h-screen bg-gray-50 pb-4">
-      {/* Enhanced Header */}
+      {/* Header */}
       <div className="bg-gradient-to-br from-green-400 via-teal-500 to-blue-500 text-white p-6 pb-4">
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-3">
@@ -53,27 +193,28 @@ export default function Dashboard({ onNavigate, userName = '', userEmail = '', u
               <span className="text-teal-600">{getInitials(displayName)}</span>
             </div>
             <div>
-              <button className="flex items-center gap-2 text-white hover:opacity-80">
+              <div className="flex items-center">
                 <h2>{displayName}</h2>
-                <Edit className="w-4 h-4" />
-              </button>
+              </div>
               <button className="text-sm text-teal-100">Health Card: {maskHealthCard(displayHealthCard)}</button>
             </div>
           </div>
           <div className="flex items-center gap-3">
             <button className="relative">
               <Bell className="w-6 h-6 text-white" />
-              <Badge className="absolute -top-1 -right-1 bg-red-500 text-white border-0 h-5 w-5 flex items-center justify-center p-0 text-xs">2</Badge>
+              <Badge className="absolute -top-1 -right-1 bg-red-500 text-white border-0 h-5 w-5 flex items-center justify-center p-0 text-xs">
+                2
+              </Badge>
             </button>
             <button onClick={() => onNavigate('more')}>
               <Settings className="w-6 h-6 text-white" />
             </button>
           </div>
         </div>
-        
+
         <div className="flex items-center gap-2 text-teal-100 text-sm mb-4">
           <Sun className="w-4 h-4" />
-          <span>{today} • Toronto, ON • 12°C</span>
+          <span>{today} • Toronto, ON</span>
         </div>
 
         {/* Quick Action Bar */}
@@ -81,7 +222,10 @@ export default function Dashboard({ onNavigate, userName = '', userEmail = '', u
           {quickActions.map((action, index) => (
             <button
               key={index}
-              onClick={() => action.action && onNavigate(action.action)}
+              onClick={() => {
+                if ('onClick' in action && action.onClick) return action.onClick();
+                if ('action' in action && action.action) return onNavigate(action.action);
+              }}
               className="flex flex-col items-center gap-2 flex-shrink-0"
             >
               <div className={`w-14 h-14 rounded-full ${action.color} flex items-center justify-center`}>
@@ -93,6 +237,114 @@ export default function Dashboard({ onNavigate, userName = '', userEmail = '', u
         </div>
       </div>
 
+{/* ✅ Apple Wallet / Emergency QR Modal (Portal: prevents “87” bleed-through) */}
+{isWalletModalOpen &&
+  createPortal(
+    <div
+      className="fixed inset-0 z-[9999] flex items-end justify-center bg-black/40 p-4"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-gray-100">
+          <div>
+            <h3 className="text-gray-900">Emergency Identification</h3>
+            <p className="text-xs text-gray-500">
+              This is your Emergency ID. It will be converted to a real Apple Wallet pass.
+            </p>
+          </div>
+
+          <button
+            onClick={() => setIsWalletModalOpen(false)}
+            className="p-2 rounded-lg hover:bg-gray-100"
+            aria-label="Close"
+            type="button"
+          >
+            <X className="w-5 h-5 text-gray-600" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="p-4 space-y-4">
+          {/* Loading */}
+          {walletLoading && (
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-sm text-gray-600">
+              Creating your emergency access link…
+            </div>
+          )}
+
+          {/* Error */}
+          {!walletLoading && walletError && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
+              {walletError}
+            </div>
+          )}
+
+          {/* Success */}
+          {!walletLoading && !walletError && emergencyUrl && (
+            <>
+              {/* Emergency URL card */}
+              <div className="bg-teal-50 border border-teal-200 rounded-xl p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Wallet className="w-5 h-5 text-teal-700" />
+                  <p className="text-sm text-teal-900">Emergency Access</p>
+                </div>
+                <p className="text-xs text-teal-800 break-all">{emergencyUrl}</p>
+              </div>
+
+              {/* QR Code */}
+              <div className="bg-white border border-gray-200 rounded-xl p-4 flex flex-col items-center gap-3">
+                <QRCodeCanvas
+                  value={emergencyUrl}
+                  size={190}
+                  level="H"
+                  includeMargin
+                />
+                <p className="text-xs text-gray-500 text-center">
+                  Scan to open the emergency responder view
+                </p>
+              </div>
+
+              {/* Actions */}
+              <div className="grid grid-cols-2 gap-2">
+                <Button onClick={copyLink} variant="outline" className="w-full">
+                  <Copy className="w-4 h-4 mr-2" />
+                  {copied ? "Copied" : "Copy"}
+                </Button>
+
+                <Button
+                  onClick={openLink}
+                  className="w-full bg-teal-600 hover:bg-teal-700 text-white"
+                >
+                  <ExternalLink className="w-4 h-4 mr-2" />
+                  Open
+                </Button>
+              </div>
+
+              {/* Footer note */}
+              <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-xs text-gray-600">
+                 <span className="font-semibold text-gray-800">
+    Add to Apple Wallet
+  </span>{" "}
+  — coming soon
+              </div>
+            </>
+          )}
+
+          {/* If nothing yet (rare) */}
+          {!walletLoading && !walletError && !emergencyUrl && (
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-sm text-gray-600">
+              No link available yet. Try again.
+            </div>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body
+  )}
+
+
       {/* Health Score Card */}
       <div className="px-6 mb-4">
         <div className="bg-gradient-to-br from-green-50 to-teal-50 rounded-xl border border-green-200 p-6">
@@ -102,17 +354,8 @@ export default function Dashboard({ onNavigate, userName = '', userEmail = '', u
               <p className="text-sm text-gray-600">Great job staying on track!</p>
             </div>
             <div className="relative w-24 h-24">
-              {/* Circular progress */}
               <svg className="transform -rotate-90 w-24 h-24">
-                <circle
-                  cx="48"
-                  cy="48"
-                  r="40"
-                  stroke="currentColor"
-                  strokeWidth="8"
-                  fill="transparent"
-                  className="text-gray-200"
-                />
+                <circle cx="48" cy="48" r="40" stroke="currentColor" strokeWidth="8" fill="transparent" className="text-gray-200" />
                 <circle
                   cx="48"
                   cy="48"
@@ -132,7 +375,7 @@ export default function Dashboard({ onNavigate, userName = '', userEmail = '', u
               </div>
             </div>
           </div>
-          
+
           <div className="grid grid-cols-2 gap-3 mb-4">
             <div className="bg-white rounded-lg p-3">
               <div className="flex items-center gap-2 mb-1">
@@ -164,10 +407,7 @@ export default function Dashboard({ onNavigate, userName = '', userEmail = '', u
             </div>
           </div>
 
-          <Button 
-            variant="outline" 
-            className="w-full bg-white border-green-600 text-green-700 hover:bg-green-50"
-          >
+          <Button variant="outline" className="w-full bg-white border-green-600 text-green-700 hover:bg-green-50">
             <TrendingUp className="w-4 h-4 mr-2" />
             Improve Your Score
           </Button>
@@ -202,10 +442,7 @@ export default function Dashboard({ onNavigate, userName = '', userEmail = '', u
             ))}
           </div>
 
-          <button 
-            onClick={() => onNavigate('health-tasks')}
-            className="w-full text-center text-teal-600"
-          >
+          <button onClick={() => onNavigate('health-tasks')} className="w-full text-center text-teal-600">
             View All Tasks (7)
           </button>
         </div>
@@ -250,7 +487,7 @@ export default function Dashboard({ onNavigate, userName = '', userEmail = '', u
               </div>
             </div>
           </div>
-          
+
           <div className="space-y-3">
             <div className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg">
               <div className="w-2 h-2 bg-blue-600 rounded-full mt-2 flex-shrink-0" />
@@ -260,7 +497,7 @@ export default function Dashboard({ onNavigate, userName = '', userEmail = '', u
               </div>
               <ChevronRight className="w-5 h-5 text-gray-400" />
             </div>
-            
+
             <div className="flex items-start gap-3 p-3 bg-green-50 rounded-lg">
               <div className="w-2 h-2 bg-green-600 rounded-full mt-2 flex-shrink-0" />
               <div className="flex-1">

@@ -2,6 +2,7 @@ import { ArrowLeft } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
+import { API_BASE } from "@/config/api";
 
 interface ProfileSetupProps {
   onNext: (firstName: string, lastName: string, healthCard: string, dob: string) => void;
@@ -15,15 +16,14 @@ export default function ProfileSetup({ onNext, onBack }: ProfileSetupProps) {
   const [healthCard, setHealthCard] = useState('');
   const [phone, setPhone] = useState('');
 
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   // Format health card number as XXXX-XXX-XXX
   const formatHealthCard = (value: string) => {
-    // Remove all non-digits
     const digitsOnly = value.replace(/\D/g, '');
-    
-    // Limit to 10 digits
     const limited = digitsOnly.slice(0, 10);
-    
-    // Format as XXXX-XXX-XXX
+
     if (limited.length <= 4) {
       return limited;
     } else if (limited.length <= 7) {
@@ -38,12 +38,58 @@ export default function ProfileSetup({ onNext, onBack }: ProfileSetupProps) {
     setHealthCard(formatted);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Remove dashes before passing to parent
+    setError(null);
+
+    const patientId = localStorage.getItem('patientId');
+    if (!patientId) {
+      setError('Missing patientId. Please sign up again.');
+      return;
+    }
+
     const healthCardDigits = healthCard.replace(/\D/g, '');
-    if (healthCardDigits.length === 10) {
-      onNext(firstName, lastName, healthCard, dob);
+    if (healthCardDigits.length !== 10) {
+      setError('Health card number must be 10 digits.');
+      return;
+    }
+
+    if (!phone.trim()) {
+      setError('Phone number is required.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const res = await fetch(`${API_BASE}/api/patients/${patientId}/profile`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          dob, // YYYY-MM-DD from <input type="date" />
+          healthCard: healthCardDigits, // store digits only
+          phoneNumber: phone.trim(),
+        }),
+      });
+
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(data?.message || `Save failed (${res.status})`);
+      }
+
+      // Optional flag so you can skip this step next time
+      localStorage.setItem('profileComplete', 'true');
+
+      // Continue your existing flow
+      onNext(firstName, lastName, healthCardDigits, dob);
+    } catch (err: any) {
+      setError(err?.message ?? 'Could not save profile');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -66,7 +112,15 @@ export default function ProfileSetup({ onNext, onBack }: ProfileSetupProps) {
 
       <h1 className="mb-2 text-gray-900">Let's set up your profile</h1>
       <p className="text-gray-600 mb-2">This helps your healthcare providers identify you correctly.</p>
-      <p className="text-sm text-gray-500 mb-8"><span className="text-red-500">*</span> Indicates a required field</p>
+      <p className="text-sm text-gray-500 mb-8">
+        <span className="text-red-500">*</span> Indicates a required field
+      </p>
+
+      {error && (
+        <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-5">
         <div className="grid grid-cols-2 gap-4">
@@ -144,8 +198,12 @@ export default function ProfileSetup({ onNext, onBack }: ProfileSetupProps) {
         </div>
 
         <div className="pt-4">
-          <Button type="submit" className="w-full bg-teal-600 hover:bg-teal-700 text-white h-12">
-            Continue
+          <Button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-teal-600 hover:bg-teal-700 text-white h-12"
+          >
+            {loading ? 'Saving…' : 'Continue'}
           </Button>
         </div>
       </form>

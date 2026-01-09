@@ -2,6 +2,7 @@ import { Shield, CheckCircle } from 'lucide-react';
 import { Button } from '../ui/button';
 import { ImageWithFallback } from '../figma/ImageWithFallback';
 import logo from 'figma:asset/0e99e426ad6fec528013e68613d43f5c6919d2a0.png';
+import { API_BASE } from "@/config/api";
 
 interface WelcomeLandingProps {
   onGetStarted: () => void;
@@ -16,7 +17,7 @@ export default function WelcomeLanding({ onGetStarted, onSignIn }: WelcomeLandin
     console.log("clicked testBackend");
 
     try {
-      const response = await fetch("http://localhost:4000/api/health");
+      const response = await fetch(`${API_BASE}/api/health`);
       const data = await response.json();
       console.log("Backend response:", data);
     } catch (err) {
@@ -53,15 +54,6 @@ export default function WelcomeLanding({ onGetStarted, onSignIn }: WelcomeLandin
           </Button>
           <Button onClick={onSignIn} variant="outline" className="w-full h-12">
             Sign In
-          </Button>
-
-          {/* 🔹 TEMP test button */}
-          <Button
-            onClick={testBackend}
-            variant="outline"
-            className="w-full h-12"
-          >
-            Test Backend
           </Button>
         </div>
       </div>
