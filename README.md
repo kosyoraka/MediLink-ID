@@ -137,7 +137,7 @@ The MVP demonstrates:
 
 ---
 
-### Frontend Setup
+### Frontend & Backend Setup
 
 ```bash
 npm install
@@ -147,10 +147,9 @@ The frontend runs on:
 
 http://localhost:3000
 
-### Frontend Setup
-cd backend
-npm install
-npm run dev
+To test on a phone or another device, run the dev server with:
+
+npm run dev -- --host
 
 
 The backend runs on:
@@ -160,3 +159,11 @@ http://localhost:4000
 
 Note: You must create a backend/.env file with required environment variables (database URL, OpenAI API key, etc.).
 .env files are intentionally not committed to version control.
+
+### Environment Configuration
+Create a `.env` file inside the `backend/` directory:
+
+```env
+DATABASE_URL=postgresql://medilink:medilinkpw@localhost:5433/medilink?schema=public
+PORT=4000
+OPENAI_API_KEY=YOUR_OPENAI_API_KEY
