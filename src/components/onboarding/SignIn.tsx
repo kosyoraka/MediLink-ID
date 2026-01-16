@@ -20,7 +20,7 @@ export default function SignIn({ onSignIn, onBack }: SignInProps) {
   if (!email || !password) return;
 
   try {
-    const res = await fetch(`${API_BASE}/api/auth/signin`, {
+    const res = await fetch("/api/auth/login", {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),

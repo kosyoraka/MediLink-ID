@@ -10,13 +10,39 @@ import aiRouter from './ai';
 
 const app = express();
 
-app.use(cors({
-  origin: [
-    "http://localhost:3000",
-    "http://10.0.0.203:3000",
-  ],
-  credentials: true
-}));
+const allowList = new Set([
+  "http://localhost:3000",
+  "http://10.0.0.203:3000",
+
+  "http://localhost:5173",
+  "http://localhost:5174",
+  "http://10.0.0.203:5173",
+  "http://10.0.0.203:5174",
+]);
+
+app.use(
+  cors({
+    origin(origin, cb) {
+      // allow curl/postman (no origin) + server-to-server
+      if (!origin) return cb(null, true);
+
+      // allow exact matches
+      if (allowList.has(origin)) return cb(null, true);
+
+      // allow any localhost port (vite can change ports)
+      if (/^http:\/\/localhost:\d+$/.test(origin)) return cb(null, true);
+
+      // allow your LAN IP on any port
+      if (/^http:\/\/10\.0\.0\.203:\d+$/.test(origin)) return cb(null, true);
+
+      return cb(new Error(`CORS blocked: ${origin}`), false);
+    },
+    credentials: true,
+  })
+);
+
+
+
 
 
 app.use(express.json());
@@ -39,6 +65,108 @@ const makeUrlSafeToken = () => {
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true });
 });
+app.get("/health", (_req, res) => res.status(200).send("ok"));
+
+
+/**
+ * Staff: list patients (minimal fields)
+ * GET /api/patients
+ */
+app.get("/api/patients", async (_req, res) => {
+  try {
+    const result = await pool.query(
+      `
+      SELECT
+        p.id as patient_id,
+        p.email,
+        pp.first_name,
+        pp.last_name,
+        pp.dob,
+        pp.health_card,
+        pp.phone_number
+      FROM patients p
+      LEFT JOIN patient_profiles pp ON pp.patient_id = p.id
+      ORDER BY p.id DESC
+      LIMIT 200
+      `
+    );
+
+    return res.status(200).json(result.rows);
+  } catch (e: any) {
+    console.error("PATIENTS LIST ERROR:", e);
+    return res.status(500).json({ message: e?.message || String(e), code: e?.code });
+  }
+});
+
+/**
+ * Staff: create or update a pending patient intake record
+ * POST /api/staff/patients/intake
+ */
+app.post("/api/staff/patients/intake", async (req, res) => {
+  const {
+    email,
+    fullName,
+    dob,
+    phoneNumber,
+    homeAddress,
+    insurance,
+    healthCard,
+    bloodType,
+    allergies,
+    medicalConditions,
+  } = req.body ?? {};
+
+  if (!email) {
+    return res.status(400).json({ message: "Missing email" });
+  }
+
+  // basic DOB validation (optional)
+  if (dob && typeof dob === "string" && Number.isNaN(Date.parse(dob))) {
+    return res.status(400).json({ message: "Invalid dob. Use YYYY-MM-DD" });
+  }
+
+  try {
+    const result = await pool.query(
+      `
+      INSERT INTO pending_patient_intake (
+        email, full_name, dob, phone_number, home_address, insurance,
+        health_card, blood_type, allergies, medical_conditions
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      ON CONFLICT (email)
+      DO UPDATE SET
+        full_name = EXCLUDED.full_name,
+        dob = EXCLUDED.dob,
+        phone_number = EXCLUDED.phone_number,
+        home_address = EXCLUDED.home_address,
+        insurance = EXCLUDED.insurance,
+        health_card = EXCLUDED.health_card,
+        blood_type = EXCLUDED.blood_type,
+        allergies = EXCLUDED.allergies,
+        medical_conditions = EXCLUDED.medical_conditions
+      RETURNING *;
+      `,
+      [
+        String(email).toLowerCase(),
+        fullName ?? null,
+        dob ?? null,
+        phoneNumber ?? null,
+        homeAddress ?? null,
+        insurance ?? null,
+        healthCard ?? null,
+        bloodType ?? null,
+        allergies ?? null,
+        medicalConditions ?? null,
+      ]
+    );
+
+    return res.status(201).json(result.rows[0]);
+  } catch (e: any) {
+    console.error("PENDING INTAKE ERROR:", e);
+    return res.status(500).json({ message: e?.message || String(e), code: e?.code });
+  }
+});
+
 
 app.post("/api/auth/signup", async (req, res) => {
   const { email, password, acceptedTerms } = req.body;
@@ -54,28 +182,123 @@ app.post("/api/auth/signup", async (req, res) => {
   }
 
   try {
-    const id = randomUUID();
-    const passwordHash = await bcrypt.hash(password, 12);
+  const id = randomUUID();
+  const passwordHash = await bcrypt.hash(password, 12);
+  const emailNorm = String(email).toLowerCase();
 
-    const result = await pool.query(
-      `INSERT INTO patients (id, email, password_hash, terms_accepted_at)
-       VALUES ($1, $2, $3, NOW())
-       RETURNING id, email`,
-      [id, String(email).toLowerCase(), passwordHash]
+  // 1) create patient account
+  const result = await pool.query(
+    `INSERT INTO patients (id, email, password_hash, terms_accepted_at)
+     VALUES ($1, $2, $3, NOW())
+     RETURNING id, email`,
+    [id, emailNorm, passwordHash]
+  );
+
+  // 2) check for pending intake created by staff
+  const intakeRes = await pool.query(
+    `SELECT *
+     FROM pending_patient_intake
+     WHERE email = $1
+     LIMIT 1`,
+    [emailNorm]
+  );
+
+  if ((intakeRes.rowCount ?? 0) > 0) {
+    const intake = intakeRes.rows[0];
+
+    // Split full name safely (no funky SQL string parsing)
+    const full = String(intake.full_name ?? "").trim();
+    const parts = full ? full.split(/\s+/) : [];
+    const firstName = parts.length ? parts[0] : null;
+    const lastName = parts.length > 1 ? parts.slice(1).join(" ") : null;
+
+    // 3) upsert patient profile from pending intake
+    await pool.query(
+      `
+      INSERT INTO patient_profiles (
+        patient_id,
+        first_name,
+        last_name,
+        dob,
+        phone_number,
+        home_address,
+        insurance,
+        health_card
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+      ON CONFLICT (patient_id) DO UPDATE SET
+        first_name = EXCLUDED.first_name,
+        last_name = EXCLUDED.last_name,
+        dob = EXCLUDED.dob,
+        phone_number = EXCLUDED.phone_number,
+        home_address = EXCLUDED.home_address,
+        insurance = EXCLUDED.insurance,
+        health_card = EXCLUDED.health_card
+      `,
+      [
+        id,
+        firstName,
+        lastName,
+        intake.dob ?? null,
+        intake.phone_number ?? null,
+        intake.home_address ?? null,
+        intake.insurance ?? null,
+        intake.health_card ?? null,
+      ]
     );
 
-    return res.status(201).json(result.rows[0]); // { id, email }
-  } catch (e: any) {
-    if (e?.code === "23505") {
-      return res.status(409).json({ message: "Email already in use" });
-    }
+    // 4) upsert emergency profile from pending intake
+    // NOTE: This assumes your emergency_profiles has blood_type, allergies, medical_conditions columns (as in your backend code).
+    await pool.query(
+      `
+      INSERT INTO emergency_profiles (
+        id, patient_id,
+        share_personal_info, share_blood_type, share_allergies, share_medical_conditions,
+        share_current_medications, share_emergency_contacts, share_advance_directives,
+        blood_type, allergies, medical_conditions,
+        updated_at
+      )
+      VALUES (
+        $1,$1,
+        true,true,true,true,
+        true,true,false,
+        $2,$3,$4,
+        NOW()
+      )
+      ON CONFLICT (patient_id) DO UPDATE SET
+        blood_type = EXCLUDED.blood_type,
+        allergies = EXCLUDED.allergies,
+        medical_conditions = EXCLUDED.medical_conditions,
+        updated_at = NOW()
+      `,
+      [
+        id,
+        intake.blood_type ?? null,
+        intake.allergies ?? null,
+        intake.medical_conditions ?? null,
+      ]
+    );
 
-    console.error("SIGNUP ERROR:", e);
-    return res.status(500).json({
-      message: e?.message || String(e),
-      code: e?.code,
-    });
+    // 5) remove pending intake once applied
+    await pool.query(
+      `DELETE FROM pending_patient_intake WHERE email = $1`,
+      [emailNorm]
+    );
   }
+
+  return res.status(201).json(result.rows[0]); // { id, email }
+} catch (e: any) {
+  if (e?.code === "23505") {
+    return res.status(409).json({ message: "Email already in use" });
+  }
+
+  console.error("SIGNUP ERROR:", e);
+  return res.status(500).json({
+    message: e?.message || String(e),
+    code: e?.code,
+  });
+}
+
 });
 
 /**
@@ -236,17 +459,17 @@ app.put("/api/patients/:patientId/profile", async (req, res) => {
  * Get patient + profile info
  * GET /api/patients/:patientId/profile
  */
-app.get("/api/patients/:patientId/profile", async (req, res) => {
-  const { patientId } = req.params;
-  if (!patientId) return res.status(400).json({ message: "Missing patientId" });
-
+app.get("/api/patients/:id/profile", async (req, res) => {
   try {
+    const patientId = String(req.params.id);
+
     const result = await pool.query(
       `
       SELECT
         p.id as patient_id,
         p.email,
 
+        -- patient_profiles
         pp.first_name,
         pp.last_name,
         pp.dob,
@@ -264,22 +487,58 @@ app.get("/api/patients/:patientId/profile", async (req, res) => {
         pp.mailing_address_line2,
         pp.mailing_city,
         pp.mailing_province,
-        pp.mailing_postal_code
+        pp.mailing_postal_code,
+
+        -- emergency_profiles (THIS is where your toggle + emergency data is)
+        ep.share_personal_info,
+        ep.share_blood_type,
+        ep.share_allergies,
+        ep.share_medical_conditions,
+        ep.share_current_medications,
+        ep.share_emergency_contacts,
+        ep.share_advance_directives,
+
+        ep.blood_type,
+        ep.allergies,
+        ep.medical_conditions,
+        ep.current_medications,
+        ep.emergency_contacts,
+        ep.dnr_status,
+        ep.living_will,
+        ep.emergency_contacts,
+        ep.emergency_contact_full_name,
+        ep.emergency_contact_relationship,
+        ep.emergency_contact_phone,
+
+
+        ep.created_at as emergency_created_at,
+        ep.updated_at as emergency_updated_at,
+
+        -- keep a timestamp available for profile too
+        pp.created_at as profile_created_at
 
       FROM patients p
       LEFT JOIN patient_profiles pp ON pp.patient_id = p.id
+      LEFT JOIN emergency_profiles ep ON ep.patient_id = p.id
       WHERE p.id = $1
+      LIMIT 1
       `,
       [patientId]
     );
 
-    if (result.rowCount === 0) return res.status(404).json({ message: "Patient not found" });
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "Patient not found" });
+    }
+
     return res.status(200).json(result.rows[0]);
   } catch (e: any) {
-    console.error("PROFILE GET ERROR:", e);
+    console.error("PATIENT PROFILE ERROR:", e);
     return res.status(500).json({ message: e?.message || String(e), code: e?.code });
   }
 });
+
+
+
 
 /**
  * Get emergency profile (personal info + toggles + emergency data)
@@ -733,7 +992,13 @@ app.get("/api/emergency/by-token/:token", async (req, res) => {
 // });
 
 
-const port = Number(process.env.PORT || 4000);
-app.listen(port, () => {
-  console.log(`Backend running on http://localhost:${port}`);
+// const port = Number(process.env.PORT || 4000);
+// app.listen(port, () => {
+//   console.log(`Backend running on http://localhost:${port}`);
+// });
+const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
+
+app.listen(PORT, () => {
+  console.log(`API running on port ${PORT}`);
 });
+

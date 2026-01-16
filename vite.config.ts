@@ -57,21 +57,29 @@ export default defineConfig({
     outDir: 'build',
   },
   server: {
-    port: 3000,
-    strictPort: true,
+  port: 3000,
+  strictPort: true,
 
-    // ✅ allow devices on your network + ngrok to reach your dev server
-    host: true,
+  // allow devices on your network to reach your dev server
+  host: true,
 
-    // ✅ allow ngrok hostnames (prevents 403 "Blocked request" in Vite)
-    allowedHosts: true,
+  // allow hostnames (ngrok / campus / etc)
+  allowedHosts: true,
 
-    // optional: if you don't want it opening a browser tab every time
-    open: false,
+  open: false,
 
-    // optional: makes HMR work better over tunnels (safe to keep)
-    hmr: {
-      clientPort: 443,
+  // ✅ IMPORTANT:
+  // If you're NOT using an https tunnel right now, remove clientPort: 443.
+  // Let Vite choose the correct websocket port automatically.
+  hmr: true,
+
+  // ✅ proxy API calls to your backend
+  proxy: {
+    "/api": {
+      target: "http://localhost:4000",
+      changeOrigin: true,
     },
   },
+},
+
 });

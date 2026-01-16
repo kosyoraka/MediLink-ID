@@ -65,7 +65,9 @@ interface EmergencyProfileProps {
 
 //const API_BASE = 'http://localhost:4000';
 // ✅ use API_BASE from config everywhere
-const res = await fetch(`${API_BASE}/api/...`);
+//const res = await fetch(`${API_BASE}/api/...`);
+const res = await fetch(`/api/...`);
+
 
 export default function EmergencyProfile({ onBack }: EmergencyProfileProps) {
   const patientId = useMemo(() => localStorage.getItem('patientId') || '', []);
