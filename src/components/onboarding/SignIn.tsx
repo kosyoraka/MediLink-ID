@@ -8,6 +8,7 @@ interface SignInProps {
   onSignIn: (userData: { email: string; name: string; healthCard: string; dob: string; connectedProviders: string[] }) => void;
   onBack: () => void;
 }
+ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4000";
 
 export default function SignIn({ onSignIn, onBack }: SignInProps) {
   const [email, setEmail] = useState('');
@@ -20,7 +21,10 @@ export default function SignIn({ onSignIn, onBack }: SignInProps) {
   if (!email || !password) return;
 
   try {
-    const res = await fetch("/api/auth/login", {
+  
+    const res = await fetch(`${API_BASE_URL}/api/auth/signin`, {
+
+    //const res = await fetch("/api/auth/signin", {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),

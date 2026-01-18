@@ -7,6 +7,9 @@ import bcrypt from "bcrypt";
 import { pool } from "./db";
 import { randomUUID, randomBytes } from "crypto";
 import aiRouter from './ai';
+import jwt from "jsonwebtoken";
+
+
 
 const app = express();
 
@@ -19,6 +22,59 @@ const allowList = new Set([
   "http://10.0.0.203:5173",
   "http://10.0.0.203:5174",
 ]);
+
+
+function generateCode() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+// helper
+function requireEnv(name: string) {
+  const v = process.env[name];
+  if (!v) throw new Error(`Missing env var: ${name}`);
+  return v;
+}
+
+// ------------------- JWT STAFF AUTH MIDDLEWARE -------------------
+
+type StaffJwtPayload = {
+  sub: string;         // staff id
+  role: "staff";
+  hospitalId: string;
+  iat?: number;
+  exp?: number;
+};
+
+function getJwtSecret() {
+  const s = process.env.JWT_SECRET;
+  if (!s) throw new Error("Missing env var: JWT_SECRET");
+  return s;
+}
+
+// Adds req.staffId, req.staffHospitalId if valid
+function requireStaffAuth(req: any, res: any, next: any) {
+  try {
+    const header = req.headers.authorization || "";
+    const [kind, token] = header.split(" ");
+
+    if (kind !== "Bearer" || !token) {
+      return res.status(401).json({ message: "Missing or invalid Authorization header" });
+    }
+
+    const secret = getJwtSecret();
+    const payload = jwt.verify(token, secret) as StaffJwtPayload;
+
+    if (!payload?.sub || payload.role !== "staff") {
+      return res.status(401).json({ message: "Invalid token" });
+    }
+
+    req.staffId = payload.sub;
+    req.staffHospitalId = payload.hospitalId;
+    next();
+  } catch (e) {
+    return res.status(401).json({ message: "Invalid or expired token" });
+  }
+}
 
 app.use(
   cors({
@@ -62,10 +118,177 @@ const makeUrlSafeToken = () => {
     .replace(/=+$/g, "");
 };
 
+// ------------------- STAFF SETTINGS / PROFILE -------------------
+
+// GET /api/staff/me
+app.get("/api/staff/me", requireStaffAuth, async (req: any, res) => {
+  try {
+    const staffId = req.staffId;
+
+    const r = await pool.query(
+      `
+      SELECT
+        s.id,
+        s.full_name,
+        s.email,
+        s.role,
+        s.phone,
+        s.hospital_id,
+        h.name AS hospital_name,
+        h.city AS hospital_city
+      FROM staff_accounts s
+      JOIN hospitals h ON h.id = s.hospital_id
+      WHERE s.id = $1
+      LIMIT 1
+      `,
+      [staffId]
+    );
+
+    if ((r.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: "Staff not found" });
+    }
+
+    const u = r.rows[0];
+
+    return res.json({
+      staff: {
+        id: u.id,
+        name: u.full_name,
+        email: u.email,
+        role: u.role,
+        phone: u.phone,
+        hospitalId: u.hospital_id,
+        hospitalName: u.hospital_name,
+        hospitalCity: u.hospital_city,
+      },
+    });
+  } catch (e) {
+    console.error("STAFF ME ERROR:", e);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+// PATCH /api/staff/me
+app.patch("/api/staff/me", requireStaffAuth, async (req: any, res) => {
+  try {
+    const staffId = req.staffId;
+    const { fullName, role, phone } = req.body;
+
+    if (!fullName || !role) {
+      return res.status(400).json({ message: "Missing fullName or role" });
+    }
+
+    await pool.query(
+      `
+      UPDATE staff_accounts
+      SET full_name = $2,
+          role = $3,
+          phone = $4,
+          updated_at = NOW()
+      WHERE id = $1
+      `,
+      [staffId, String(fullName).trim(), String(role).trim(), phone ? String(phone).trim() : null]
+    );
+
+    // Return fresh view (same shape as /api/staff/me)
+    const r = await pool.query(
+      `
+      SELECT
+        s.id,
+        s.full_name,
+        s.email,
+        s.role,
+        s.phone,
+        s.hospital_id,
+        h.name AS hospital_name,
+        h.city AS hospital_city
+      FROM staff_accounts s
+      JOIN hospitals h ON h.id = s.hospital_id
+      WHERE s.id = $1
+      LIMIT 1
+      `,
+      [staffId]
+    );
+
+    if ((r.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: "Staff not found" });
+    }
+
+    const u = r.rows[0];
+
+    return res.json({
+      staff: {
+        id: u.id,
+        name: u.full_name,
+        email: u.email,
+        role: u.role,
+        phone: u.phone,
+        hospitalId: u.hospital_id,
+        hospitalName: u.hospital_name,
+        hospitalCity: u.hospital_city,
+      },
+    });
+  } catch (e) {
+    console.error("STAFF UPDATE ERROR:", e);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+// POST /api/staff/me/change-password
+app.post("/api/staff/me/change-password", requireStaffAuth, async (req: any, res) => {
+  try {
+    const staffId = req.staffId;
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: "Missing currentPassword or newPassword" });
+    }
+    if (typeof newPassword !== "string" || newPassword.length < 8) {
+      return res.status(400).json({ message: "New password must be at least 8 characters" });
+    }
+
+    // Get existing hash
+    const r = await pool.query(
+      `SELECT password_hash FROM staff_accounts WHERE id = $1 LIMIT 1`,
+      [staffId]
+    );
+
+    if ((r.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: "Staff not found" });
+    }
+
+    const { password_hash } = r.rows[0];
+
+    const ok = await bcrypt.compare(String(currentPassword), String(password_hash));
+    if (!ok) {
+      return res.status(401).json({ message: "Current password is incorrect" });
+    }
+
+    const newHash = await bcrypt.hash(String(newPassword), 12);
+
+    await pool.query(
+      `
+      UPDATE staff_accounts
+      SET password_hash = $2,
+          updated_at = NOW()
+      WHERE id = $1
+      `,
+      [staffId, newHash]
+    );
+
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error("STAFF CHANGE PASSWORD ERROR:", e);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+//Healthcheck
+
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true });
 });
-app.get("/health", (_req, res) => res.status(200).send("ok"));
+//app.get("/health", (_req, res) => res.status(200).send("ok"));
 
 
 /**
@@ -343,6 +566,199 @@ app.post("/api/auth/signin", async (req, res) => {
     });
   }
 });
+
+
+
+// ------------------- STAFF AUTH -------------------
+
+// POST /api/staff/auth/signup
+app.post("/api/staff/auth/signup", async (req, res) => {
+  const { hospitalId, fullName, email, password, role, phone } = req.body;
+
+  if (!hospitalId || !fullName || !email || !password || !role) {
+    return res.status(400).json({ message: "Missing required fields" });
+  }
+
+  if (typeof password !== "string" || password.length < 8) {
+    return res.status(400).json({ message: "Password must be at least 8 characters" });
+  }
+
+  const id = randomUUID();
+  const emailNorm = String(email).trim().toLowerCase();
+  const passwordHash = await bcrypt.hash(password, 12);
+
+  // demo code for now (later: send via email)
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+
+  try {
+    // Ensure hospital exists (nice error instead of FK fail)
+    const h = await pool.query(`SELECT id FROM hospitals WHERE id = $1 LIMIT 1`, [hospitalId]);
+    if ((h.rowCount ?? 0) === 0) {
+      return res.status(400).json({ message: "Invalid hospital selected" });
+    }
+
+    // 1) Create staff account
+    await pool.query(
+      `
+      INSERT INTO staff_accounts (
+        id, hospital_id, full_name, email, role, phone, password_hash, email_verified, created_at, updated_at
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7,false, NOW(), NOW())
+      `,
+      [id, hospitalId, fullName, emailNorm, role, phone ?? null, passwordHash]
+    );
+
+    // 2) Create email verification (10 min expiry)
+    // Your email_verifications table references staff_accounts via staff_id FK
+    await pool.query(
+      `
+      INSERT INTO email_verifications (staff_id, code, expires_at, created_at)
+      VALUES ($1, $2, NOW() + interval '10 minutes', NOW())
+      `,
+      [id, code]
+    );
+
+    return res.status(201).json({
+      staffId: id,
+      email: emailNorm,
+      verification: { code }, // demo only
+    });
+  } catch (e: any) {
+    if (e?.code === "23505") {
+      return res.status(409).json({ message: "Email already in use" });
+    }
+    console.error("STAFF SIGNUP ERROR:", e);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+// POST /api/staff/auth/verify-email
+app.post("/api/staff/auth/verify-email", async (req, res) => {
+  const { staffId, code } = req.body;
+
+  if (!staffId || !code) {
+    return res.status(400).json({ message: "Missing staffId or code" });
+  }
+
+  try {
+    const vr = await pool.query(
+      `
+      SELECT code, expires_at
+      FROM email_verifications
+      WHERE staff_id = $1
+      ORDER BY created_at DESC
+      LIMIT 1
+      `,
+      [staffId]
+    );
+
+    if ((vr.rowCount ?? 0) === 0) {
+      return res.status(400).json({ message: "No verification code found" });
+    }
+
+    const row = vr.rows[0];
+    if (String(row.code) !== String(code)) {
+      return res.status(400).json({ message: "Invalid code" });
+    }
+
+    if (new Date(row.expires_at).getTime() < Date.now()) {
+      return res.status(400).json({ message: "Code expired" });
+    }
+
+    await pool.query(`UPDATE staff_accounts SET email_verified = true, updated_at = NOW() WHERE id = $1`, [staffId]);
+    await pool.query(`DELETE FROM email_verifications WHERE staff_id = $1`, [staffId]);
+
+    return res.json({ ok: true });
+  } catch (e: any) {
+    console.error("STAFF VERIFY ERROR:", e);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
+/**
+ * Sign in existing staff
+ * POST /api/staff/auth/signin
+ */
+app.post("/api/staff/auth/signin", async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({ message: "Missing email or password" });
+  }
+
+  try {
+    const emailNorm = String(email).toLowerCase().trim();
+
+    const result = await pool.query(
+      `
+      SELECT
+        s.id,
+        s.full_name,
+        s.email,
+        s.role,
+        s.phone,
+        s.password_hash,
+        s.email_verified,
+        s.hospital_id,
+        h.name AS hospital_name,
+        h.city AS hospital_city
+      FROM staff_accounts s
+      JOIN hospitals h ON h.id = s.hospital_id
+      WHERE s.email = $1
+      LIMIT 1
+      `,
+      [emailNorm]
+    );
+
+    if ((result.rowCount ?? 0) === 0) {
+      return res.status(401).json({ message: "Invalid email or password" });
+    }
+
+    const staff = result.rows[0];
+
+    // 🔒 Require verified email
+    if (!staff.email_verified) {
+      return res.status(403).json({ message: "Email not verified" });
+    }
+
+    const ok = await bcrypt.compare(String(password), staff.password_hash);
+    if (!ok) {
+      return res.status(401).json({ message: "Invalid email or password" });
+    }
+
+    // ✅ JWT GENERATED HERE (THIS IS THE LINE YOU ASKED ABOUT)
+    const token = jwt.sign(
+      {
+        sub: staff.id,
+        role: "staff",
+        hospitalId: staff.hospital_id,
+      },
+      process.env.JWT_SECRET!,
+      { expiresIn: "7d" }
+    );
+
+    return res.status(200).json({
+      token,
+      staff: {
+        id: staff.id,
+        name: staff.full_name,
+        email: staff.email,
+        role: staff.role,
+        phone: staff.phone,
+        hospitalId: staff.hospital_id,
+        hospitalName: staff.hospital_name,
+        hospitalCity: staff.hospital_city,
+      },
+    });
+  } catch (e: any) {
+    console.error("STAFF SIGNIN ERROR:", e);
+    return res.status(500).json({
+      message: e?.message || "Server error",
+      code: e?.code,
+    });
+  }
+});
+
 
 /**
  * Create/Update patient profile (upsert)
@@ -867,6 +1283,13 @@ app.get("/api/emergency/by-token/:token", async (req, res) => {
     return res.status(500).json({ message: e?.message || String(e), code: e?.code });
   }
 });
+
+app.get("/api/hospitals", async (_req, res) => {
+  const result = await pool.query(
+    "SELECT id, name, city FROM hospitals ORDER BY name ASC"
+  );
+  res.json(result.rows);
+});
 // /**
 //  * Public emergency view by token (for QR)
 //  * GET /api/emergency/:token
@@ -992,13 +1415,13 @@ app.get("/api/emergency/by-token/:token", async (req, res) => {
 // });
 
 
-// const port = Number(process.env.PORT || 4000);
-// app.listen(port, () => {
-//   console.log(`Backend running on http://localhost:${port}`);
-// });
-const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
-
-app.listen(PORT, () => {
-  console.log(`API running on port ${PORT}`);
+const port = Number(process.env.PORT || 4000);
+app.listen(port, () => {
+  console.log(`Backend running on http://localhost:${port}`);
 });
+// const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
+
+// app.listen(PORT, () => {
+//   console.log(`API running on port ${PORT}`);
+// });
 
