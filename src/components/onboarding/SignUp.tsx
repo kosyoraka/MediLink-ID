@@ -14,8 +14,11 @@ export default function SignUp({ onSignUp }: SignUpProps) {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [agreed, setAgreed] = useState(false);
+  const [hospitalId, setHospitalId] = useState<string>("");
+
 
   const [loading, setLoading] = useState(false);
+
   const [error, setError] = useState<string | null>(null);
 
   const getPasswordStrength = (pwd: string) => {
@@ -46,6 +49,7 @@ export default function SignUp({ onSignUp }: SignUpProps) {
           email,
           password,
           acceptedTerms: agreed,
+          hospitalId,
         }),
       });
 
@@ -60,6 +64,9 @@ export default function SignUp({ onSignUp }: SignUpProps) {
 
       // optional but handy
       localStorage.setItem('email', data.email);
+      
+      // ✅ add this (required for Connected Providers)
+      localStorage.setItem('patient_token', data.token);
 
       // continue your existing app flow
       onSignUp(data.email);

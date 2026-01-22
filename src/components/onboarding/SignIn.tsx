@@ -38,6 +38,7 @@ export default function SignIn({ onSignIn, onBack }: SignInProps) {
 
     localStorage.setItem('patientId', data.id);
     localStorage.setItem('email', data.email);
+    localStorage.setItem('patient_token', data.token);
 
     onSignIn({
       email: data.email,
