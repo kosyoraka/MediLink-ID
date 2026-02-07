@@ -140,6 +140,7 @@ app.use(
 
 
 app.use(express.json());
+
 app.use('/api/ai', aiRouter);
 
 // IMPORTANT: this should be reachable from iPhone.
@@ -669,7 +670,32 @@ app.post("/api/auth/signin", async (req, res) => {
   }
 });
 
+// ------------------- AI Symptom Guidance -------------------
 
+app.post("/api/ai/symptom-guidance", async (req, res) => {
+  try {
+    const { bodyParts, symptoms, duration, severity } = req.body ?? {};
+
+    // basic validation so you get 400 instead of weird crashes
+    if (!bodyParts || !symptoms) {
+      return res.status(400).json({
+        message: "Missing required fields",
+        required: ["bodyParts", "symptoms"],
+        received: { bodyParts, symptoms, duration, severity },
+      });
+    }
+
+    // For now: stub response (replace with OpenAI call later)
+    return res.json({
+      guidance:
+        `Summary:\n- Body area: ${bodyParts}\n- Symptoms: ${symptoms}\n- Duration: ${duration ?? "n/a"}\n- Severity: ${severity ?? "n/a"}\n\n` +
+        `If symptoms are severe, worsening, or include red flags (chest pain, trouble breathing, fainting, severe bleeding), seek urgent care.`,
+    });
+  } catch (err: any) {
+    console.error("symptom-guidance error:", err);
+    return res.status(500).json({ message: "Internal error", detail: err?.message });
+  }
+});
 
 
 // ------------------- STAFF AUTH -------------------
