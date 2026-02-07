@@ -167,3 +167,27 @@ Create a `.env` file inside the `backend/` directory:
 DATABASE_URL=postgresql://medilink:medilinkpw@localhost:5433/medilink?schema=public
 PORT=4000
 OPENAI_API_KEY=YOUR_OPENAI_API_KEY
+
+
+## Local Dev (Docker)
+
+### Requirements
+- Docker Desktop
+
+### Run everything
+```bash
+git clone <repo>
+cd MediLink-ID/backend
+cp .env.example .env
+docker compose up --build
+
+Then open:
+
+Frontend: http://localhost:5173
+
+API: http://localhost:4000
+
+pgAdmin: http://localhost:5050
+
+And if you need DB UI, add the pgAdmin server (one-time).
+```
