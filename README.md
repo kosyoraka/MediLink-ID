@@ -98,14 +98,14 @@ Before starting, install:
 ## 2. Clone the Repository
 ```bash
 git clone <REPO_URL>
-cd MedilinkidPatientPrototype/backend
+cd backend
 ```
 
 ---
 
 ## 3. Authenticate with Google Cloud
 
-Ask Kennie to add you to the GCP project.
+Ask Kennie/Kosy to add you to the GCP project.
 
 Then run:
 ```bash
@@ -260,3 +260,79 @@ Current functionality:
 - Do not reset the database
 - One person manages migrations
 - If unsure → ask before running DB commands
+
+
+## Troubleshooting
+
+### Docker Container Already in Use
+
+**Problem:** You get an error like `error: response container being used by another container` when trying to start your containers.
+
+**Solution:** Docker won't let you start a container if one with the same name is already running (or stuck in a stopped state).
+
+**Steps:**
+
+1. **Stop and clean up existing containers**
+   ```bash
+   docker compose down --remove-orphans
+   ```
+
+2. **Check what container is blocking you** (optional, but helpful for debugging)
+   ```bash
+   docker ps -a --filter "name=medilink_provider_web"
+   ```
+
+3. **Force-remove the container**
+   ```bash
+   docker rm -f medilink_provider_web
+   ```
+
+   If that container name doesn't exist, use the ID from the error message instead:
+   ```bash
+   docker rm -f f0d17db952d3516f1c1e6d19a0208cc381f032f45530997194d63910701f8b4d
+   ```
+
+4. **Restart your containers**
+   ```bash
+   docker compose up -d --build
+   ```
+
+**Why this happens:** Sometimes containers get stuck or don't clean up properly, leaving a "ghost" container that prevents you from starting a new one with the same name. The `--remove-orphans` flag helps, but occasionally you need to manually force-remove the offending container.
+
+## Important: Cloud SQL Proxy
+
+**One rule:** Cloud SQL Proxy must be running anytime you run the stack. If the proxy isn't running, you'll see connection errors.
+
+Make sure it's started before you bring up your containers.
+
+### Database Connection Errors (P1001)
+
+**Problem:** You see `P1001` or "can't reach database" errors.
+
+**Solution:**
+
+1. **Check if Cloud SQL Proxy is running**
+   ```bash
+   lsof -i :5433
+   ```
+   If nothing shows up, start the proxy.
+
+2. **Restart the stack**
+   ```bash
+   docker compose down --remove-orphans
+   docker compose up -d --build
+   ```
+
+### Docker Container Already in Use
+
+**Problem:** You get an error like `error: response container being used by another container` when trying to start your containers.
+
+**Solution:** Docker won't let you start a container if one with the same name is already running (or stuck in a stopped state).
+
+```bash
+docker compose down --remove-orphans
+docker rm -f medilink_provider_web 2>/dev/null || true
+docker compose up -d --build
+```
+
+This cleans up any stuck containers and brings everything back up. The `2>/dev/null || true` part just means "don't error out if the container doesn't exist."
