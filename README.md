@@ -5,12 +5,13 @@
 MediLink is a smart patient portal and medical ID platform that centralizes healthcare information across providers. It enables patients to manage medical records, appointments, medications, and emergency health profiles in one secure system, while also supporting instant emergency access via QR/NFC-style workflows.
 
 The platform includes:
+
 - A patient-facing portal
 - A provider-facing portal
 - A shared backend API
-- A PostgreSQL database managed with Prisma
+- A shared PostgreSQL database hosted on Google Cloud SQL
 
-All services run locally using Docker Compose to ensure a consistent development environment across the team.
+All services run locally using Docker Compose, while all developers connect to the same Cloud SQL database via Cloud SQL Proxy to ensure consistent data across the team.
 
 ---
 
@@ -42,7 +43,8 @@ Instant access to emergency profiles through QR/NFC-style access, enabling faste
 - Secure authentication
 - AI-powered symptom guidance (non-diagnostic)
 - Prisma-managed PostgreSQL database
-- Fully Dockerized local development
+- Dockerized local development
+- Shared Cloud SQL database (single source of truth)
 
 ---
 
@@ -59,27 +61,37 @@ Instant access to emergency profiles through QR/NFC-style access, enabling faste
 - Express
 - TypeScript
 - Prisma ORM
-- PostgreSQL
+- PostgreSQL (Cloud SQL)
 
 ### Infrastructure
 - Docker
 - Docker Compose
+- Google Cloud SQL
+- Cloud SQL Proxy
 - pgAdmin
 - GitHub
 
 ---
 
-## Getting Started (Local Development)
+## Getting Started (Local Development with Cloud SQL)
+
+### ⚠️ Important
+
+MediLink no longer uses a local PostgreSQL container for development.
+
+All developers connect to the shared Google Cloud SQL database using Cloud SQL Proxy.
 
 ---
 
 ## 1. Prerequisites
 
-Before starting, ensure you have the following installed:
+Before starting, install:
 
 - Docker Desktop
 - Git
-- Node.js v18+ (only required if running services outside Docker)
+- Google Cloud SDK (gcloud)
+- Cloud SQL Proxy
+- Node.js v18+ (optional, Docker recommended)
 
 ---
 
@@ -91,96 +103,134 @@ cd MedilinkidPatientPrototype/backend
 
 ---
 
-## 3. Create Environment File
+## 3. Authenticate with Google Cloud
 
-Inside the `backend/` directory, create a file named `.env.docker`.
+Ask Kennie to add you to the GCP project.
+
+Then run:
+```bash
+gcloud auth login
+gcloud config set project medilink-dev-486803
+```
+
+---
+
+## 4. Start Cloud SQL Proxy (Required)
+
+In a separate terminal:
+```bash
+./cloud-sql-proxy \
+  --port 5433 \
+  medilink-dev-486803:northamerica-northeast2:medilink-dev-db
+```
+
+This exposes the shared database at:
+```
+localhost:5433
+```
+
+Leave this running while you develop.
+
+---
+
+## 5. Create Environment File
+
+Inside `backend/`, create `.env.docker`:
 ```env
-DATABASE_URL=postgresql://medilink:medilinkpw@db:5432/medilink?schema=public
+DATABASE_URL="postgresql://medilink_app:medilinkapp@host.docker.internal:5433/medilink?schema=public"
+SHADOW_DATABASE_URL="postgresql://medilink_app:medilinkapp@host.docker.internal:5433/medilink_shadow?schema=public"
+
 PORT=4000
 NODE_ENV=development
 OPENAI_API_KEY=YOUR_OPENAI_API_KEY
 ```
 
-Important notes:
+Notes:
 
 - `.env.docker` is intentionally not committed
-- Ask Kennie for the OpenAI API key if needed
+- Ask Kennie for DB credentials if needed
+- Never commit secrets
 
 ---
 
-## 4. Run the Entire Stack with Docker
-
-From the `backend/` directory, run:
+## 6. Run the Application Stack
 ```bash
 docker compose up -d --build
 ```
 
-This will start:
+This starts:
 
-- PostgreSQL database
 - Backend API
 - Patient UI
 - Provider UI
 - pgAdmin
 
+(No local database container is started)
+
 ---
 
-## 5. Access the Running Services
-
-Once Docker finishes starting, open the following in your browser:
+## 7. Access the Running Services
 
 - **Patient Portal:** http://localhost:5173
 - **Provider Portal:** http://localhost:5174
-- **Backend API:** http://localhost:4000
+- **Backend API:** http://localhost:4000/health
 - **pgAdmin:** http://localhost:5050
 
 ---
 
-## 6. Apply Database Migrations (Prisma)
+## 8. Prisma Migrations (IMPORTANT)
 
-This step is required only on first setup or after database reset.
-```bash
-docker compose exec api npx prisma migrate deploy
-```
+Migrations are already applied on Cloud SQL.
 
-To confirm migrations:
+Run only to verify:
 ```bash
 docker compose exec api npx prisma migrate status
 ```
 
+🚫 **Do NOT run:**
+
+- `prisma migrate dev`
+- `prisma migrate reset`
+- `prisma db push`
+
+Unless explicitly instructed.
+
 ---
 
-## 7. Database Notes (Important)
+## 9. pgAdmin Setup (Optional)
 
-- Prisma manages schema changes via `_prisma_migrations`
-- Existing data is preserved unless explicitly truncated
-- **Do NOT** run `prisma migrate reset`
-- **Do NOT** delete Docker volumes unless you intend to wipe the database
-
----
-
-## 8. pgAdmin Configuration (Optional)
-
-Login credentials:
+Login:
 
 - Email: `admin@medilink.com`
 - Password: `admin`
 
-Create a new server in pgAdmin:
+Create a server:
 
-- Host: `db`
-- Port: `5432`
-- Username: `medilink`
-- Password: `medilinkpw`
+- Host: `host.docker.internal`
+- Port: `5433`
 - Database: `medilink`
+- Username: `medilink_app`
+- Password: (ask Kennie)
+
+You should see live production-like data (e.g., 24 hospitals).
+
+---
+
+## Database Rules (Read Carefully)
+
+- Cloud SQL is the single source of truth
+- All developers see the same data
+- Prisma migrations are controlled
+- Never drop schemas or reset the DB
+- No local Postgres containers
 
 ---
 
 ## Current Project Status
 
-MediLink is in active development and has reached MVP stage.
+MediLink is in active MVP development.
 
-Current MVP functionality includes:
+Current functionality:
 
 - Authentication (patients & staff)
 - Patient profiles
@@ -202,13 +252,11 @@ Current MVP functionality includes:
 
 ---
 
-## Development Rules (Read This)
+## Development Rules (Non-Negotiable)
 
-- Docker is the single source of truth
-- Do not commit `.env` or `.env.docker`
-- Always run migrations with `migrate deploy`
-- Never reset the database unless explicitly instructed
-
----
-
-
+- Cloud SQL is the database
+- Cloud SQL Proxy is required
+- Do not commit `.env` files
+- Do not reset the database
+- One person manages migrations
+- If unsure → ask before running DB commands
