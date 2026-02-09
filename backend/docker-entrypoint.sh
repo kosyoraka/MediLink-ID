@@ -1,3 +1,23 @@
+# # #!/bin/sh
+# # set -e
+
+# # echo "Waiting for Postgres at ${DB_HOST}:${DB_PORT}..."
+# # until nc -z "$DB_HOST" "$DB_PORT"; do
+# #   sleep 1
+# # done
+# # echo "Postgres is up."
+# # sleep 1
+
+# # if [ -f "prisma/schema.prisma" ]; then
+# #   echo "Running prisma generate..."
+# #   npx prisma generate
+
+# #   echo "Applying migrations..."
+# #   npx prisma migrate deploy
+# # fi
+
+# # echo "Starting API..."
+# # exec npm run dev
 # #!/bin/sh
 # set -e
 
@@ -6,33 +26,22 @@
 #   sleep 1
 # done
 # echo "Postgres is up."
-# sleep 1
 
-# if [ -f "prisma/schema.prisma" ]; then
-#   echo "Running prisma generate..."
-#   npx prisma generate
+# # Always safe
+# echo "Running prisma generate..."
+# npx prisma generate || true
 
-#   echo "Applying migrations..."
-#   npx prisma migrate deploy
-# fi
+# # ❌ DO NOT run migrate deploy here (it will crash on non-empty DB)
+# # npx prisma migrate deploy
 
 # echo "Starting API..."
-# exec npm run dev
+# npm run dev
 #!/bin/sh
 set -e
 
-echo "Waiting for Postgres at ${DB_HOST}:${DB_PORT}..."
-until nc -z "$DB_HOST" "$DB_PORT"; do
-  sleep 1
-done
-echo "Postgres is up."
+echo "Starting API (production)..."
 
-# Always safe
-echo "Running prisma generate..."
+# prisma generate is fine at runtime, but optional if you already run it during build
 npx prisma generate || true
 
-# ❌ DO NOT run migrate deploy here (it will crash on non-empty DB)
-# npx prisma migrate deploy
-
-echo "Starting API..."
-npm run dev
+exec npm start
