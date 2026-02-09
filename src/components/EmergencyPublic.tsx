@@ -34,11 +34,28 @@ export default function EmergencyPublic({ token }: { token: string }) {
   //const res = await fetch(`${API_BASE}/api/emergency/${token}`, { cache: "no-store" });
 
 
-  useEffect(() => {
+//   useEffect(() => {
+//   (async () => {
+//     try {
+//       const res = await fetch(`/api/emergency/by-token/${token}`);
+//       const json = await res.json();
+//       if (!res.ok) throw new Error(json?.message || "Failed to load emergency profile");
+//       setData(json);
+//     } catch (e: any) {
+//       setErr(e?.message || "Failed to load");
+//     }
+//   })();
+// }, [token]);
+useEffect(() => {
   (async () => {
     try {
-      const res = await fetch(`/api/emergency/by-token/${token}`);
+      const API_BASE =
+        (import.meta as any).env?.VITE_API_BASE_URL?.replace(/\/$/, "") ||
+        "http://localhost:4000";
+
+      const res = await fetch(`${API_BASE}/api/emergency/by-token/${token}`);
       const json = await res.json();
+
       if (!res.ok) throw new Error(json?.message || "Failed to load emergency profile");
       setData(json);
     } catch (e: any) {
@@ -46,6 +63,7 @@ export default function EmergencyPublic({ token }: { token: string }) {
     }
   })();
 }, [token]);
+
 
 
   if (err) {

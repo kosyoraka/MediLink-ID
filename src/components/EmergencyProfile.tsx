@@ -66,7 +66,13 @@ interface EmergencyProfileProps {
 //const API_BASE = 'http://localhost:4000';
 // ✅ use API_BASE from config everywhere
 //const res = await fetch(`${API_BASE}/api/...`);
-const res = await fetch(`/api/...`);
+// const res = await fetch(`/api/...`);
+const API_BASE =
+  (import.meta as any).env?.VITE_API_BASE_URL?.replace(/\/$/, "") ||
+  "http://localhost:4000";
+
+const res = await fetch(`${API_BASE}/api/...`);
+
 
 
 export default function EmergencyProfile({ onBack }: EmergencyProfileProps) {
