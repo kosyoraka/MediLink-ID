@@ -26,8 +26,7 @@ RUN npm ci
 
 COPY . .
 
-# Generate prisma + build TypeScript
-RUN npx prisma generate
+# Build TypeScript for production
 RUN npm run build
 
 ENV NODE_ENV=production

@@ -41,7 +41,7 @@ set -e
 
 echo "Starting API (production)..."
 
-# prisma generate is fine at runtime, but optional if you already run it during build
+# Run prisma generate at runtime (Cloud Run env vars available)
 npx prisma generate || true
 
 exec npm start
