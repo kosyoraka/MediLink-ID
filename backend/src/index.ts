@@ -59,30 +59,6 @@ function getJwtSecret() {
   return s;
 }
 
-// Adds req.staffId, req.staffHospitalId if valid
-// function requireStaffAuth(req: any, res: any, next: any) {
-//   try {
-//     const header = req.headers.authorization || "";
-//     const [kind, token] = header.split(" ");
-
-//     if (kind !== "Bearer" || !token) {
-//       return res.status(401).json({ message: "Missing or invalid Authorization header" });
-//     }
-
-//     const secret = getJwtSecret();
-//     const payload = jwt.verify(token, secret) as StaffJwtPayload;
-
-//     if (!payload?.sub || payload.role !== "staff") {
-//       return res.status(401).json({ message: "Invalid token" });
-//     }
-
-//     req.staffId = payload.sub;
-//     req.staffHospitalId = payload.hospitalId;
-//     next();
-//   } catch (e) {
-//     return res.status(401).json({ message: "Invalid or expired token" });
-//   }
-// }
 
 
 function signPatientToken(patient: { id: string; email: string }) {
@@ -113,27 +89,6 @@ async function ensureActiveConnection(patientId: string, providerId: string) {
 }
 
 
-
-// app.use(
-//   cors({
-//     origin(origin, cb) {
-//       // allow curl/postman (no origin) + server-to-server
-//       if (!origin) return cb(null, true);
-
-//       // allow exact matches
-//       if (allowList.has(origin)) return cb(null, true);
-
-//       // allow any localhost port (vite can change ports)
-//       if (/^http:\/\/localhost:\d+$/.test(origin)) return cb(null, true);
-
-//       // allow your LAN IP on any port
-//       if (/^http:\/\/10\.0\.0\.203:\d+$/.test(origin)) return cb(null, true);
-
-//       return cb(new Error(`CORS blocked: ${origin}`), false);
-//     },
-//     credentials: true,
-//   })
-// );
 
 const isDev = process.env.NODE_ENV !== "production";
 
@@ -1293,7 +1248,8 @@ app.put("/api/patients/:patientId/emergency-profile", async (req, res) => {
         randomUUID(), // $1 -> emergency_profiles.id (TEXT column, UUID string is fine)
         patientId,    // $2 -> emergency_profiles.patient_id (UUID)
 
-        !!sharePersonalInfo,        // $3
+        //!!sharePersonalInfo,        // $3
+        true,                       // $3 always share personal info
         !!shareBloodType,           // $4
         !!shareAllergies,           // $5
         !!shareMedicalConditions,   // $6
