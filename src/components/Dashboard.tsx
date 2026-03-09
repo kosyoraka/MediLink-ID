@@ -285,13 +285,13 @@ export default function Dashboard({
       </button>
 
       <button
-        onClick={() => onNavigate('documents')}
+        onClick={() => onNavigate('nutrition-fitness')}
         className="bg-white rounded-xl border border-gray-200 p-4 hover:border-teal-500 hover:bg-teal-50 transition-all"
       >
         <div className="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center mb-3">
           <Upload className="w-5 h-5 text-orange-600" />
         </div>
-        <p className="text-gray-900 text-sm">Documents</p>
+        <p className="text-gray-900 text-sm">Nutrition & Fitness</p>
       </button>
     </div>
   );

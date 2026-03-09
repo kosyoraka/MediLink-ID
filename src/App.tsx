@@ -20,6 +20,7 @@ import HealthSummary from './components/HealthSummary';
 import CareJourneys from './components/CareJourneys';
 import Recommendations from './components/Recommendations';
 import DocumentCenter from './components/DocumentCenter';
+import NutritionFitness from './components/NutritionFitness';
 import SymptomChecker from './components/SymptomChecker';
 import MedicalHistory from './components/MedicalHistory';
 import CommunicationPreferences from './components/CommunicationPreferences';
@@ -53,6 +54,7 @@ type Screen =
   | 'care-journeys'
   | 'recommendations'
   | 'documents'
+  | 'nutrition-fitness'
   | 'symptom-checker'
   | 'medical-history'
   | 'communication-preferences'
@@ -114,6 +116,7 @@ export default function App() {
       'care-journeys',
       'recommendations',
       'documents',
+      'nutrition-fitness',
       'symptom-checker',
       'medical-history',
       'communication-preferences',
@@ -301,6 +304,9 @@ export default function App() {
 
       case 'documents':
         return <DocumentCenter onBack={() => handleNavigation('dashboard', 'home')} />;
+
+      case 'nutrition-fitness':
+        return <NutritionFitness onBack={() => handleNavigation('dashboard', 'home')} />;
 
       case 'symptom-checker':
         return <SymptomChecker onBack={() => handleNavigation('dashboard', 'home')} />;
