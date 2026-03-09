@@ -7,7 +7,7 @@ import bcrypt from "bcrypt";
 import { pool } from "./db";
 import { randomUUID, randomBytes } from "crypto";
 import aiRouter from './ai';
-import jwt from "jsonwebtoken";
+import * as jwt from "jsonwebtoken";
 import { requirePatient } from "./middleware/requirePatient";
 //import { requireAuth, requirePatientAuth } from "./middleware/requireAuth";
 import { requireAuth, requireStaffAuth, requirePatientAuth } 
@@ -59,30 +59,6 @@ function getJwtSecret() {
   return s;
 }
 
-// Adds req.staffId, req.staffHospitalId if valid
-// function requireStaffAuth(req: any, res: any, next: any) {
-//   try {
-//     const header = req.headers.authorization || "";
-//     const [kind, token] = header.split(" ");
-
-//     if (kind !== "Bearer" || !token) {
-//       return res.status(401).json({ message: "Missing or invalid Authorization header" });
-//     }
-
-//     const secret = getJwtSecret();
-//     const payload = jwt.verify(token, secret) as StaffJwtPayload;
-
-//     if (!payload?.sub || payload.role !== "staff") {
-//       return res.status(401).json({ message: "Invalid token" });
-//     }
-
-//     req.staffId = payload.sub;
-//     req.staffHospitalId = payload.hospitalId;
-//     next();
-//   } catch (e) {
-//     return res.status(401).json({ message: "Invalid or expired token" });
-//   }
-// }
 
 
 function signPatientToken(patient: { id: string; email: string }) {
@@ -114,27 +90,26 @@ async function ensureActiveConnection(patientId: string, providerId: string) {
 
 
 
+const isDev = process.env.NODE_ENV !== "production";
+
 app.use(
   cors({
     origin(origin, cb) {
-      // allow curl/postman (no origin) + server-to-server
       if (!origin) return cb(null, true);
 
-      // allow exact matches
       if (allowList.has(origin)) return cb(null, true);
 
-      // allow any localhost port (vite can change ports)
       if (/^http:\/\/localhost:\d+$/.test(origin)) return cb(null, true);
 
-      // allow your LAN IP on any port
-      if (/^http:\/\/10\.0\.0\.203:\d+$/.test(origin)) return cb(null, true);
+      if (isDev && /^http:\/\/10\.0\.0\.\d+:\d+$/.test(origin)) {
+        return cb(null, true);
+      }
 
       return cb(new Error(`CORS blocked: ${origin}`), false);
     },
     credentials: true,
   })
 );
-
 
 
 
@@ -155,6 +130,16 @@ const makeUrlSafeToken = () => {
     .replace(/\//g, "_")
     .replace(/=+$/g, "");
 };
+
+
+app.get("/", (req, res) => {
+  res.send("MediLink API is running");
+});
+
+app.get("/health", (req, res) => {
+  res.json({ ok: true });
+});
+
 
 // ------------------- STAFF SETTINGS / PROFILE -------------------
 
@@ -467,7 +452,7 @@ app.post("/api/auth/signup", async (req, res) => {
   // ✅ connect patient to chosen hospital (so booking/staff list works)
 if (hospitalId) {
   const h = await pool.query(
-    `SELECT 1 FROM hospitals WHERE id = $1::uuid LIMIT 1`,
+    `SELECT 1 FROM hospitals WHERE id = $1::uuid`,
     [hospitalId]
   );
 
@@ -528,8 +513,7 @@ if (hospitalId) {
     health_card = EXCLUDED.health_card
   `,
   [
-    randomUUID(), // ✅ id for patient_profiles row
-    id, // uuid string
+    id, // ✅ patient_id must be the patient's UUID
     firstName,
     lastName,
     intake.dob ?? null,
@@ -539,6 +523,7 @@ if (hospitalId) {
     intake.health_card ?? null,
   ]
 );
+
 
 
     // 4) upsert emergency profile from pending intake
@@ -1263,7 +1248,8 @@ app.put("/api/patients/:patientId/emergency-profile", async (req, res) => {
         randomUUID(), // $1 -> emergency_profiles.id (TEXT column, UUID string is fine)
         patientId,    // $2 -> emergency_profiles.patient_id (UUID)
 
-        !!sharePersonalInfo,        // $3
+        //!!sharePersonalInfo,        // $3
+        true,                       // $3 always share personal info
         !!shareBloodType,           // $4
         !!shareAllergies,           // $5
         !!shareMedicalConditions,   // $6
@@ -2707,9 +2693,13 @@ app.get("/api/patient/connected-providers", requireAuth, async (req, res) => {
 
 
 const port = Number(process.env.PORT || 4000);
-app.listen(port, () => {
-  console.log(`Backend running on http://localhost:${port}`);
+// app.listen(port, () => {
+//   console.log(`Backend running on http://localhost:${port}`);
+// });
+app.listen(port, "0.0.0.0", () => {
+  console.log(`Backend running on http://0.0.0.0:${port}`);
 });
+
 // const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 
 // app.listen(PORT, () => {

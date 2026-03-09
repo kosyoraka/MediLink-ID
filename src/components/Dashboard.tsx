@@ -133,7 +133,9 @@ export default function Dashboard({
         throw new Error((data as any)?.message || 'Failed to create emergency link');
       }
 
-      setEmergencyUrl(data.url);
+      const origin = window.location.origin; // e.g. http://localhost:5173
+      setEmergencyUrl(`${origin}/e/${data.token}`);
+
     } catch (e: any) {
       setWalletError(e?.message || 'Failed to create emergency link');
       setEmergencyUrl('');
