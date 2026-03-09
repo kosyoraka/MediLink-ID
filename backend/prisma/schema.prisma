@@ -180,7 +180,26 @@ model patients {
   terms_accepted_at            DateTime?                      @db.Timestamptz(6)
   created_at                   DateTime                       @default(now()) @db.Timestamptz(6)
   emergency_links              emergency_links[]
+  oauth_identities             oauth_identities[]
   patient_hospital_connections patient_hospital_connections[]
+}
+
+model oauth_identities {
+  id             String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  provider       String
+  provider_sub   String
+  email          String
+  email_verified Boolean         @default(false)
+  patient_id     String?         @db.Uuid
+  staff_id       String?         @db.Uuid
+  created_at     DateTime        @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime        @default(now()) @db.Timestamptz(6)
+  patients       patients?       @relation(fields: [patient_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  staff_accounts staff_accounts? @relation(fields: [staff_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([provider, provider_sub], map: "oauth_identities_provider_provider_sub_key")
+  @@index([patient_id], map: "idx_oauth_identities_patient_id")
+  @@index([staff_id], map: "idx_oauth_identities_staff_id")
 }
 
 model pending_patient_intake {
@@ -211,6 +230,7 @@ model staff_accounts {
   updated_at          DateTime              @default(now()) @db.Timestamptz(6)
   email_verifications email_verifications[]
   hospitals           hospitals             @relation(fields: [hospital_id], references: [id], onUpdate: NoAction)
+  oauth_identities    oauth_identities[]
 
   @@index([hospital_id], map: "idx_staff_accounts_hospital_id")
 }

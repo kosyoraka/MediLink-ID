@@ -8,6 +8,7 @@ import { pool } from "./db";
 import { randomUUID, randomBytes } from "crypto";
 import aiRouter from './ai';
 import * as jwt from "jsonwebtoken";
+import { OAuth2Client, type TokenPayload } from "google-auth-library";
 import { requirePatient } from "./middleware/requirePatient";
 //import { requireAuth, requirePatientAuth } from "./middleware/requireAuth";
 import { requireAuth, requireStaffAuth, requirePatientAuth } 
@@ -69,6 +70,46 @@ function signPatientToken(patient: { id: string; email: string }) {
     secret,
     { expiresIn: "7d" }
   );
+}
+
+function signStaffToken(staff: {
+  id: string;
+  email: string;
+  hospitalId: string;
+}) {
+  return jwt.sign(
+    {
+      id: staff.id,
+      email: staff.email,
+      role: "staff",
+      providerId: staff.id,
+      hospitalId: staff.hospitalId,
+    },
+    process.env.JWT_SECRET as string,
+    { expiresIn: "1d" }
+  );
+}
+
+function getGoogleClientId() {
+  const id = process.env.GOOGLE_CLIENT_ID;
+  if (!id) throw new Error("Missing env var: GOOGLE_CLIENT_ID");
+  return id;
+}
+
+const googleClient = new OAuth2Client();
+
+async function verifyGoogleCredential(idToken: string): Promise<TokenPayload> {
+  const ticket = await googleClient.verifyIdToken({
+    idToken,
+    audience: getGoogleClientId(),
+  });
+
+  const payload = ticket.getPayload();
+  if (!payload) throw new Error("Invalid Google token payload");
+  if (!payload.sub || !payload.email) throw new Error("Missing Google subject/email");
+  if (!payload.email_verified) throw new Error("Google email is not verified");
+
+  return payload;
 }
 
 //Helper: patient can send only if active connection exists
@@ -602,6 +643,159 @@ await pool.query(
 });
 
 /**
+ * Google sign-in/sign-up for patients.
+ * POST /api/auth/google
+ * body: { credential: string, acceptedTerms?: boolean, hospitalId?: string }
+ */
+app.post("/api/auth/google", async (req, res) => {
+  const { credential, acceptedTerms, hospitalId } = req.body ?? {};
+
+  if (!credential || typeof credential !== "string") {
+    return res.status(400).json({ message: "Missing Google credential" });
+  }
+
+  try {
+    const payload = await verifyGoogleCredential(credential);
+    const googleSub = String(payload.sub);
+    const emailNorm = String(payload.email).trim().toLowerCase();
+    const googleFirstName = payload.given_name ? String(payload.given_name).trim() : "";
+    const googleLastName = payload.family_name ? String(payload.family_name).trim() : "";
+
+    // 1) Existing Google-linked patient
+    const linked = await pool.query(
+      `
+      SELECT p.id, p.email
+      FROM oauth_identities oi
+      JOIN patients p ON p.id = oi.patient_id
+      WHERE oi.provider = 'google'
+        AND oi.provider_sub = $1
+        AND oi.patient_id IS NOT NULL
+      LIMIT 1
+      `,
+      [googleSub]
+    );
+
+    if ((linked.rowCount ?? 0) > 0) {
+      const user = linked.rows[0];
+      return res.status(200).json({
+        id: user.id,
+        email: user.email,
+        token: signPatientToken({ id: user.id, email: user.email }),
+        authProvider: "google",
+        firstName: googleFirstName,
+        lastName: googleLastName,
+      });
+    }
+
+    // 2) Existing patient by email -> link Google account
+    const existing = await pool.query(
+      `SELECT id, email FROM patients WHERE email = $1 LIMIT 1`,
+      [emailNorm]
+    );
+
+    let patientId: string;
+    let patientEmail: string;
+
+    if ((existing.rowCount ?? 0) > 0) {
+      patientId = existing.rows[0].id;
+      patientEmail = existing.rows[0].email;
+    } else {
+      // 3) New patient account through Google
+      if (!acceptedTerms) {
+        return res.status(400).json({
+          message: "You must accept the terms to create a new account",
+        });
+      }
+
+      patientId = randomUUID();
+      patientEmail = emailNorm;
+      const passwordHash = await bcrypt.hash(randomUUID(), 12);
+
+      await pool.query(
+        `
+        INSERT INTO patients (id, email, password_hash, terms_accepted_at)
+        VALUES ($1, $2, $3, NOW())
+        `,
+        [patientId, patientEmail, passwordHash]
+      );
+
+      await pool.query(
+        `
+        INSERT INTO patient_profiles (patient_id)
+        VALUES ($1::uuid)
+        ON CONFLICT (patient_id) DO NOTHING
+        `,
+        [patientId]
+      );
+
+      if (hospitalId) {
+        const h = await pool.query(
+          `SELECT 1 FROM hospitals WHERE id = $1::uuid`,
+          [hospitalId]
+        );
+
+        if ((h.rowCount ?? 0) === 0) {
+          return res.status(400).json({ message: "Invalid hospitalId" });
+        }
+
+        await pool.query(
+          `
+          INSERT INTO patient_hospital_connections (id, patient_id, hospital_id, connected_at)
+          VALUES (gen_random_uuid(), $1::uuid, $2::uuid, NOW())
+          ON CONFLICT (patient_id, hospital_id) DO NOTHING
+          `,
+          [patientId, hospitalId]
+        );
+      }
+    }
+
+    // Link Google identity (idempotent)
+    await pool.query(
+      `
+      INSERT INTO oauth_identities (
+        id,
+        provider,
+        provider_sub,
+        email,
+        email_verified,
+        patient_id,
+        created_at,
+        updated_at
+      )
+      VALUES (gen_random_uuid(), 'google', $1, $2, true, $3::uuid, NOW(), NOW())
+      ON CONFLICT (provider, provider_sub)
+      DO UPDATE SET
+        email = EXCLUDED.email,
+        email_verified = EXCLUDED.email_verified,
+        patient_id = EXCLUDED.patient_id,
+        updated_at = NOW()
+      `,
+      [googleSub, patientEmail, patientId]
+    );
+
+    return res.status(200).json({
+      id: patientId,
+      email: patientEmail,
+      token: signPatientToken({ id: patientId, email: patientEmail }),
+      authProvider: "google",
+      firstName: googleFirstName,
+      lastName: googleLastName,
+    });
+  } catch (e: any) {
+    console.error("PATIENT GOOGLE AUTH ERROR:", e);
+    if (e?.code === "42P01") {
+      return res.status(500).json({
+        message: "Missing oauth_identities table. Apply Google auth migration first.",
+      });
+    }
+    return res.status(500).json({
+      message: e?.message || "Google authentication failed",
+      code: e?.code,
+    });
+  }
+});
+
+/**
  * Sign in existing patient
  * POST /api/auth/signin
  */
@@ -764,6 +958,180 @@ app.post("/api/staff/auth/verify-email", async (req, res) => {
 });
 
 /**
+ * Google sign-in/sign-up for staff.
+ * POST /api/staff/auth/google
+ * body: { credential: string, hospitalId?: string, fullName?: string, role?: string, phone?: string }
+ */
+app.post("/api/staff/auth/google", async (req, res) => {
+  const { credential, hospitalId, fullName, role, phone } = req.body ?? {};
+
+  if (!credential || typeof credential !== "string") {
+    return res.status(400).json({ message: "Missing Google credential" });
+  }
+
+  try {
+    const payload = await verifyGoogleCredential(credential);
+    const googleSub = String(payload.sub);
+    const emailNorm = String(payload.email).trim().toLowerCase();
+
+    // 1) Existing Google-linked staff
+    const linked = await pool.query(
+      `
+      SELECT
+        s.id,
+        s.full_name,
+        s.email,
+        s.role,
+        s.phone,
+        s.hospital_id,
+        h.name AS hospital_name,
+        h.city AS hospital_city
+      FROM oauth_identities oi
+      JOIN staff_accounts s ON s.id = oi.staff_id
+      JOIN hospitals h ON h.id = s.hospital_id
+      WHERE oi.provider = 'google'
+        AND oi.provider_sub = $1
+        AND oi.staff_id IS NOT NULL
+      LIMIT 1
+      `,
+      [googleSub]
+    );
+
+    let staff: any = null;
+
+    if ((linked.rowCount ?? 0) > 0) {
+      staff = linked.rows[0];
+    } else {
+      // 2) Existing staff by email -> link Google identity
+      const existing = await pool.query(
+        `
+        SELECT
+          s.id,
+          s.full_name,
+          s.email,
+          s.role,
+          s.phone,
+          s.hospital_id,
+          h.name AS hospital_name,
+          h.city AS hospital_city
+        FROM staff_accounts s
+        JOIN hospitals h ON h.id = s.hospital_id
+        WHERE s.email = $1
+        LIMIT 1
+        `,
+        [emailNorm]
+      );
+
+      if ((existing.rowCount ?? 0) > 0) {
+        staff = existing.rows[0];
+      } else {
+        // 3) New staff account requires hospital + profile fields
+        if (!hospitalId || !fullName || !role) {
+          return res.status(400).json({
+            message: "hospitalId, fullName, and role are required for first-time Google staff signup",
+          });
+        }
+
+        const h = await pool.query(
+          `SELECT id, name, city FROM hospitals WHERE id = $1::uuid LIMIT 1`,
+          [hospitalId]
+        );
+        if ((h.rowCount ?? 0) === 0) {
+          return res.status(400).json({ message: "Invalid hospital selected" });
+        }
+
+        const staffId = randomUUID();
+        const passwordHash = await bcrypt.hash(randomUUID(), 12);
+
+        await pool.query(
+          `
+          INSERT INTO staff_accounts (
+            id, hospital_id, full_name, email, role, phone, password_hash, email_verified, created_at, updated_at
+          )
+          VALUES ($1,$2,$3,$4,$5,$6,$7,true, NOW(), NOW())
+          `,
+          [
+            staffId,
+            hospitalId,
+            String(fullName).trim(),
+            emailNorm,
+            String(role).trim(),
+            phone ? String(phone).trim() : null,
+            passwordHash,
+          ]
+        );
+
+        staff = {
+          id: staffId,
+          full_name: String(fullName).trim(),
+          email: emailNorm,
+          role: String(role).trim(),
+          phone: phone ? String(phone).trim() : null,
+          hospital_id: h.rows[0].id,
+          hospital_name: h.rows[0].name,
+          hospital_city: h.rows[0].city,
+        };
+      }
+
+      await pool.query(
+        `
+        INSERT INTO oauth_identities (
+          id,
+          provider,
+          provider_sub,
+          email,
+          email_verified,
+          staff_id,
+          created_at,
+          updated_at
+        )
+        VALUES (gen_random_uuid(), 'google', $1, $2, true, $3::uuid, NOW(), NOW())
+        ON CONFLICT (provider, provider_sub)
+        DO UPDATE SET
+          email = EXCLUDED.email,
+          email_verified = EXCLUDED.email_verified,
+          staff_id = EXCLUDED.staff_id,
+          updated_at = NOW()
+        `,
+        [googleSub, staff.email, staff.id]
+      );
+    }
+
+    const token = signStaffToken({
+      id: staff.id,
+      email: staff.email,
+      hospitalId: staff.hospital_id,
+    });
+
+    return res.status(200).json({
+      token,
+      staff: {
+        id: staff.id,
+        name: staff.full_name,
+        email: staff.email,
+        role: staff.role,
+        phone: staff.phone,
+        hospitalId: staff.hospital_id,
+        hospitalName: staff.hospital_name,
+        hospitalCity: staff.hospital_city,
+      },
+      authProvider: "google",
+    });
+  } catch (e: any) {
+    console.error("STAFF GOOGLE AUTH ERROR:", e);
+    if (e?.code === "42P01") {
+      return res.status(500).json({
+        message: "Missing oauth_identities table. Apply Google auth migration first.",
+      });
+    }
+    return res.status(500).json({
+      message: e?.message || "Google authentication failed",
+      code: e?.code,
+    });
+  }
+});
+
+/**
  * Sign in existing staff
  * POST /api/staff/auth/signin
  */
@@ -825,17 +1193,11 @@ app.post("/api/staff/auth/signin", async (req, res) => {
     //   { expiresIn: "7d" }
     // );
     // IMPORTANT: include provider_id (or hospital_id) in the token
-const token = jwt.sign(
-  {
-    id: staff.id,               // used everywhere
-    email: staff.email,
-    role: "staff",
-    providerId: staff.id,       // ✅ THIS IS THE KEY FIX
-    hospitalId: staff.hospital_id,
-  },
-  process.env.JWT_SECRET as string,
-  { expiresIn: "1d" }
-);
+const token = signStaffToken({
+  id: staff.id,
+  email: staff.email,
+  hospitalId: staff.hospital_id,
+});
 
 
 // return res.json({
@@ -847,22 +1209,6 @@ const token = jwt.sign(
 //     hospitalId: staff.hospital_id,
 //   },
 // });
-return res.json({
-  token,
-  staff: {
-    id: staff.id,
-    name: staff.full_name,
-    email: staff.email,
-    role: staff.role,
-    phone: staff.phone,
-    hospitalId: staff.hospital_id,
-    hospitalName: staff.hospital_name,
-    hospitalCity: staff.hospital_city,
-  },
-});
-
-
-
     return res.status(200).json({
       token,
       staff: {
@@ -2705,4 +3051,3 @@ app.listen(port, "0.0.0.0", () => {
 // app.listen(PORT, () => {
 //   console.log(`API running on port ${PORT}`);
 // });
-

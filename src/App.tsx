@@ -67,6 +67,10 @@ export default function App() {
   const [userName, setUserName] = useState('');
   const [userHealthCard, setUserHealthCard] = useState('');
   const [userDOB, setUserDOB] = useState('');
+  const [profilePrefill, setProfilePrefill] = useState<{ firstName: string; lastName: string }>({
+    firstName: '',
+    lastName: '',
+  });
 
   // Keep Authorization UI in the app, but we won't route to it from provider connect actions
   const [selectedProvider, setSelectedProvider] = useState(''); // (kept for Authorization screen)
@@ -153,14 +157,21 @@ export default function App() {
               completeOnboarding();
             }}
             onBack={() => handleNavigation('welcome')}
+            onGoToSignUp={() => handleNavigation('signup')}
           />
         );
 
       case 'signup':
         return (
           <SignUp
-            onSignUp={(email) => {
+            onBack={() => handleNavigation('welcome')}
+            onGoToSignIn={() => handleNavigation('signin')}
+            onSignUp={(email, prefill) => {
               setUserEmail(email);
+              setProfilePrefill({
+                firstName: prefill?.firstName || '',
+                lastName: prefill?.lastName || '',
+              });
               handleNavigation('profile-setup');
             }}
           />
@@ -172,10 +183,13 @@ export default function App() {
       case 'profile-setup':
         return (
           <ProfileSetup
+            initialFirstName={profilePrefill.firstName}
+            initialLastName={profilePrefill.lastName}
             onNext={(firstName, lastName, healthCard, dob) => {
               setUserName(`${firstName} ${lastName}`);
               setUserHealthCard(healthCard);
               setUserDOB(dob);
+              setProfilePrefill({ firstName: '', lastName: '' });
               handleNavigation('connect-providers');
             }}
             onBack={() => handleNavigation('signup')}

@@ -37,6 +37,7 @@ services:
     environment:
       VITE_API_BASE_URL: http://localhost:4000
       #VITE_API_BASE_URL: http://10.0.0.203:4000
+      VITE_GOOGLE_CLIENT_ID: 71624044417-b0c6hh22lrl78c7s8utn08e6eo2dfibe.apps.googleusercontent.com
       CHOKIDAR_USEPOLLING: "true"
     ports:
       - "5173:5173"
@@ -54,6 +55,7 @@ services:
     container_name: medilink_provider_web
     environment:
       VITE_API_BASE_URL: http://localhost:4000
+      VITE_GOOGLE_CLIENT_ID: 71624044417-b0c6hh22lrl78c7s8utn08e6eo2dfibe.apps.googleusercontent.com
       CHOKIDAR_USEPOLLING: "true"
     ports:
       - "5174:5174"

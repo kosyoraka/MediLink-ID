@@ -1,23 +1,38 @@
 import { ArrowLeft } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { API_BASE } from "@/config/api";
 
 interface ProfileSetupProps {
+  initialFirstName?: string;
+  initialLastName?: string;
   onNext: (firstName: string, lastName: string, healthCard: string, dob: string) => void;
   onBack: () => void;
 }
 
-export default function ProfileSetup({ onNext, onBack }: ProfileSetupProps) {
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
+export default function ProfileSetup({
+  initialFirstName = '',
+  initialLastName = '',
+  onNext,
+  onBack,
+}: ProfileSetupProps) {
+  const [firstName, setFirstName] = useState(initialFirstName);
+  const [lastName, setLastName] = useState(initialLastName);
   const [dob, setDob] = useState('');
   const [healthCard, setHealthCard] = useState('');
   const [phone, setPhone] = useState('');
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setFirstName(initialFirstName);
+  }, [initialFirstName]);
+
+  useEffect(() => {
+    setLastName(initialLastName);
+  }, [initialLastName]);
 
   // Format health card number as XXXX-XXX-XXX
   const formatHealthCard = (value: string) => {
