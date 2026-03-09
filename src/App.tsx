@@ -26,6 +26,7 @@ import CommunicationPreferences from './components/CommunicationPreferences';
 import ManageProviders from './components/ManageProviders';
 import EmergencyPublic from './components/EmergencyPublic';
 import PersonalInformationPage from './components/PersonalInformationPage';
+import Notifications from './components/Notifications';
 import { API_BASE } from "@/config/api";
 console.log("API_BASE =", API_BASE);
 
@@ -55,7 +56,8 @@ type Screen =
   | 'symptom-checker'
   | 'medical-history'
   | 'communication-preferences'
-  | 'manage-providers';
+  | 'manage-providers'
+  | 'notifications';
 
 type NavItem = 'home' | 'records' | 'appointments' | 'messages' | 'more';
 
@@ -116,6 +118,7 @@ export default function App() {
       'medical-history',
       'communication-preferences',
       'manage-providers',
+      'notifications',
     ].includes(currentScreen);
 
   useEffect(() => {
@@ -311,6 +314,9 @@ export default function App() {
       case 'manage-providers':
         // DB-backed ManageProviders only needs onBack
         return <ManageProviders onBack={() => handleNavigation('more', 'more')} />;
+
+      case 'notifications':
+        return <Notifications onBack={() => handleNavigation('dashboard', 'home')} />;
 
       default:
         return <Dashboard onNavigate={handleNavigation} />;

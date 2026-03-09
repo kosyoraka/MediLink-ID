@@ -25,6 +25,12 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { useEffect, useMemo, useState } from 'react';
 import { API_BASE } from "@/config/api";
+import { api, type PatientAppointment } from "@/lib/api";
+import {
+  buildAppointmentNotifications,
+  getUnreadCount,
+  NOTIFICATIONS_UPDATED_EVENT,
+} from "@/lib/notifications";
 import { createPortal } from "react-dom";
 import { QRCodeCanvas } from "qrcode.react";
 
@@ -67,6 +73,8 @@ export default function Dashboard({
   const [walletError, setWalletError] = useState('');
   const [emergencyUrl, setEmergencyUrl] = useState('');
   const [copied, setCopied] = useState(false);
+  const [appointments, setAppointments] = useState<PatientAppointment[]>([]);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
 
   useEffect(() => {
     const patientId = localStorage.getItem('patientId');
@@ -84,6 +92,33 @@ export default function Dashboard({
     })();
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await api.listMyAppointments("all");
+        if (cancelled) return;
+        setAppointments(data.appointments || []);
+      } catch (e) {
+        console.error("DASHBOARD APPOINTMENTS FETCH ERROR:", e);
+        if (!cancelled) setAppointments([]);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const syncUnread = () => {
+      setUnreadNotificationCount(getUnreadCount(buildAppointmentNotifications(appointments)));
+    };
+    syncUnread();
+    window.addEventListener(NOTIFICATIONS_UPDATED_EVENT, syncUnread);
+    return () => window.removeEventListener(NOTIFICATIONS_UPDATED_EVENT, syncUnread);
+  }, [appointments]);
+
   const displayName = useMemo(() => {
     const dbName = [profile?.first_name, profile?.last_name].filter(Boolean).join(' ').trim();
     return dbName || userName || profile?.email || 'Guest User';
@@ -97,6 +132,23 @@ export default function Dashboard({
     return profile?.health_card || userHealthCard || '0000-000-000';
   }, [profile, userHealthCard]);
 
+  const nextAppointment = useMemo(() => {
+    const now = Date.now();
+    return [...appointments]
+      .filter((a) => {
+        const ts = new Date(a.startTime).getTime();
+        const status = String(a.status || "").toLowerCase();
+        return ts >= now && status !== "cancelled" && status !== "completed";
+      })
+      .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())[0] || null;
+  }, [appointments]);
+
+  const nextAppointmentStatusLabel = useMemo(() => {
+    if (!nextAppointment) return "";
+    const status = String(nextAppointment.status || "").toLowerCase().trim();
+    return status === "confirmed" ? "Confirmed" : "Waiting for confirmation";
+  }, [nextAppointment]);
+
   const getInitials = (name: string) => {
     const parts = name.split(' ').filter(Boolean);
     if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
@@ -108,6 +160,22 @@ export default function Dashboard({
     const digits = healthCard.replace(/\D/g, '');
     if (digits.length >= 3) return `****${digits.slice(-3)}`;
     return '****';
+  };
+
+  const formatAppointmentDate = (iso: string) => {
+    const d = new Date(iso);
+    return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  };
+
+  const formatAppointmentTime = (iso: string) => {
+    const d = new Date(iso);
+    return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  };
+
+  const openDirections = () => {
+    if (!nextAppointment) return;
+    const query = encodeURIComponent(nextAppointment.hospitalName || nextAppointment.providerName || "Hospital");
+    window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, "_blank", "noopener,noreferrer");
   };
 
   // ✅ Fetch emergency link + open modal
@@ -313,11 +381,13 @@ export default function Dashboard({
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <button className="relative">
+            <button className="relative" onClick={() => onNavigate('notifications')}>
               <Bell className="w-6 h-6 text-white" />
-              <Badge className="absolute -top-1 -right-1 bg-red-500 text-white border-0 h-5 w-5 flex items-center justify-center p-0 text-xs">
-                2
-              </Badge>
+              {unreadNotificationCount > 0 && (
+                <Badge className="absolute -top-1 -right-1 bg-red-500 text-white border-0 h-5 w-5 flex items-center justify-center p-0 text-xs">
+                  {unreadNotificationCount}
+                </Badge>
+              )}
             </button>
             <button onClick={() => onNavigate('more')}>
               <Settings className="w-6 h-6 text-white" />
@@ -506,74 +576,62 @@ export default function Dashboard({
       <div className="px-6 space-y-4">
         {/* Next Appointment */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-          <div className="flex items-start gap-3 mb-4">
-            <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-              <Calendar className="w-6 h-6 text-blue-600" />
-            </div>
-            <div className="flex-1">
+          {nextAppointment ? (
+            <>
+              <div className="flex items-start gap-3 mb-4">
+                <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                  <Calendar className="w-6 h-6 text-blue-600" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm text-gray-500 mb-1">Next Appointment</p>
+                  <h3 className="text-gray-900 mb-1">{nextAppointment.providerName}</h3>
+                  <p className="text-gray-600">
+                    {formatAppointmentDate(nextAppointment.startTime)} • {formatAppointmentTime(nextAppointment.startTime)}
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    {nextAppointment.hospitalName || "Hospital"}
+                  </p>
+                  <div className="mt-2">
+                    <Badge
+                      className={
+                        nextAppointmentStatusLabel === "Confirmed"
+                          ? "bg-green-100 text-green-700 border-0"
+                          : "bg-yellow-100 text-yellow-700 border-0"
+                      }
+                    >
+                      {nextAppointmentStatusLabel}
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" className="flex-1" onClick={openDirections}>
+                  <MapPin className="w-4 h-4 mr-1" />
+                  Directions
+                </Button>
+                <Button
+                  size="sm"
+                  className="flex-1 bg-teal-600 hover:bg-teal-700 text-white"
+                  onClick={() => onNavigate("appointments")}
+                >
+                  View Details
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
               <p className="text-sm text-gray-500 mb-1">Next Appointment</p>
-              <h3 className="text-gray-900 mb-1">Dr. Sarah Johnson</h3>
-              <p className="text-gray-600">Tomorrow, Nov 19 • 2:30 PM</p>
-              <p className="text-sm text-gray-500">Sunnybrook Health Sciences Centre</p>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" className="flex-1">
-              <MapPin className="w-4 h-4 mr-1" />
-              Directions
-            </Button>
-            <Button size="sm" className="flex-1 bg-teal-600 hover:bg-teal-700 text-white">
-              View Details
-            </Button>
-          </div>
-        </div>
-
-        {/* Recent Activity */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
-                <Activity className="w-6 h-6 text-green-600" />
-              </div>
-              <div>
-                <p className="text-sm text-gray-500">Recent Activity</p>
-                <h3 className="text-gray-900">Updates & Results</h3>
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <div className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg">
-              <div className="w-2 h-2 bg-blue-600 rounded-full mt-2 flex-shrink-0" />
-              <div className="flex-1">
-                <p className="text-gray-900">New lab results from LifeLabs</p>
-                <p className="text-sm text-gray-500">2 hours ago</p>
-              </div>
-              <ChevronRight className="w-5 h-5 text-gray-400" />
-            </div>
-
-            <div className="flex items-start gap-3 p-3 bg-green-50 rounded-lg">
-              <div className="w-2 h-2 bg-green-600 rounded-full mt-2 flex-shrink-0" />
-              <div className="flex-1">
-                <p className="text-gray-900">Prescription ready for pickup</p>
-                <p className="text-sm text-gray-500">Yesterday • Shoppers Drug Mart</p>
-              </div>
-              <ChevronRight className="w-5 h-5 text-gray-400" />
-            </div>
-
-            <div className="flex items-start gap-3 p-3 bg-purple-50 rounded-lg">
-              <div className="w-2 h-2 bg-purple-600 rounded-full mt-2 flex-shrink-0" />
-              <div className="flex-1">
-                <p className="text-gray-900">Appointment confirmed</p>
-                <p className="text-sm text-gray-500">Nov 15 • Dr. Sarah Johnson</p>
-              </div>
-              <ChevronRight className="w-5 h-5 text-gray-400" />
-            </div>
-          </div>
-
-          <button className="w-full text-center text-teal-600 mt-4">
-            View All Activity
-          </button>
+              <h3 className="text-gray-900 mb-1">No upcoming appointments</h3>
+              <p className="text-gray-600 mb-4">Book your next visit to stay on track.</p>
+              <Button
+                size="sm"
+                className="w-full bg-teal-600 hover:bg-teal-700 text-white"
+                onClick={() => onNavigate("appointments")}
+              >
+                Schedule Appointment
+              </Button>
+            </>
+          )}
         </div>
 
         {/* Health Score Card (moved lower) */}

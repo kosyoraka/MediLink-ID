@@ -76,6 +76,7 @@ export type PatientAppointment = {
   patientId: string;
   staffId: string;
   hospitalId: string;
+  hospitalName?: string | null;
   providerName: string;
   appointmentType: string; // currently from appointments.specialty
   visitMode: string; // currently from appointments.type (in-person/virtual/phone)
