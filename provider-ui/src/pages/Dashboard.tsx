@@ -51,6 +51,23 @@ function isTodayISO(iso: string) {
   );
 }
 
+function formatTime(iso: string) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+function initials(name: string) {
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase())
+    .join("");
+}
+
+
+
 type PatientListRow = {
   patient_id: string;
 };
@@ -67,9 +84,13 @@ type StaffConversationsResponse = {
 // ✅ minimal shape we need for counting "today"
 type StaffAppointmentRow = {
   id: string;
-  startTime: string; // ISO string
-  status: string;    // Scheduled | Confirmed | Completed | Cancelled
+  startTime: string; 
+  status: string;
+  patientName?: string | null;
+  patientPhoto?: string | null;
+  type?: string | null;
 };
+
 
 export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
   const staff = getStoredStaff();
@@ -151,12 +172,16 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
           : [];
 
         setAppointments(
-          rows.map((r: any) => ({
-            id: String(r.id),
-            startTime: String(r.startTime ?? r.start_time),
-            status: String(r.status),
-          }))
-        );
+  rows.map((r: any) => ({
+    id: String(r.id),
+    startTime: String(r.startTime ?? r.start_time),
+    status: String(r.status),
+    patientName: String(r.patientName ?? r.patient_name ?? "Patient"),
+    patientPhoto: (r.patientPhoto ?? r.patient_photo ?? null) as string | null,
+    type: String(r.type ?? r.appointmentType ?? "Appointment"),
+  }))
+);
+
       } catch {
         if (!alive) return;
         setAppointments([]);
@@ -318,20 +343,54 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
                       className="flex items-center gap-4 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
                       onClick={() => onNavigate("appointments")}
                     >
-                      <img
-                        src={appointment.patientPhoto}
-                        alt={appointment.patientName}
-                        className="w-12 h-12 rounded-full object-cover"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-gray-900">{appointment.patientName}</p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <Clock className="w-3 h-3 text-gray-500" />
-                          <p className="text-sm text-gray-600">{appointment.time}</p>
-                          <span className="text-gray-400">•</span>
-                          <p className="text-sm text-gray-600">{appointment.type}</p>
-                        </div>
-                      </div>
+                      {(() => {
+  // pull whatever fields exist (supports multiple backend shapes)
+  const patientName =
+    (appointment as any).patientName ??
+    (appointment as any).patient_name ??
+    (appointment as any).patient_full_name ??
+    "Patient";
+
+  const patientPhoto =
+    (appointment as any).patientPhoto ??
+    (appointment as any).patient_photo ??
+    (appointment as any).patient_avatar ??
+    null;
+
+  const apptType =
+    (appointment as any).type ??
+    (appointment as any).appointmentType ??
+    (appointment as any).reason ??
+    "Appointment";
+
+  const timeText = formatTime(appointment.startTime);
+
+  return (
+    <>
+      {patientPhoto ? (
+        <img
+          src={patientPhoto}
+          alt={patientName}
+          className="w-12 h-12 rounded-full object-cover"
+        />
+      ) : (
+        <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center text-gray-700 font-semibold">
+          {initials(patientName) || "?"}
+        </div>
+      )}
+
+      <div className="flex-1 min-w-0">
+        <p className="font-medium text-gray-900 truncate">{patientName}</p>
+        <div className="flex items-center gap-2 mt-1">
+          <Clock className="w-3 h-3 text-gray-500" />
+          <p className="text-sm text-gray-600">{timeText}</p>
+          <span className="text-gray-400">•</span>
+          <p className="text-sm text-gray-600 truncate">{apptType}</p>
+        </div>
+      </div>
+    </>
+  );
+})()}
                       <Badge variant={getStatusColor(appointment.status)}>
                         {appointment.status}
                       </Badge>
