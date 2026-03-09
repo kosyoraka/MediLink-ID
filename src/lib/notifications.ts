@@ -28,14 +28,15 @@ function getPeriod(d: Date): AppNotification["period"] {
 export function buildAppointmentNotifications(
   appointments: PatientAppointment[]
 ): AppNotification[] {
-  const now = Date.now();
   return [...appointments]
     .filter((a) => {
       const status = String(a.status || "").toLowerCase().trim();
-      const startTs = new Date(a.startTime).getTime();
-      const isUpcoming = Number.isFinite(startTs) && startTs >= now;
-      const isActive = status === "confirmed" || status === "scheduled" || status === "pending";
-      return isUpcoming && isActive;
+      const isActive =
+        status === "confirmed" ||
+        status === "scheduled" ||
+        status === "pending" ||
+        status === "completed";
+      return isActive;
     })
     .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
     .map((a) => {
@@ -48,15 +49,20 @@ export function buildAppointmentNotifications(
       });
       const status = String(a.status || "").toLowerCase().trim();
       const isConfirmed = status === "confirmed";
+      const isCompleted = status === "completed";
 
       return {
         id: `appointment:${a.id}`,
-        title: isConfirmed ? "Appointment confirmed" : "Waiting for confirmation",
+        title: isCompleted
+          ? "Appointment completed"
+          : isConfirmed
+          ? "Appointment confirmed"
+          : "Waiting for confirmation",
         detail: `${whenText} • ${a.providerName}`,
         isoDate: a.startTime,
         period: getPeriod(when),
-        dotColor: isConfirmed ? "bg-purple-600" : "bg-yellow-600",
-        bgColor: isConfirmed ? "bg-purple-50" : "bg-yellow-50",
+        dotColor: isCompleted ? "bg-gray-600" : isConfirmed ? "bg-purple-600" : "bg-yellow-600",
+        bgColor: isCompleted ? "bg-gray-50" : isConfirmed ? "bg-purple-50" : "bg-yellow-50",
       };
     });
 }
