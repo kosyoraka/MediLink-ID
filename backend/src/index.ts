@@ -6,6 +6,8 @@ import cors from "cors";
 import bcrypt from "bcrypt";
 import { pool } from "./db";
 import { randomUUID, randomBytes } from "crypto";
+import { readFile } from "fs/promises";
+import path from "path";
 import aiRouter from './ai';
 import * as jwt from "jsonwebtoken";
 import { OAuth2Client, type TokenPayload } from "google-auth-library";
@@ -97,6 +99,26 @@ function getGoogleClientId() {
 }
 
 const googleClient = new OAuth2Client();
+const uuidRegex =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const DOCUMENT_CATEGORIES = new Set([
+  "labs",
+  "imaging",
+  "visits",
+  "prescriptions",
+  "insurance",
+  "other",
+]);
+
+const DOCUMENT_REQUEST_STATUSES = new Set([
+  "pending",
+  "viewed",
+  "in_progress",
+  "fulfilled",
+  "declined",
+  "expired",
+]);
 
 async function verifyGoogleCredential(idToken: string): Promise<TokenPayload> {
   const ticket = await googleClient.verifyIdToken({
@@ -133,6 +155,131 @@ async function ensureActiveConnection(patientId: string, providerId: string) {
 
 const isDev = process.env.NODE_ENV !== "production";
 
+async function ensureDocumentsSchema() {
+  try {
+    const sql = await readFile(path.resolve(__dirname, "../004_documents_domain.sql"), "utf8");
+    await pool.query(sql);
+  } catch (error) {
+    console.error("Documents schema setup skipped:", error);
+  }
+}
+
+function isUuid(value: string | undefined | null) {
+  return Boolean(value && uuidRegex.test(String(value)));
+}
+
+function normalizeDocumentCategory(value: unknown) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return DOCUMENT_CATEGORIES.has(normalized) ? normalized : "";
+}
+
+function formatFileSize(size: number | null | undefined) {
+  if (!size || size <= 0) return "—";
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function documentStatusLabel(status: string, uploadedByPatient: boolean) {
+  if (status === "provider_uploaded" || status === "provider_verified" || status === "organization_verified") {
+    return "Verified";
+  }
+  if (status === "patient_uploaded" || uploadedByPatient) {
+    return "Uploaded by you";
+  }
+  if (status === "unverified") return "Pending review";
+  if (status === "rejected") return "Needs replacement";
+  if (status === "superseded") return "Replaced";
+  return "Pending review";
+}
+
+function mapDocumentRow(row: any, viewer: "patient" | "provider") {
+  const uploadedByPatient = Boolean(row.uploaded_by_patient_id);
+  return {
+    id: String(row.id),
+    patientId: String(row.patient_id),
+    patientName:
+      row.patient_name ||
+      [row.first_name, row.last_name].filter(Boolean).join(" ").trim() ||
+      "Patient",
+    hospitalId: row.hospital_id ? String(row.hospital_id) : null,
+    hospitalName: row.hospital_name || null,
+    title: row.title,
+    category: row.category,
+    subtype: row.subtype || null,
+    description: row.description || "",
+    sourceType: row.source_type,
+    sourceOrganizationName:
+      row.source_organization_name ||
+      row.hospital_name ||
+      (uploadedByPatient ? "Personal upload" : "Provider upload"),
+    verificationStatus: row.verification_status,
+    verificationLabel: documentStatusLabel(String(row.verification_status), uploadedByPatient),
+    visibilityStatus: row.visibility_status,
+    serviceDate: row.service_date,
+    uploadDate: row.created_at,
+    fileName: row.file_name,
+    mimeType: row.mime_type || null,
+    fileSizeBytes: row.file_size_bytes ?? null,
+    fileSizeLabel: formatFileSize(Number(row.file_size_bytes) || 0),
+    fileUrl: row.storage_url,
+    requestId: row.request_id ? String(row.request_id) : null,
+    uploadedBy:
+      viewer === "provider"
+        ? uploadedByPatient
+          ? "Patient"
+          : row.uploaded_by_staff_name || "Provider"
+        : uploadedByPatient
+        ? "patient"
+        : "provider",
+    verifiedByName: row.verified_by_staff_name || null,
+  };
+}
+
+const documentSelectSql = `
+  SELECT
+    d.id,
+    d.patient_id,
+    d.hospital_id,
+    d.uploaded_by_patient_id,
+    d.uploaded_by_staff_id,
+    d.request_id,
+    d.source_type,
+    d.source_organization_name,
+    d.category,
+    d.subtype,
+    d.title,
+    d.description,
+    d.verification_status,
+    d.visibility_status,
+    d.service_date,
+    d.created_at,
+    d.updated_at,
+    h.name AS hospital_name,
+    pp.first_name,
+    pp.last_name,
+    NULLIF(TRIM(COALESCE(pp.first_name, '') || ' ' || COALESCE(pp.last_name, '')), '') AS patient_name,
+    uploader.full_name AS uploaded_by_staff_name,
+    verifier.full_name AS verified_by_staff_name,
+    df.file_name,
+    df.mime_type,
+    df.file_size_bytes,
+    df.storage_url
+  FROM medical_documents d
+  LEFT JOIN hospitals h ON h.id = d.hospital_id
+  LEFT JOIN patient_profiles pp ON pp.patient_id = d.patient_id
+  LEFT JOIN staff_accounts uploader ON uploader.id = d.uploaded_by_staff_id
+  LEFT JOIN staff_accounts verifier ON verifier.id = d.verified_by_staff_id
+  LEFT JOIN LATERAL (
+    SELECT file_name, mime_type, file_size_bytes, storage_url
+    FROM document_files
+    WHERE document_id = d.id
+      AND is_primary = true
+    ORDER BY created_at DESC
+    LIMIT 1
+  ) df ON TRUE
+`;
+
 app.use(
   cors({
     origin(origin, cb) {
@@ -155,7 +302,8 @@ app.use(
 
 
 
-app.use(express.json());
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use('/api/ai', aiRouter);
 
 // IMPORTANT: this should be reachable from iPhone.
@@ -2812,13 +2960,13 @@ app.patch("/api/staff/appointments/:id/status", requireStaffAuth, async (req: an
 
 
 /**
- * Get hospitals the patient is connected to (hospital-level access)
- * GET /api/patient/hospitals?patientId=...
+ * Get hospitals the authenticated patient is connected to (hospital-level access)
+ * GET /api/patient/hospitals
  */
-app.get("/api/patient/hospitals", async (req, res) => {
+app.get("/api/patient/hospitals", requirePatientAuth, async (req: any, res) => {
   try {
-    const patientId = req.query.patientId as string;
-    if (!patientId) return res.status(400).json({ message: "Missing patientId" });
+    const patientId = req.patientId as string;
+    if (!patientId) return res.status(401).json({ message: "Unauthorized" });
 
     const result = await pool.query(
       `
@@ -2983,6 +3131,626 @@ app.get("/api/patient/booking/provider-staff", async (req, res) => {
 
 
 
+// ------------------- DOCUMENTS / RECORDS -------------------
+
+app.get("/api/patient/records", requirePatientAuth, async (req: any, res) => {
+  const patientId = req.patientId;
+  const category = normalizeDocumentCategory(req.query.category);
+  const source = String(req.query.source || "all").trim().toLowerCase();
+  const verification = String(req.query.verification || "all").trim().toLowerCase();
+  const search = String(req.query.search || "").trim();
+
+  const values: any[] = [patientId];
+  const where: string[] = [`d.patient_id = $1::uuid`];
+
+  if (category) {
+    values.push(category);
+    where.push(`d.category = $${values.length}`);
+  }
+
+  if (source === "patient") {
+    where.push(`d.uploaded_by_patient_id IS NOT NULL`);
+  } else if (source === "provider") {
+    where.push(`d.uploaded_by_staff_id IS NOT NULL`);
+  }
+
+  if (verification === "verified") {
+    where.push(`d.verification_status IN ('provider_uploaded', 'provider_verified', 'organization_verified')`);
+  } else if (verification === "pending") {
+    where.push(`d.verification_status IN ('unverified', 'patient_uploaded')`);
+  } else if (verification === "patient_uploaded") {
+    where.push(`d.verification_status = 'patient_uploaded'`);
+  }
+
+  if (search) {
+    values.push(`%${search}%`);
+    where.push(`(
+      d.title ILIKE $${values.length}
+      OR COALESCE(d.subtype, '') ILIKE $${values.length}
+      OR COALESCE(d.source_organization_name, '') ILIKE $${values.length}
+      OR COALESCE(h.name, '') ILIKE $${values.length}
+    )`);
+  }
+
+  try {
+    const result = await pool.query(
+      `
+      ${documentSelectSql}
+      WHERE ${where.join(" AND ")}
+      ORDER BY d.service_date DESC NULLS LAST, d.created_at DESC
+      `,
+      values
+    );
+
+    return res.json({
+      documents: result.rows.map((row) => mapDocumentRow(row, "patient")),
+    });
+  } catch (e: any) {
+    console.error("GET /api/patient/records error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to fetch records" });
+  }
+});
+
+app.get("/api/patient/records/:id", requirePatientAuth, async (req: any, res) => {
+  const patientId = req.patientId;
+  const documentId = String(req.params.id || "");
+  if (!isUuid(documentId)) {
+    return res.status(400).json({ message: "Invalid document id" });
+  }
+
+  try {
+    const result = await pool.query(
+      `
+      ${documentSelectSql}
+      WHERE d.id = $1::uuid
+        AND d.patient_id = $2::uuid
+      LIMIT 1
+      `,
+      [documentId, patientId]
+    );
+
+    if ((result.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: "Document not found" });
+    }
+
+    return res.json({ document: mapDocumentRow(result.rows[0], "patient") });
+  } catch (e: any) {
+    console.error("GET /api/patient/records/:id error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to fetch document" });
+  }
+});
+
+app.post("/api/patient/records/upload", requirePatientAuth, async (req: any, res) => {
+  const patientId = req.patientId;
+  const {
+    hospitalId,
+    category,
+    subtype,
+    title,
+    description,
+    sourceOrganizationName,
+    serviceDate,
+    fileName,
+    mimeType,
+    fileSizeBytes,
+    fileDataUrl,
+  } = req.body ?? {};
+
+  const normalizedCategory = normalizeDocumentCategory(category);
+  if (!normalizedCategory || !title || !fileName || !fileDataUrl) {
+    return res.status(400).json({ message: "category, title, fileName, and fileDataUrl are required" });
+  }
+
+  if (serviceDate && Number.isNaN(Date.parse(String(serviceDate)))) {
+    return res.status(400).json({ message: "Invalid serviceDate" });
+  }
+
+  if (hospitalId && !isUuid(String(hospitalId))) {
+    return res.status(400).json({ message: "Invalid hospitalId" });
+  }
+
+  try {
+    let hospitalName: string | null = null;
+    if (hospitalId) {
+      const connection = await pool.query(
+        `
+        SELECT h.name
+        FROM hospitals h
+        WHERE h.id = $2::uuid
+          AND (
+            EXISTS (
+              SELECT 1
+              FROM patient_hospital_connections phc
+              WHERE phc.patient_id = $1::uuid
+                AND phc.hospital_id = $2::uuid
+                AND phc.disconnected_at IS NULL
+            )
+            OR EXISTS (
+              SELECT 1
+              FROM patient_provider_connections ppc
+              WHERE ppc.patient_id = $1::uuid
+                AND ppc.provider_id = $2::uuid
+                AND ppc.disconnected_at IS NULL
+            )
+          )
+        LIMIT 1
+        `,
+        [patientId, hospitalId]
+      );
+
+      if ((connection.rowCount ?? 0) === 0) {
+        return res.status(403).json({ message: "You are not connected to this hospital" });
+      }
+      hospitalName = connection.rows[0].name || null;
+    }
+
+    const documentId = randomUUID();
+    await pool.query(
+      `
+      INSERT INTO medical_documents (
+        id, patient_id, hospital_id, uploaded_by_patient_id, source_type, source_organization_name,
+        category, subtype, title, description, verification_status, visibility_status, service_date
+      )
+      VALUES (
+        $1::uuid, $2::uuid, $3::uuid, $2::uuid, 'patient', $4,
+        $5, $6, $7, $8, 'patient_uploaded', 'patient_and_connected_providers', $9
+      )
+      `,
+      [
+        documentId,
+        patientId,
+        hospitalId || null,
+        String(sourceOrganizationName || hospitalName || "Personal upload").trim(),
+        normalizedCategory,
+        subtype ? String(subtype).trim() : null,
+        String(title).trim(),
+        description ? String(description).trim() : null,
+        serviceDate || null,
+      ]
+    );
+
+    await pool.query(
+      `
+      INSERT INTO document_files (
+        id, document_id, file_name, mime_type, file_size_bytes, storage_url, is_primary
+      )
+      VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, true)
+      `,
+      [
+        randomUUID(),
+        documentId,
+        String(fileName).trim(),
+        mimeType ? String(mimeType).trim() : null,
+        Number(fileSizeBytes) || null,
+        String(fileDataUrl),
+      ]
+    );
+
+    const fresh = await pool.query(
+      `
+      ${documentSelectSql}
+      WHERE d.id = $1::uuid
+      LIMIT 1
+      `,
+      [documentId]
+    );
+
+    return res.status(201).json({ document: mapDocumentRow(fresh.rows[0], "patient") });
+  } catch (e: any) {
+    console.error("POST /api/patient/records/upload error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to upload document" });
+  }
+});
+
+app.get("/api/patient/record-requests", requirePatientAuth, async (req: any, res) => {
+  const patientId = req.patientId;
+  try {
+    const result = await pool.query(
+      `
+      SELECT
+        r.id,
+        r.patient_id,
+        r.hospital_id,
+        r.category,
+        r.subtype,
+        r.message,
+        r.status,
+        r.linked_document_id,
+        r.created_at,
+        r.updated_at,
+        r.resolved_at,
+        h.name AS hospital_name
+      FROM document_requests r
+      JOIN hospitals h ON h.id = r.hospital_id
+      WHERE r.patient_id = $1::uuid
+      ORDER BY r.created_at DESC
+      `,
+      [patientId]
+    );
+
+    return res.json({
+      requests: result.rows.map((row) => ({
+        id: String(row.id),
+        hospitalId: String(row.hospital_id),
+        hospitalName: row.hospital_name,
+        category: row.category,
+        subtype: row.subtype || null,
+        message: row.message || "",
+        status: row.status,
+        linkedDocumentId: row.linked_document_id ? String(row.linked_document_id) : null,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        resolvedAt: row.resolved_at,
+      })),
+    });
+  } catch (e: any) {
+    console.error("GET /api/patient/record-requests error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to fetch requests" });
+  }
+});
+
+app.post("/api/patient/record-requests", requirePatientAuth, async (req: any, res) => {
+  const patientId = req.patientId;
+  const { hospitalId, category, subtype, message } = req.body ?? {};
+
+  const normalizedCategory = normalizeDocumentCategory(category);
+  if (!isUuid(String(hospitalId)) || !normalizedCategory) {
+    return res.status(400).json({ message: "hospitalId and category are required" });
+  }
+
+  try {
+    const connected = await pool.query(
+      `
+      SELECT h.name
+      FROM hospitals h
+      WHERE h.id = $2::uuid
+        AND (
+          EXISTS (
+            SELECT 1
+            FROM patient_hospital_connections phc
+            WHERE phc.patient_id = $1::uuid
+              AND phc.hospital_id = $2::uuid
+              AND phc.disconnected_at IS NULL
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM patient_provider_connections ppc
+            WHERE ppc.patient_id = $1::uuid
+              AND ppc.provider_id = $2::uuid
+              AND ppc.disconnected_at IS NULL
+          )
+        )
+      LIMIT 1
+      `,
+      [patientId, hospitalId]
+    );
+
+    if ((connected.rowCount ?? 0) === 0) {
+      return res.status(403).json({ message: "You are not actively connected to this hospital" });
+    }
+
+    const requestId = randomUUID();
+    await pool.query(
+      `
+      INSERT INTO document_requests (
+        id, patient_id, hospital_id, category, subtype, message, status
+      )
+      VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, 'pending')
+      `,
+      [
+        requestId,
+        patientId,
+        hospitalId,
+        normalizedCategory,
+        subtype ? String(subtype).trim() : null,
+        message ? String(message).trim() : null,
+      ]
+    );
+
+    return res.status(201).json({
+      request: {
+        id: requestId,
+        hospitalId: String(hospitalId),
+        hospitalName: connected.rows[0].name,
+        category: normalizedCategory,
+        subtype: subtype ? String(subtype).trim() : null,
+        message: message ? String(message).trim() : "",
+        status: "pending",
+      },
+    });
+  } catch (e: any) {
+    console.error("POST /api/patient/record-requests error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to create request" });
+  }
+});
+
+app.get("/api/staff/documents", requireStaffAuth, async (req: any, res) => {
+  const hospitalId = req.staffHospitalId;
+  const category = normalizeDocumentCategory(req.query.category);
+  const patientId = String(req.query.patientId || "").trim();
+  const verification = String(req.query.verification || "all").trim().toLowerCase();
+  const search = String(req.query.search || "").trim();
+  const source = String(req.query.source || "all").trim().toLowerCase();
+
+  const values: any[] = [hospitalId];
+  const where: string[] = [
+    `(
+      d.hospital_id = $1::uuid
+      OR EXISTS (
+        SELECT 1
+        FROM patient_provider_connections ppc
+        WHERE ppc.patient_id = d.patient_id
+          AND ppc.provider_id = $1::uuid
+          AND ppc.disconnected_at IS NULL
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM patient_hospital_connections phc
+        WHERE phc.patient_id = d.patient_id
+          AND phc.hospital_id = $1::uuid
+          AND phc.disconnected_at IS NULL
+      )
+    )`,
+    `(d.hospital_id IS NOT NULL OR d.uploaded_by_staff_id IS NOT NULL)`,
+  ];
+
+  if (category) {
+    values.push(category);
+    where.push(`d.category = $${values.length}`);
+  }
+
+  if (isUuid(patientId)) {
+    values.push(patientId);
+    where.push(`d.patient_id = $${values.length}::uuid`);
+  }
+
+  if (verification === "verified") {
+    where.push(`d.verification_status IN ('provider_uploaded', 'provider_verified', 'organization_verified')`);
+  } else if (verification === "pending") {
+    where.push(`d.verification_status IN ('unverified', 'patient_uploaded')`);
+  } else if (verification === "rejected") {
+    where.push(`d.verification_status = 'rejected'`);
+  }
+
+  if (source === "patient") {
+    where.push(`d.uploaded_by_patient_id IS NOT NULL`);
+  } else if (source === "provider") {
+    where.push(`d.uploaded_by_staff_id IS NOT NULL`);
+  }
+
+  if (search) {
+    values.push(`%${search}%`);
+    where.push(`(
+      d.title ILIKE $${values.length}
+      OR COALESCE(d.subtype, '') ILIKE $${values.length}
+      OR COALESCE(d.source_organization_name, '') ILIKE $${values.length}
+      OR COALESCE(pp.first_name, '') ILIKE $${values.length}
+      OR COALESCE(pp.last_name, '') ILIKE $${values.length}
+    )`);
+  }
+
+  try {
+    const result = await pool.query(
+      `
+      ${documentSelectSql}
+      WHERE ${where.join(" AND ")}
+      ORDER BY d.service_date DESC NULLS LAST, d.created_at DESC
+      `,
+      values
+    );
+
+    return res.json({
+      documents: result.rows.map((row) => mapDocumentRow(row, "provider")),
+    });
+  } catch (e: any) {
+    console.error("GET /api/staff/documents error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to fetch documents" });
+  }
+});
+
+app.post("/api/staff/documents/upload", requireStaffAuth, async (req: any, res) => {
+  const staffId = req.staffId;
+  const hospitalId = req.staffHospitalId;
+  const {
+    patientId,
+    category,
+    subtype,
+    title,
+    description,
+    sourceOrganizationName,
+    serviceDate,
+    fileName,
+    mimeType,
+    fileSizeBytes,
+    fileDataUrl,
+    requestId,
+  } = req.body ?? {};
+
+  const normalizedCategory = normalizeDocumentCategory(category);
+  if (!isUuid(String(patientId)) || !normalizedCategory || !title || !fileName || !fileDataUrl) {
+    return res.status(400).json({ message: "patientId, category, title, fileName, and fileDataUrl are required" });
+  }
+
+  if (requestId && !isUuid(String(requestId))) {
+    return res.status(400).json({ message: "Invalid requestId" });
+  }
+
+  try {
+    const relation = await pool.query(
+      `
+      SELECT h.name
+      FROM hospitals h
+      WHERE h.id = $2::uuid
+        AND (
+          EXISTS (
+            SELECT 1
+            FROM patient_hospital_connections phc
+            WHERE phc.patient_id = $1::uuid
+              AND phc.hospital_id = $2::uuid
+              AND phc.disconnected_at IS NULL
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM patient_provider_connections ppc
+            WHERE ppc.patient_id = $1::uuid
+              AND ppc.provider_id = $2::uuid
+              AND ppc.disconnected_at IS NULL
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM document_requests dr
+            WHERE dr.id = $3::uuid
+              AND dr.patient_id = $1::uuid
+              AND dr.hospital_id = $2::uuid
+              AND dr.status IN ('pending', 'viewed', 'in_progress')
+          )
+        )
+      LIMIT 1
+      `,
+      [patientId, hospitalId, requestId || null]
+    );
+
+    if ((relation.rowCount ?? 0) === 0) {
+      return res.status(403).json({ message: "This patient is not linked to your hospital" });
+    }
+
+    const documentId = randomUUID();
+    await pool.query(
+      `
+      INSERT INTO medical_documents (
+        id, patient_id, hospital_id, uploaded_by_staff_id, request_id, source_type, source_organization_name,
+        category, subtype, title, description, verification_status, visibility_status, service_date, verified_at, verified_by_staff_id
+      )
+      VALUES (
+        $1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, 'provider', $6,
+        $7, $8, $9, $10, 'provider_uploaded', 'patient_and_connected_providers', $11, NOW(), $4::uuid
+      )
+      `,
+      [
+        documentId,
+        patientId,
+        hospitalId,
+        staffId,
+        requestId || null,
+        String(sourceOrganizationName || relation.rows[0].name || "Provider upload").trim(),
+        normalizedCategory,
+        subtype ? String(subtype).trim() : null,
+        String(title).trim(),
+        description ? String(description).trim() : null,
+        serviceDate || null,
+      ]
+    );
+
+    await pool.query(
+      `
+      INSERT INTO document_files (
+        id, document_id, file_name, mime_type, file_size_bytes, storage_url, is_primary
+      )
+      VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, true)
+      `,
+      [
+        randomUUID(),
+        documentId,
+        String(fileName).trim(),
+        mimeType ? String(mimeType).trim() : null,
+        Number(fileSizeBytes) || null,
+        String(fileDataUrl),
+      ]
+    );
+
+    if (requestId) {
+      await pool.query(
+        `
+        UPDATE document_requests
+        SET status = 'fulfilled',
+            linked_document_id = $2::uuid,
+            resolved_at = NOW(),
+            updated_at = NOW()
+        WHERE id = $1::uuid
+          AND hospital_id = $3::uuid
+        `,
+        [requestId, documentId, hospitalId]
+      );
+    }
+
+    const fresh = await pool.query(
+      `
+      ${documentSelectSql}
+      WHERE d.id = $1::uuid
+      LIMIT 1
+      `,
+      [documentId]
+    );
+
+    return res.status(201).json({ document: mapDocumentRow(fresh.rows[0], "provider") });
+  } catch (e: any) {
+    console.error("POST /api/staff/documents/upload error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to upload document" });
+  }
+});
+
+app.get("/api/staff/document-requests", requireStaffAuth, async (req: any, res) => {
+  const hospitalId = req.staffHospitalId;
+  const status = String(req.query.status || "all").trim().toLowerCase();
+
+  const values: any[] = [hospitalId];
+  const where: string[] = [`r.hospital_id = $1::uuid`];
+
+  if (status !== "all" && DOCUMENT_REQUEST_STATUSES.has(status)) {
+    values.push(status);
+    where.push(`r.status = $${values.length}`);
+  }
+
+  try {
+    const result = await pool.query(
+      `
+      SELECT
+        r.id,
+        r.patient_id,
+        r.hospital_id,
+        r.category,
+        r.subtype,
+        r.message,
+        r.status,
+        r.linked_document_id,
+        r.created_at,
+        r.updated_at,
+        r.resolved_at,
+        h.name AS hospital_name,
+        NULLIF(TRIM(COALESCE(pp.first_name, '') || ' ' || COALESCE(pp.last_name, '')), '') AS patient_name
+      FROM document_requests r
+      JOIN hospitals h ON h.id = r.hospital_id
+      LEFT JOIN patient_profiles pp ON pp.patient_id = r.patient_id
+      WHERE ${where.join(" AND ")}
+      ORDER BY r.created_at DESC
+      `,
+      values
+    );
+
+    return res.json({
+      requests: result.rows.map((row) => ({
+        id: String(row.id),
+        patientId: String(row.patient_id),
+        patientName: row.patient_name || "Patient",
+        hospitalId: String(row.hospital_id),
+        hospitalName: row.hospital_name,
+        category: row.category,
+        subtype: row.subtype || null,
+        message: row.message || "",
+        status: row.status,
+        linkedDocumentId: row.linked_document_id ? String(row.linked_document_id) : null,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        resolvedAt: row.resolved_at,
+      })),
+    });
+  } catch (e: any) {
+    console.error("GET /api/staff/document-requests error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to fetch requests" });
+  }
+});
+
+
 // GET connected providers for the logged-in patient
 // GET /api/patient/connected-providers
 app.get("/api/patient/connected-providers", requireAuth, async (req, res) => {
@@ -3030,20 +3798,18 @@ app.get("/api/patient/connected-providers", requireAuth, async (req, res) => {
   }
 });
 
-
-
-
-
-
-
-
-
 const port = Number(process.env.PORT || 4000);
-// app.listen(port, () => {
-//   console.log(`Backend running on http://localhost:${port}`);
-// });
-app.listen(port, "0.0.0.0", () => {
-  console.log(`Backend running on http://0.0.0.0:${port}`);
+
+async function bootstrap() {
+  await ensureDocumentsSchema();
+  app.listen(port, "0.0.0.0", () => {
+    console.log(`Backend running on http://0.0.0.0:${port}`);
+  });
+}
+
+bootstrap().catch((error) => {
+  console.error("Backend bootstrap failed:", error);
+  process.exit(1);
 });
 
 // const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;

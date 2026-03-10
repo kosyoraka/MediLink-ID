@@ -8,13 +8,15 @@ import {
   Upload,
   CalendarCheck,
   Clock,
+  ClipboardList,
+  Activity,
+  ChevronRight,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { recentActivities } from "@/lib/mockData";
 import { getRelativeTime } from "@/lib/utils";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, type ProviderDocument, type ProviderDocumentRequest } from "@/lib/api";
 
 interface DashboardProps {
   onNavigate: (page: string, data?: any) => void;
@@ -100,6 +102,8 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
 
   // ✅ NEW: real appointments from DB (for Today's Appointments count)
   const [appointments, setAppointments] = useState<StaffAppointmentRow[]>([]);
+  const [documents, setDocuments] = useState<ProviderDocument[]>([]);
+  const [requests, setRequests] = useState<ProviderDocumentRequest[]>([]);
 
   // Patients count (existing)
   useEffect(() => {
@@ -107,12 +111,37 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
 
     (async () => {
       try {
-        const rows = await apiFetch<PatientListRow[]>("/api/patients");
+        const rows = await apiFetch<PatientListRow[]>("/api/staff/patients/connected");
         if (!alive) return;
         setPatientCount(rows.length);
       } catch {
         if (!alive) return;
         setPatientCount(null);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      try {
+        const [documentData, requestData] = await Promise.all([
+          apiFetch<{ documents: ProviderDocument[] }>("/api/staff/documents"),
+          apiFetch<{ requests: ProviderDocumentRequest[] }>("/api/staff/document-requests?status=pending"),
+        ]);
+
+        if (!alive) return;
+        setDocuments(documentData.documents || []);
+        setRequests(requestData.requests || []);
+      } catch {
+        if (!alive) return;
+        setDocuments([]);
+        setRequests([]);
       }
     })();
 
@@ -203,7 +232,29 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
     );
   }, [appointments]);
 
-  const recentDocuments = 12; // Mock count
+  const recentDocuments = useMemo(() => {
+    const cutoff = Date.now() - 4 * 60 * 60 * 1000;
+    return documents.filter((doc) => {
+      const ts = new Date(doc.uploadDate).getTime();
+      return !Number.isNaN(ts) && ts >= cutoff;
+    }).length;
+  }, [documents]);
+
+  const upcomingToday = useMemo(
+    () =>
+      todayAppointments.filter((appointment) => {
+        const ts = new Date(appointment.startTime).getTime();
+        return !Number.isNaN(ts) && ts >= Date.now();
+      }).length,
+    [todayAppointments]
+  );
+
+  const pendingAppointments = useMemo(
+    () => todayAppointments.filter((appointment) => appointment.status === "Pending").length,
+    [todayAppointments]
+  );
+
+  const recentDocumentItems = useMemo(() => documents.slice(0, 3), [documents]);
 
   const firstName =
     staff?.name?.trim()?.split(/\s+/)?.[0] || staff?.name || "there";
@@ -221,18 +272,6 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
       default:
         return "secondary";
     }
-  };
-
-  const getActivityIcon = (iconName: string) => {
-    const icons: Record<string, any> = {
-      "calendar-check": CalendarCheck,
-      "file-text": FileText,
-      "user-plus": UserPlus,
-      "message-square": MessageSquare,
-      calendar: Calendar,
-    };
-    const Icon = icons[iconName] || Calendar;
-    return <Icon className="w-4 h-4" />;
   };
 
   return (
@@ -310,6 +349,7 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
               <div>
                 <p className="text-sm text-gray-600">Recent Documents</p>
                 <p className="text-3xl font-bold text-gray-900 mt-1">{recentDocuments}</p>
+                <p className="text-xs text-gray-500 mt-1">Uploaded in the last 4 hours</p>
               </div>
               <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
                 <FileText className="w-6 h-6 text-orange-600" />
@@ -331,6 +371,21 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                    <p className="text-xs text-gray-500">Upcoming today</p>
+                    <p className="mt-1 text-xl font-semibold text-gray-900">{upcomingToday}</p>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                    <p className="text-xs text-gray-500">Pending confirmations</p>
+                    <p className="mt-1 text-xl font-semibold text-gray-900">{pendingAppointments}</p>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                    <p className="text-xs text-gray-500">Record requests</p>
+                    <p className="mt-1 text-xl font-semibold text-gray-900">{requests.length}</p>
+                  </div>
+                </div>
+
                 {todayAppointments.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
                     <Calendar className="w-12 h-12 mx-auto mb-3 opacity-50" />
@@ -406,32 +461,59 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
         <div>
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle>Recent Activity</CardTitle>
+              <CardTitle>Recent Documents</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {recentActivities.map((activity) => (
-                  <div key={activity.id} className="flex gap-3">
-                    <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0 text-blue-600">
-                      {getActivityIcon(activity.icon)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-900">{activity.description}</p>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {getRelativeTime(activity.timestamp)}
-                      </p>
-                    </div>
-                  </div>
-                ))}
+                {recentDocumentItems.length === 0 ? (
+                  <div className="text-sm text-gray-500">No recent document activity yet.</div>
+                ) : (
+                  recentDocumentItems.map((doc) => (
+                    <button
+                      key={doc.id}
+                      className="flex w-full items-start gap-3 rounded-lg border border-gray-200 p-3 text-left hover:bg-gray-50"
+                      onClick={() => onNavigate("documents")}
+                    >
+                      <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0 text-orange-600">
+                        <FileText className="w-4 h-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-gray-900 line-clamp-1">{doc.title}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {doc.patientName} • {getRelativeTime(doc.uploadDate)}
+                        </p>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
+                    </button>
+                  ))
+                )}
               </div>
             </CardContent>
           </Card>
 
           <Card className="mt-4">
             <CardHeader className="pb-3">
-              <CardTitle>Quick Actions</CardTitle>
+              <CardTitle>Work Queue</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2">
+            <CardContent className="space-y-3">
+              <div className="rounded-lg border border-gray-200 p-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <ClipboardList className="w-4 h-4 text-blue-600" />
+                    <p className="text-sm text-gray-900">Pending record requests</p>
+                  </div>
+                  <Badge variant="outline">{requests.length}</Badge>
+                </div>
+              </div>
+              <div className="rounded-lg border border-gray-200 p-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Activity className="w-4 h-4 text-green-600" />
+                    <p className="text-sm text-gray-900">Unread conversations</p>
+                  </div>
+                  <Badge variant="outline">{unreadMessages}</Badge>
+                </div>
+              </div>
               <Button
                 className="w-full justify-start gap-2"
                 variant="outline"
@@ -443,6 +525,14 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
               <Button className="w-full justify-start gap-2" variant="outline">
                 <Upload className="w-4 h-4" />
                 Upload Document
+              </Button>
+              <Button
+                className="w-full justify-start gap-2"
+                variant="outline"
+                onClick={() => onNavigate("documents")}
+              >
+                <FileText className="w-4 h-4" />
+                Review Requests
               </Button>
             </CardContent>
           </Card>

@@ -63,10 +63,7 @@ interface EmergencyProfileProps {
   onBack: () => void;
 }
 
-//const API_BASE = 'http://localhost:4000';
-// ✅ use API_BASE from config everywhere
-//const res = await fetch(`${API_BASE}/api/...`);
-const res = await fetch(`/api/...`);
+// Use API_BASE from config everywhere.
 
 
 export default function EmergencyProfile({ onBack }: EmergencyProfileProps) {

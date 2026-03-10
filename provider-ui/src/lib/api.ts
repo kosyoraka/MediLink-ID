@@ -39,3 +39,46 @@ export async function apiFetch<T>(
 
   return data as T;
 }
+
+export type ProviderDocument = {
+  id: string;
+  patientId: string;
+  patientName: string;
+  hospitalId: string | null;
+  hospitalName: string | null;
+  title: string;
+  category: "labs" | "imaging" | "visits" | "prescriptions" | "insurance" | "other";
+  subtype: string | null;
+  description: string;
+  sourceType: string;
+  sourceOrganizationName: string;
+  verificationStatus: string;
+  verificationLabel: string;
+  visibilityStatus: string;
+  serviceDate: string | null;
+  uploadDate: string;
+  fileName: string;
+  mimeType: string | null;
+  fileSizeBytes: number | null;
+  fileSizeLabel: string;
+  fileUrl: string;
+  requestId: string | null;
+  uploadedBy: string;
+  verifiedByName: string | null;
+};
+
+export type ProviderDocumentRequest = {
+  id: string;
+  patientId: string;
+  patientName: string;
+  hospitalId: string;
+  hospitalName: string;
+  category: string;
+  subtype: string | null;
+  message: string;
+  status: string;
+  linkedDocumentId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt: string | null;
+};

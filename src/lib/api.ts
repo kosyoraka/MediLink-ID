@@ -85,6 +85,47 @@ export type PatientAppointment = {
   notes: string;
 };
 
+export type RecordDocument = {
+  id: string;
+  patientId: string;
+  patientName: string;
+  hospitalId: string | null;
+  hospitalName: string | null;
+  title: string;
+  category: "labs" | "imaging" | "visits" | "prescriptions" | "insurance" | "other";
+  subtype: string | null;
+  description: string;
+  sourceType: string;
+  sourceOrganizationName: string;
+  verificationStatus: string;
+  verificationLabel: string;
+  visibilityStatus: string;
+  serviceDate: string | null;
+  uploadDate: string;
+  fileName: string;
+  mimeType: string | null;
+  fileSizeBytes: number | null;
+  fileSizeLabel: string;
+  fileUrl: string;
+  requestId: string | null;
+  uploadedBy: string;
+  verifiedByName: string | null;
+};
+
+export type RecordRequest = {
+  id: string;
+  hospitalId: string;
+  hospitalName: string;
+  category: string;
+  subtype: string | null;
+  message: string;
+  status: string;
+  linkedDocumentId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt: string | null;
+};
+
 export const api = {
   // directory
   listProviders: () => request<{ providers: Provider[] }>("/api/providers"),
@@ -105,6 +146,55 @@ export const api = {
   listMyAppointments: (
     status: "upcoming" | "today" | "completed" | "cancelled" | "all" = "upcoming"
   ) => request<{ appointments: PatientAppointment[] }>(`/api/patient/appointments?status=${status}`),
+
+  listMyRecords: (params: {
+    category?: string;
+    source?: "all" | "patient" | "provider";
+    verification?: "all" | "verified" | "pending" | "patient_uploaded";
+    search?: string;
+  } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.category && params.category !== "all") qs.set("category", params.category);
+    if (params.source && params.source !== "all") qs.set("source", params.source);
+    if (params.verification && params.verification !== "all") qs.set("verification", params.verification);
+    if (params.search?.trim()) qs.set("search", params.search.trim());
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return request<{ documents: RecordDocument[] }>(`/api/patient/records${suffix}`);
+  },
+  getMyRecord: (documentId: string) =>
+    request<{ document: RecordDocument }>(`/api/patient/records/${documentId}`),
+  uploadMyRecord: (body: {
+    hospitalId?: string;
+    category: string;
+    subtype?: string;
+    title: string;
+    description?: string;
+    sourceOrganizationName?: string;
+    serviceDate?: string;
+    fileName: string;
+    mimeType?: string;
+    fileSizeBytes?: number;
+    fileDataUrl: string;
+  }) =>
+    request<{ document: RecordDocument }>("/api/patient/records/upload", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  listMyRecordRequests: () => request<{ requests: RecordRequest[] }>("/api/patient/record-requests"),
+  createRecordRequest: (body: {
+    hospitalId: string;
+    category: string;
+    subtype?: string;
+    message?: string;
+  }) =>
+    request<{ request: RecordRequest }>("/api/patient/record-requests", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  listConnectedHospitals: () =>
+    request<Array<{ hospitalId: string; hospitalName: string; hospitalCity: string }>>(
+      "/api/patient/hospitals"
+    ),
 
   // messaging (patient)
   listPatientConversations: () =>
