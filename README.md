@@ -1,249 +1,57 @@
+
 # MediLink ID / HealthConnect ID
 
 ## Project Summary
 
-MediLink is a smart patient portal and medical ID platform that centralizes healthcare information across providers. It enables patients to manage medical records, appointments, medications, and emergency health profiles in one secure system, while also supporting instant emergency access via QR/NFC-style workflows.
-
-The platform includes:
-
-- A patient-facing portal
-- A provider-facing portal
-- A shared backend API
-- A shared PostgreSQL database hosted on Google Cloud SQL
-
-All services run locally using Docker Compose, while all developers connect to the same Cloud SQL database via Cloud SQL Proxy to ensure consistent data across the team.
+We propose developing a smart patient portal and NFC-enabled medical ID system that centralizes medical records, test results, medications, and appointments from multiple providers into one secure platform. The system will also allow patients to instantly share critical health information such as allergies, chronic conditions, and medications through a single NFC tap during emergencies, ensuring timely and accurate care while reducing fragmentation in healthcare record management.
 
 ---
 
-## Problem Statement
+## Challenge Statement/Objective
 
-### Fragmented Medical Records
+### Challenge 1: Fragmented Medical Records
+The current challenge is the lack of centralized access to medical records. Patients often need to log in to multiple platforms or request records from different providers such as family doctors, walk-in clinics, and specialists, making it difficult to manage their health information. 
 
-Patients are forced to manage healthcare information across multiple disconnected systems such as family doctors, specialists, and walk-in clinics.
+**Our Solution:** A patient portal/app that consolidates test results, medications, and upcoming appointments in one secure place.
 
-**Our Solution:**  
-A centralized patient portal that aggregates records, appointments, and health data in one secure place.
+### Challenge 2: Emergency Information Access
+A second challenge arises during emergencies, when patients are repeatedly asked to provide personal information, medical history, and allergy details. 
+
+**Our Solution:** Patients can share this critical information instantly via a single NFC tap, ensuring timely and accurate care.
 
 ---
 
-### Emergency Access to Health Information
+## Description/Context
 
-In emergency situations, critical health information (allergies, chronic conditions, medications) is often unavailable or delayed.
+We are addressing a healthcare accessibility and data management challenge by designing a platform that unifies patient information across different medical providers. This solution spans the domains of **software engineering**, **artificial intelligence**, and **healthcare** by creating a smart, user-friendly system that improves record accessibility and enhances emergency response.
 
-**Our Solution:**  
-Instant access to emergency profiles through QR/NFC-style access, enabling faster and safer care delivery.
+---
+
+## Background
+
+Currently, patients' medical information is fragmented across multiple platforms, requiring manual transfers of reports and repeated form-filling. While some healthcare systems have electronic records, they are often limited to a single hospital or clinic network. 
+
+Our proposed solution offers a **universal, patient-centered platform** that centralizes medical records from family doctors, specialists, and walk-in clinics. By linking the platform to an NFC-enabled ID system, patients can securely share critical information such as chronic illnesses, medications, and allergies in emergencies. 
+
+In the future, this system could:
+- Reduce administrative burden
+- Improve continuity of care
+- Provide a foundation for AI-driven health insights
 
 ---
 
 ## Key Features
 
-- Centralized patient health records
-- Emergency health profile with controlled sharing
-- Patient and provider portals
-- Secure authentication
-- AI-powered symptom guidance (non-diagnostic)
-- Prisma-managed PostgreSQL database
-- Dockerized local development
-- Shared Cloud SQL database (single source of truth)
+- **Centralized Patient Portal**: Consolidates records from multiple healthcare providers
+- **NFC Emergency Access**: Instant access to critical health information via tap
+- **Secure Platform**: PHIPA-compliant data protection
+- **HL7 FHIR Integration**: Standardized EMR connectivity
 
 ---
 
-## Technology Stack
+## Project Team
 
-### Frontend
-- React
-- TypeScript
-- Vite
-- Tailwind CSS
-
-### Backend
-- Node.js
-- Express
-- TypeScript
-- Prisma ORM
-- PostgreSQL (Cloud SQL)
-
-### Infrastructure
-- Docker
-- Docker Compose
-- Google Cloud SQL
-- Cloud SQL Proxy
-- pgAdmin
-- GitHub
-
----
-
-## Getting Started (Local Development with Cloud SQL)
-
-### ⚠️ Important
-
-MediLink no longer uses a local PostgreSQL container for development.
-
-All developers connect to the shared Google Cloud SQL database using Cloud SQL Proxy.
-
----
-
-## 1. Prerequisites
-
-Before starting, install:
-
-- Docker Desktop
-- Git
-- Google Cloud SDK (gcloud)
-- Cloud SQL Proxy
-- Node.js v18+ (optional, Docker recommended)
-
----
-
-## 2. Clone the Repository
-```bash
-git clone <REPO_URL>
-cd MedilinkidPatientPrototype/backend
-```
-
----
-
-## 3. Authenticate with Google Cloud
-
-Ask Kennie to add you to the GCP project.
-
-Then run:
-```bash
-gcloud auth login
-gcloud config set project medilink-dev-486803
-```
-
----
-
-## 4. Start Cloud SQL Proxy (Required)
-
-In a separate terminal:
-```bash
-./cloud-sql-proxy \
-  --port 5433 \
-  medilink-dev-486803:northamerica-northeast2:medilink-dev-db
-```
-
-This exposes the shared database at:
-```
-localhost:5433
-```
-
-Leave this running while you develop.
-
----
-
-## 5. Create Environment File
-
-Inside `backend/`, create `.env.docker`:
-```env
-DATABASE_URL="postgresql://medilink_app:medilinkapp@host.docker.internal:5433/medilink?schema=public"
-SHADOW_DATABASE_URL="postgresql://medilink_app:medilinkapp@host.docker.internal:5433/medilink_shadow?schema=public"
-
-PORT=4000
-NODE_ENV=development
-OPENAI_API_KEY=YOUR_OPENAI_API_KEY
-```
-
-Notes:
-
-- `.env.docker` is intentionally not committed
-- Ask Kennie for DB credentials if needed
-- Never commit secrets
-
----
-
-## 6. Run the Application Stack
-```bash
-docker compose up -d --build
-```
-
-This starts:
-
-- Backend API
-- Patient UI
-- Provider UI
-- pgAdmin
-
-(No local database container is started)
-
----
-
-## 7. Access the Running Services
-
-- **Patient Portal:** http://localhost:5173
-- **Provider Portal:** http://localhost:5174
-- **Backend API:** http://localhost:4000/health
-- **pgAdmin:** http://localhost:5050
-
----
-
-## 8. Prisma Migrations (IMPORTANT)
-
-Migrations are already applied on Cloud SQL.
-
-Run only to verify:
-```bash
-docker compose exec api npx prisma migrate status
-```
-
-🚫 **Do NOT run:**
-
-- `prisma migrate dev`
-- `prisma migrate reset`
-- `prisma db push`
-
-Unless explicitly instructed.
-
----
-
-## 9. pgAdmin Setup (Optional)
-
-Login:
-
-- Email: `admin@medilink.com`
-- Password: `admin`
-
-Create a server:
-
-- Host: `host.docker.internal`
-- Port: `5433`
-- Database: `medilink`
-- Username: `medilink_app`
-- Password: (ask Kennie)
-
-You should see live production-like data (e.g., 24 hospitals).
-
----
-
-## Database Rules (Read Carefully)
-
-- Cloud SQL is the single source of truth
-- All developers see the same data
-- Prisma migrations are controlled
-- Never drop schemas or reset the DB
-- No local Postgres containers
-
----
-
-## Current Project Status
-
-MediLink is in active MVP development.
-
-Current functionality:
-
-- Authentication (patients & staff)
-- Patient profiles
-- Emergency health profiles
-- Appointment management
-- Provider portal (simulated)
-- AI-powered symptom guidance foundation
-
----
-
-## Team
-
-- Oloruntimilehin (Timi) Olajonlu
+- Oloruntimilehin(Timi) Olajonlu
 - Kennie Oraka
 - Kosy Oraka
 - Elysprit (Elyse) Dhaliwal
@@ -252,11 +60,110 @@ Current functionality:
 
 ---
 
-## Development Rules (Non-Negotiable)
+## Regulatory Compliance
 
-- Cloud SQL is the database
-- Cloud SQL Proxy is required
-- Do not commit `.env` files
-- Do not reset the database
-- One person manages migrations
-- If unsure → ask before running DB commands
+- **PHIPA (Personal Health Information Protection Act)** compliance for Ontario
+- **HL7 FHIR standards** for EMR integration and interoperability
+
+---
+
+## Project Status
+
+MediLink is currently in **active development** and has reached an **MVP (Minimum Viable Product)** stage.
+
+The MVP demonstrates:
+- Core authentication and user onboarding
+- Patient profile and emergency health profile management
+- QR-based emergency access to critical health information
+- Initial AI-powered symptom guidance
+- A foundation for future provider and health record integrations
+
+---
+
+## Technology Stack
+
+**Frontend**
+- React + TypeScript
+- Vite
+- Tailwind CSS
+- Component-based UI architecture
+
+**Backend**
+- Node.js
+- Express
+- TypeScript
+- PostgreSQL (via Docker)
+- Prisma ORM
+
+**AI Integration**
+- OpenAI API
+
+**Infrastructure / Tooling**
+- Docker (PostgreSQL)
+- GitHub for version control
+- Environment-based configuration (`.env`, `.env.local`)
+---
+
+## Current Features
+
+- User signup and login
+- Personal health profile management
+- Emergency profile with share controls
+- QR code generation for emergency access
+- Wallet preview (Apple Wallet integration planned)
+- Health summary UI (vitals, allergies, immunizations, family history)
+- AI-powered symptom checker (guidance, not diagnosis)
+
+---
+
+## Planned / In-Progress Features
+
+- Connected healthcare providers (simulated and/or FHIR-based)
+- Provider-side portal (hospital/clinic simulation)
+- Medical record synchronization
+- Enhanced access controls and permissions
+- Apple Wallet / NFC-based access
+- PDF export and sharing improvements
+
+---
+
+## Getting Started (Development)
+
+### Prerequisites
+- Node.js (v18+ recommended)
+- Docker
+- PostgreSQL (via Docker)
+- An OpenAI API key: Ask Kennie for api key
+
+---
+
+### Frontend & Backend Setup
+
+```bash
+npm install
+npm run dev
+
+The frontend runs on:
+
+http://localhost:3000
+
+To test on a phone or another device, run the dev server with:
+
+npm run dev -- --host
+
+
+The backend runs on:
+
+http://localhost:4000
+
+
+Note: You must create a backend/.env file with required environment variables (database URL, OpenAI API key, etc.).
+.env files are intentionally not committed to version control.
+
+### Environment Configuration
+Create a `.env` file inside the `backend/` directory:
+
+```env
+DATABASE_URL=postgresql://medilink:medilinkpw@localhost:5433/medilink?schema=public
+PORT=4000
+OPENAI_API_KEY=YOUR_OPENAI_API_KEY

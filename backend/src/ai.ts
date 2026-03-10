@@ -89,34 +89,10 @@ ${schema}
     const result = JSON.parse(jsonStr);
 
     return res.json({ result });
-  } catch (err: any) {
-  console.error("AI symptom guidance error (raw):", err);
-
-  // If you're using the OpenAI SDK, errors often look like this:
-  const status = err?.status || err?.response?.status;
-  const message =
-    err?.message ||
-    err?.response?.data?.error?.message ||
-    err?.error?.message ||
-    "Unknown error";
-
-  const details =
-    err?.response?.data ||
-    err?.error ||
-    err;
-
-  console.error("AI symptom guidance error (status):", status);
-  console.error("AI symptom guidance error (message):", message);
-  console.error("AI symptom guidance error (details):", details);
-
-  return res.status(500).json({
-    message: "AI guidance failed",
-    status,
-    error: message,
-    details,
-  });
-}
-
+  } catch (err) {
+    console.error('AI symptom guidance error:', err);
+    return res.status(500).send('AI guidance failed');
+  }
 });
 
 export default router;

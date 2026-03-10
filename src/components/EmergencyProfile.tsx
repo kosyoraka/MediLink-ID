@@ -236,8 +236,7 @@ export default function EmergencyProfile({ onBack }: EmergencyProfileProps) {
       setSaving(true);
 
       const payload = {
-        //sharePersonalInfo: settings.personalInfo,
-        sharePersonalInfo: true, // ✅ always on (locked)
+        sharePersonalInfo: settings.personalInfo,
         shareBloodType: settings.bloodType,
         shareAllergies: settings.allergies,
         shareMedicalConditions: settings.conditions,

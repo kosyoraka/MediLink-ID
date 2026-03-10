@@ -74,19 +74,12 @@ export default defineConfig({
   hmr: true,
 
   // ✅ proxy API calls to your backend
-  // proxy: {
-  //   "/api": {
-  //     target: "http://localhost:4000",
-  //     changeOrigin: true,
-  //   },
-  // },
   proxy: {
-  "/api": {
-    target: "http://api:4000",
-    changeOrigin: true,
+    "/api": {
+      target: "http://localhost:4000",
+      changeOrigin: true,
+    },
   },
-},
-
 },
 
 });

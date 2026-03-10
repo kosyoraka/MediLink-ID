@@ -127,13 +127,6 @@ export default function Appointments() {
     [providers, providerId]
   );
 
-  const uniqueProviders = useMemo(() => {
-  const map = new Map<string, Provider>();
-  for (const p of providers) map.set(p.id, p);
-  return Array.from(map.values());
-}, [providers]);
-
-
 //   async function loadAppointments() {
 //   try {
 //     setLoading(true);
@@ -447,7 +440,7 @@ setAppointments(
                 <option value="" disabled>
                   Choose a provider…
                 </option>
-                {uniqueProviders.map((p) => (
+                {providers.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
                   </option>
