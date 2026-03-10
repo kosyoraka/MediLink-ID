@@ -34,6 +34,17 @@ export async function apiFetch<T>(
   if (!res.ok) {
     const msg = data?.detail || data?.message || data?.error || "Request failed";
 
+    if (res.status === 401) {
+      try {
+        localStorage.removeItem("medilink_token");
+        localStorage.removeItem("medilink_staff");
+        sessionStorage.removeItem("medilink_token");
+        sessionStorage.removeItem("medilink_staff_session");
+      } catch {
+        // ignore storage failures
+      }
+    }
+
     throw new Error(msg);
   }
 
@@ -81,4 +92,51 @@ export type ProviderDocumentRequest = {
   createdAt: string;
   updatedAt: string;
   resolvedAt: string | null;
+};
+
+export type ProviderHealthSummaryVital = {
+  recordedAt: string;
+  systolic: number;
+  diastolic: number;
+  heartRate: number;
+  weight: number;
+  bloodSugar: number;
+};
+
+export type ProviderHealthSummaryCondition = {
+  id: string;
+  name: string;
+  status: string;
+  diagnosed: string;
+  metric: string;
+  provider: string;
+};
+
+export type ProviderHealthSummaryAllergy = {
+  id: string;
+  name: string;
+  severity: "MILD" | "MODERATE" | "SEVERE";
+  reaction: string;
+};
+
+export type ProviderHealthSummaryImmunization = {
+  id: string;
+  name: string;
+  detail: string;
+  status: string;
+};
+
+export type ProviderHealthSummaryFamilyHistory = {
+  id: string;
+  relation: string;
+  condition: string;
+};
+
+export type ProviderHealthSummary = {
+  vitals: ProviderHealthSummaryVital[];
+  conditions: ProviderHealthSummaryCondition[];
+  allergies: ProviderHealthSummaryAllergy[];
+  immunizations: ProviderHealthSummaryImmunization[];
+  familyHistory: ProviderHealthSummaryFamilyHistory[];
+  updatedAt: string | null;
 };

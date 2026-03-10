@@ -9,22 +9,36 @@ import {
   Download,
   Phone,
   AlertCircle,
+  Mail,
+  MapPin,
+  ShieldAlert,
+  Clock3,
+  Pill,
+  Activity,
+  Syringe,
+  Users,
 } from 'lucide-react';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { AddVisitModal } from '@/components/modals/AddVisitModal';
-import { toast } from '@/components/ui/toast';
 
 import type { Patient, EmergencyContact } from '@/lib/types';
 import { formatDate, formatDateTime } from '@/lib/utils';
-import { apiFetch } from '@/lib/api';
+import { apiFetch, type ProviderDocument, type ProviderHealthSummary } from '@/lib/api';
 
 interface PatientDetailsProps {
   patient: Patient;
   onNavigate: (page: string, data?: any) => void;
 }
+
+type StaffAppointmentRow = {
+  id: string;
+  startTime: string;
+  status: string;
+  patientId: string;
+  type?: string | null;
+};
 
 type PatientProfileResponse = {
   patient_id: string;
@@ -86,6 +100,14 @@ const buildAddress = (p: PatientProfileResponse | null, fallback: string) => {
   return parts.length ? parts.join(', ') : fallback;
 };
 
+const initials = (name: string) =>
+  name
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('');
+
 // Supports:
 // - null
 // - "Penicillin, Peanuts"
@@ -145,8 +167,10 @@ const parseEmergencyContacts = (value: unknown): EmergencyContact[] => {
 
 export function PatientDetails({ patient, onNavigate }: PatientDetailsProps) {
   const [activeTab, setActiveTab] = useState<'history' | 'documents' | 'appointments' | 'emergency'>('history');
-  const [showAddVisitModal, setShowAddVisitModal] = useState(false);
   const [profile, setProfile] = useState<PatientProfileResponse | null>(null);
+  const [patientAppointments, setPatientAppointments] = useState<StaffAppointmentRow[]>([]);
+  const [patientDocuments, setPatientDocuments] = useState<ProviderDocument[]>([]);
+  const [patientHealthSummary, setPatientHealthSummary] = useState<ProviderHealthSummary | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -160,6 +184,72 @@ export function PatientDetails({ patient, onNavigate }: PatientDetailsProps) {
         console.error('Failed to load patient profile:', e);
         if (!alive) return;
         setProfile(null);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [patient.id]);
+
+  useEffect(() => {
+    let alive = true;
+
+    apiFetch<{ summary: ProviderHealthSummary }>(`/api/staff/patients/${patient.id}/health-summary`)
+      .then((data) => {
+        if (!alive) return;
+        setPatientHealthSummary(data.summary || null);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setPatientHealthSummary(null);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [patient.id]);
+
+  useEffect(() => {
+    let alive = true;
+
+    apiFetch<{ documents: ProviderDocument[] }>(`/api/staff/documents?patientId=${encodeURIComponent(patient.id)}`)
+      .then((data) => {
+        if (!alive) return;
+        setPatientDocuments(data.documents || []);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setPatientDocuments([]);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [patient.id]);
+
+  useEffect(() => {
+    let alive = true;
+
+    apiFetch<any>('/api/staff/appointments')
+      .then((data) => {
+        if (!alive) return;
+
+        const rows = Array.isArray(data) ? data : Array.isArray(data?.appointments) ? data.appointments : [];
+        const normalized = rows
+          .map((row: any) => ({
+            id: String(row.id),
+            startTime: String(row.startTime ?? row.start_time ?? ''),
+            status: String(row.status ?? ''),
+            patientId: String(row.patientId ?? row.patient_id ?? ''),
+            type: String(row.type ?? row.appointmentType ?? 'Appointment'),
+          }))
+          .filter((row: StaffAppointmentRow) => row.patientId === patient.id);
+
+        setPatientAppointments(normalized);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setPatientAppointments([]);
       });
 
     return () => {
@@ -225,22 +315,70 @@ export function PatientDetails({ patient, onNavigate }: PatientDetailsProps) {
   };
 }, [profile, patient.emergencyInfo]);
 
+  const nextAppointment = useMemo(() => {
+    const now = Date.now();
+    return patientAppointments
+      .filter((appointment) => {
+        const ts = new Date(appointment.startTime).getTime();
+        return !Number.isNaN(ts) && ts >= now && appointment.status !== 'Cancelled' && appointment.status !== 'Completed';
+      })
+      .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())[0] || null;
+  }, [patientAppointments]);
 
+  const lastVisit = useMemo(() => {
+    const pastAppointments = patientAppointments
+      .filter((appointment) => {
+        const ts = new Date(appointment.startTime).getTime();
+        return !Number.isNaN(ts) && ts < Date.now();
+      })
+      .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+
+    if (pastAppointments.length > 0) return pastAppointments[0].startTime;
+
+    const visitDates = patient.visitRecords
+      .map((visit) => new Date(visit.date).getTime())
+      .filter((ts) => !Number.isNaN(ts))
+      .sort((a, b) => b - a);
+
+    if (visitDates.length > 0) return new Date(visitDates[0]).toISOString();
+    return patient.lastVisit || null;
+  }, [patient.lastVisit, patient.visitRecords, patientAppointments]);
+
+  const emergencyFlags = useMemo(() => {
+    const flags: string[] = [];
+    if (emergency.allergies.length > 0) flags.push(`${emergency.allergies.length} allergies on file`);
+    if (emergency.medicalConditions.length > 0) flags.push(`${emergency.medicalConditions.length} chronic conditions`);
+    if (emergency.currentMedications.length > 0) flags.push(`${emergency.currentMedications.length} current medications`);
+
+    const dnr = emergency.advanceDirectives.dnrStatus.trim().toLowerCase();
+    if (dnr && dnr !== '—' && dnr !== 'no dnr') flags.push(`Advance directive: ${emergency.advanceDirectives.dnrStatus}`);
+
+    return flags;
+  }, [emergency]);
+
+  const completedAppointments = useMemo(
+    () =>
+      patientAppointments
+        .filter((appointment) => String(appointment.status).toLowerCase() === 'completed')
+        .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()),
+    [patientAppointments]
+  );
+
+  const latestSharedVital = useMemo(
+    () =>
+      (patientHealthSummary?.vitals || [])
+        .slice()
+        .sort((a, b) => new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime())[0] || null,
+    [patientHealthSummary]
+  );
   const tabs = [
-    { id: 'history', label: 'Medical History' },
+    { id: 'history', label: 'Health Summary' },
     { id: 'documents', label: 'Documents' },
     { id: 'appointments', label: 'Appointments' },
     { id: 'emergency', label: 'Emergency Info' },
   ] as const;
 
   const getDocumentIcon = (_type: string) => FileTextIcon;
-
-  const handleAddVisit = (_visitData: any) => {
-    setTimeout(() => {
-      toast.success('Visit record added successfully');
-      setShowAddVisitModal(false);
-    }, 500);
-  };
 
   return (
     <div className="p-4 lg:p-6 space-y-6">
@@ -249,64 +387,188 @@ export function PatientDetails({ patient, onNavigate }: PatientDetailsProps) {
         Back to Patients
       </Button>
 
-      <Card>
-        <CardContent className="p-6">
-          <div className="flex flex-col lg:flex-row gap-6">
-            <img src={patient.photo} alt={displayName} className="w-24 h-24 rounded-full object-cover" />
-            <div className="flex-1">
-              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-                <div>
-                  <div className="flex items-center gap-3">
-                    <h1 className="text-2xl font-bold text-gray-900">{displayName}</h1>
-                    <Badge variant={patient.status === 'Active' ? 'success' : 'secondary'}>{patient.status}</Badge>
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <Card className="xl:col-span-2">
+          <CardContent className="p-6">
+            <div className="flex flex-col lg:flex-row gap-6">
+              {patient.photo ? (
+                <img src={patient.photo} alt={displayName} className="w-14 h-14 rounded-xl object-cover" />
+              ) : (
+                <div className="w-14 h-14 rounded-xl bg-gray-200 flex items-center justify-center text-sm font-semibold text-gray-700">
+                  {initials(displayName) || 'P'}
+                </div>
+              )}
+
+              <div className="flex-1">
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-3">
+                      <h1 className="text-2xl font-bold text-gray-900">{displayName}</h1>
+                      <Badge variant={patient.status === 'Active' ? 'success' : 'secondary'}>{patient.status}</Badge>
+                    </div>
+                    <p className="text-gray-600 mt-1">{patient.patientId}</p>
                   </div>
-                  <p className="text-gray-600 mt-1">{patient.patientId}</p>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" className="gap-2">
+                      <Edit className="w-4 h-4" />
+                      Edit Patient
+                    </Button>
+                    <Button size="sm" className="gap-2">
+                      <MessageSquare className="w-4 h-4" />
+                      Message
+                    </Button>
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm" className="gap-2">
-                    <Edit className="w-4 h-4" />
-                    Edit Patient
-                  </Button>
-                  <Button size="sm" className="gap-2">
-                    <MessageSquare className="w-4 h-4" />
-                    Message
-                  </Button>
-                </div>
-              </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
-                <div>
-                  <p className="text-sm text-gray-600">Date of Birth</p>
-                  <p className="font-medium text-gray-900 mt-1">{formatDate(displayDob)}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Age</p>
-                  <p className="font-medium text-gray-900 mt-1">{displayAge} years</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Phone</p>
-                  <p className="font-medium text-gray-900 mt-1">{displayPhone}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Email</p>
-                  <p className="font-medium text-gray-900 mt-1 truncate">{displayEmail}</p>
-                </div>
-              </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6">
+                  <div className="rounded-xl border border-gray-200 p-4">
+                    <p className="text-xs uppercase tracking-wide text-gray-500">Patient Snapshot</p>
+                    <div className="mt-3 space-y-3">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-sm text-gray-600">DOB</p>
+                          <p className="font-medium text-gray-900">{formatDate(displayDob)}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-600">Age</p>
+                          <p className="font-medium text-gray-900">{displayAge} years</p>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-3">
+                        <Phone className="w-4 h-4 text-gray-400 mt-0.5" />
+                        <div>
+                          <p className="text-sm text-gray-600">Phone</p>
+                          <p className="font-medium text-gray-900">{displayPhone || '—'}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-3">
+                        <Mail className="w-4 h-4 text-gray-400 mt-0.5" />
+                        <div className="min-w-0">
+                          <p className="text-sm text-gray-600">Email</p>
+                          <p className="font-medium text-gray-900 break-all">{displayEmail || '—'}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-3">
+                        <MapPin className="w-4 h-4 text-gray-400 mt-0.5" />
+                        <div>
+                          <p className="text-sm text-gray-600">Address</p>
+                          <p className="font-medium text-gray-900">{displayAddress || '—'}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
 
-              <div className="mt-4 space-y-2">
-                <div>
-                  <p className="text-sm text-gray-600">Address</p>
-                  <p className="font-medium text-gray-900 mt-1">{displayAddress}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600">Insurance</p>
-                  <p className="font-medium text-gray-900 mt-1">{patient.insurance}</p>
+                  <div className="rounded-xl border border-gray-200 p-4">
+                    <p className="text-xs uppercase tracking-wide text-gray-500">Care Snapshot</p>
+                    <div className="mt-3 grid grid-cols-2 gap-3">
+                      <div className="rounded-lg bg-gray-50 p-3">
+                        <p className="text-xs text-gray-500">Connection</p>
+                        <p className="mt-1 font-medium text-gray-900">{patient.status}</p>
+                      </div>
+                      <div className="rounded-lg bg-gray-50 p-3">
+                        <p className="text-xs text-gray-500">Last visit</p>
+                        <p className="mt-1 font-medium text-gray-900">{lastVisit ? formatDate(lastVisit) : '—'}</p>
+                      </div>
+                      <div className="rounded-lg bg-gray-50 p-3">
+                        <p className="text-xs text-gray-500">Next appointment</p>
+                        <p className="mt-1 font-medium text-gray-900">
+                          {nextAppointment ? formatDateTime(nextAppointment.startTime) : 'None scheduled'}
+                        </p>
+                      </div>
+                  <div className="rounded-lg bg-gray-50 p-3">
+                    <p className="text-xs text-gray-500">Insurance</p>
+                    <p className="mt-1 font-medium text-gray-900 line-clamp-2">{patient.insurance || '—'}</p>
+                  </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ShieldAlert className="w-5 h-5 text-red-600" />
+              Medical Summary
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="rounded-xl bg-red-50 border border-red-100 p-4">
+              <p className="text-xs uppercase tracking-wide text-red-700">Allergies</p>
+              <p className="mt-2 text-sm font-medium text-gray-900">
+                {emergency.allergies.length > 0 ? emergency.allergies.join(', ') : 'No allergies on file'}
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-blue-50 border border-blue-100 p-4">
+              <p className="text-xs uppercase tracking-wide text-blue-700">Chronic Conditions</p>
+              <p className="mt-2 text-sm font-medium text-gray-900">
+                {emergency.medicalConditions.length > 0 ? emergency.medicalConditions.join(', ') : 'No chronic conditions on file'}
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-green-50 border border-green-100 p-4">
+              <p className="text-xs uppercase tracking-wide text-green-700">Current Medications</p>
+              <p className="mt-2 text-sm font-medium text-gray-900">
+                {emergency.currentMedications.length > 0 ? emergency.currentMedications.join(', ') : 'No medications on file'}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-gray-200 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-gray-500">Emergency Flags</p>
+                  <p className="mt-1 text-sm text-gray-600">Items staff should notice quickly</p>
+                </div>
+                <Badge variant={emergencyFlags.length > 0 ? 'warning' : 'secondary'}>
+                  {emergencyFlags.length}
+                </Badge>
+              </div>
+              <div className="mt-3 space-y-2">
+                {emergencyFlags.length > 0 ? (
+                  emergencyFlags.map((flag, index) => (
+                    <div key={index} className="flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+                      <p className="text-sm text-gray-900">{flag}</p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-gray-600">No critical flags recorded.</p>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-gray-200 p-4">
+              <p className="text-xs uppercase tracking-wide text-gray-500">Activity</p>
+              <div className="mt-3 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Clock3 className="w-4 h-4 text-gray-400" />
+                    <span className="text-sm text-gray-600">Documents on file</span>
+                  </div>
+                  <span className="text-sm font-medium text-gray-900">{patientDocuments.length}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-gray-400" />
+                    <span className="text-sm text-gray-600">Appointments in history</span>
+                  </div>
+                  <span className="text-sm font-medium text-gray-900">{patientAppointments.length}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-gray-400" />
+                    <span className="text-sm text-gray-600">Blood type</span>
+                  </div>
+                  <span className="text-sm font-medium text-gray-900">{emergency.bloodType}</span>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       <div className="border-b border-gray-200">
         <div className="flex gap-6">
@@ -328,60 +590,111 @@ export function PatientDetails({ patient, onNavigate }: PatientDetailsProps) {
 
       {activeTab === 'history' && (
         <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <h2 className="text-xl font-semibold text-gray-900">Visit History</h2>
-            <Button onClick={() => setShowAddVisitModal(true)} className="gap-2">
-              <Plus className="w-4 h-4" />
-              Add Visit Record
-            </Button>
-          </div>
+          <h2 className="text-xl font-semibold text-gray-900">Health Summary</h2>
 
-          <div className="space-y-4">
-            {patient.visitRecords.map((visit) => (
-              <Card key={visit.id}>
-                <CardContent className="p-6">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-3">
-                        <Calendar className="w-5 h-5 text-blue-600" />
-                        <span className="font-semibold text-gray-900">{formatDate(visit.date)}</span>
-                        {visit.followUpDate && (
-                          <Badge variant="warning">Follow-up: {formatDate(visit.followUpDate)}</Badge>
-                        )}
-                      </div>
-
-                      <div className="space-y-3">
-                        <div>
-                          <p className="text-sm text-gray-600">Diagnosis</p>
-                          <p className="font-medium text-gray-900 mt-1">{visit.diagnosis}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-600">Prescription</p>
-                          <p className="text-gray-900 mt-1">{visit.prescription}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-600">Doctor's Notes</p>
-                          <p className="text-gray-900 mt-1">{visit.notes}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-600">Attending Physician</p>
-                          <p className="font-medium text-gray-900 mt-1">{visit.doctor}</p>
-                        </div>
-                      </div>
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Activity className="w-5 h-5 text-blue-600" />
+                  Vitals and Trends
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                  <p className="text-sm text-gray-600">Last completed appointment</p>
+                  <p className="mt-2 text-sm font-medium text-gray-900">
+                    {completedAppointments[0] ? formatDateTime(completedAppointments[0].startTime) : 'No completed appointment yet'}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                  <p className="text-sm text-gray-600">Upcoming appointment</p>
+                  <p className="mt-2 text-sm font-medium text-gray-900">
+                    {nextAppointment ? formatDateTime(nextAppointment.startTime) : 'No upcoming appointment scheduled'}
+                  </p>
+                </div>
+                {latestSharedVital ? (
+                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                    <p className="text-sm text-gray-600">Latest shared vitals</p>
+                    <div className="mt-2 space-y-1 text-sm text-gray-900">
+                      <p>Blood pressure: {latestSharedVital.systolic}/{latestSharedVital.diastolic} mmHg</p>
+                      <p>Heart rate: {latestSharedVital.heartRate} bpm</p>
+                      <p>Weight: {latestSharedVital.weight} lbs</p>
+                      <p>Blood sugar: {latestSharedVital.bloodSugar} mg/dL</p>
                     </div>
+                    <p className="mt-2 text-xs text-gray-500">Logged {formatDateTime(latestSharedVital.recordedAt)}</p>
                   </div>
-                </CardContent>
-              </Card>
-            ))}
+                ) : (
+                  <div className="rounded-xl border border-dashed border-gray-300 p-4">
+                    <p className="text-sm text-gray-600">Patient-reported vitals</p>
+                    <p className="mt-2 text-sm text-gray-500">
+                      This patient has not shared any vitals entries yet.
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
-            {patient.visitRecords.length === 0 && (
-              <Card>
-                <CardContent className="p-12 text-center text-gray-500">
-                  <Calendar className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                  <p>No visit records available yet.</p>
-                </CardContent>
-              </Card>
-            )}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Syringe className="w-5 h-5 text-green-600" />
+                  Immunization Record
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {patientHealthSummary?.immunizations?.length ? (
+                  <div className="space-y-3">
+                    {patientHealthSummary.immunizations.map((item) => (
+                      <div key={item.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="font-medium text-gray-900">{item.name}</p>
+                            <p className="text-sm text-gray-600 mt-1">{item.detail}</p>
+                          </div>
+                          <Badge variant="secondary">{item.status}</Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-gray-300 p-4">
+                    <p className="text-sm text-gray-600">Immunization status</p>
+                    <p className="mt-2 text-sm text-gray-500">
+                      No structured immunization record has been shared with this provider yet.
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Users className="w-5 h-5 text-purple-600" />
+                  Family Health History
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {patientHealthSummary?.familyHistory?.length ? (
+                  <div className="space-y-3">
+                    {patientHealthSummary.familyHistory.map((item) => (
+                      <div key={item.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                        <p className="text-sm text-gray-900">{item.condition}</p>
+                        <p className="text-xs text-gray-500 mt-1">{item.relation}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-gray-300 p-4">
+                    <p className="text-sm text-gray-600">Shared family history</p>
+                    <p className="mt-2 text-sm text-gray-500">
+                      No family health history has been shared with this provider yet.
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
         </div>
       )}
@@ -397,8 +710,8 @@ export function PatientDetails({ patient, onNavigate }: PatientDetailsProps) {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {patient.documents.map((doc) => {
-              const Icon = getDocumentIcon(doc.type);
+            {patientDocuments.map((doc) => {
+              const Icon = getDocumentIcon(doc.category);
               return (
                 <Card key={doc.id} className="hover:shadow-md transition-shadow">
                   <CardContent className="p-4">
@@ -407,19 +720,24 @@ export function PatientDetails({ patient, onNavigate }: PatientDetailsProps) {
                         <Icon className="w-6 h-6 text-blue-600" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-medium text-gray-900 truncate">{doc.name}</h3>
-                        <p className="text-sm text-gray-600 mt-1">{doc.size}</p>
+                        <h3 className="font-medium text-gray-900 truncate">{doc.title}</h3>
+                        <p className="text-sm text-gray-600 mt-1">{doc.fileSizeLabel}</p>
                         <Badge variant="secondary" className="mt-2">
-                          {doc.type}
+                          {doc.category}
                         </Badge>
                       </div>
                     </div>
                     <div className="mt-4 pt-4 border-t border-gray-200">
                       <p className="text-xs text-gray-600 mb-2">Uploaded: {formatDate(doc.uploadDate)}</p>
-                      {doc.notes && <p className="text-xs text-gray-600 mb-3">{doc.notes}</p>}
-                      <Button variant="outline" size="sm" className="w-full gap-2">
+                      {doc.description && <p className="text-xs text-gray-600 mb-3">{doc.description}</p>}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full gap-2"
+                        onClick={() => window.open(doc.fileUrl, '_blank', 'noopener,noreferrer')}
+                      >
                         <Download className="w-3 h-3" />
-                        Download
+                        Open Document
                       </Button>
                     </div>
                   </CardContent>
@@ -428,7 +746,7 @@ export function PatientDetails({ patient, onNavigate }: PatientDetailsProps) {
             })}
           </div>
 
-          {patient.documents.length === 0 && (
+          {patientDocuments.length === 0 && (
             <Card>
               <CardContent className="p-12 text-center text-gray-500">
                 <FileTextIcon className="w-12 h-12 mx-auto mb-3 opacity-50" />
@@ -442,12 +760,36 @@ export function PatientDetails({ patient, onNavigate }: PatientDetailsProps) {
       {activeTab === 'appointments' && (
         <div className="space-y-4">
           <h2 className="text-xl font-semibold text-gray-900">Appointment History</h2>
-          <Card>
-            <CardContent className="p-12 text-center text-gray-500">
-              <Calendar className="w-12 h-12 mx-auto mb-3 opacity-50" />
-              <p>View all appointments in the Appointments section</p>
-            </CardContent>
-          </Card>
+          {patientAppointments.length === 0 ? (
+            <Card>
+              <CardContent className="p-12 text-center text-gray-500">
+                <Calendar className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                <p>No appointments recorded for this patient yet.</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {patientAppointments
+                .slice()
+                .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
+                .map((appointment) => (
+                  <Card key={appointment.id}>
+                    <CardContent className="p-5">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <div className="flex items-center gap-3">
+                            <Calendar className="w-4 h-4 text-blue-600" />
+                            <p className="font-medium text-gray-900">{formatDateTime(appointment.startTime)}</p>
+                          </div>
+                          <p className="mt-2 text-sm text-gray-600">{appointment.type || 'Appointment'}</p>
+                        </div>
+                        <Badge variant="outline">{appointment.status}</Badge>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -457,22 +799,20 @@ export function PatientDetails({ patient, onNavigate }: PatientDetailsProps) {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Personal Information</CardTitle>
+              <CardTitle className="text-lg">Critical Emergency Details</CardTitle>
             </CardHeader>
-            <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <p className="text-sm text-gray-600">Full Name</p>
-                <p className="font-medium text-gray-900 mt-1">{displayName}</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">Date of Birth</p>
-                <p className="font-medium text-gray-900 mt-1">
-                  {formatDate(displayDob)} ({displayAge} years old)
-                </p>
-              </div>
-              <div>
+            <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="rounded-lg bg-gray-50 p-4">
                 <p className="text-sm text-gray-600">Health Card Number</p>
-                <p className="font-medium text-gray-900 mt-1">{displayHealthCard}</p>
+                <p className="mt-1 font-medium text-gray-900">{displayHealthCard}</p>
+              </div>
+              <div className="rounded-lg bg-gray-50 p-4">
+                <p className="text-sm text-gray-600">Blood Type</p>
+                <p className="mt-1 text-2xl font-bold text-gray-900">{emergency.bloodType}</p>
+              </div>
+              <div className="rounded-lg bg-gray-50 p-4">
+                <p className="text-sm text-gray-600">Last Updated</p>
+                <p className="mt-1 font-medium text-gray-900">{formatDateTime(emergency.lastUpdated)}</p>
               </div>
             </CardContent>
           </Card>
@@ -480,77 +820,9 @@ export function PatientDetails({ patient, onNavigate }: PatientDetailsProps) {
           <Card>
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
-                <AlertCircle className="w-5 h-5 text-red-600" />
-                Allergies
+                <Pill className="w-5 h-5 text-green-600" />
+                Emergency Contacts
               </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex flex-wrap gap-2">
-                {emergency.allergies.length > 0 ? (
-                  emergency.allergies.map((allergy, index) => (
-                    <Badge key={index} variant="error" className="px-3 py-1">
-                      {allergy}
-                    </Badge>
-                  ))
-                ) : (
-                  <p className="text-sm text-gray-600">No allergies on file.</p>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Blood Type</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold text-gray-900">{emergency.bloodType}</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Medical Conditions</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {emergency.medicalConditions.length > 0 ? (
-                <ul className="space-y-2">
-                  {emergency.medicalConditions.map((condition, index) => (
-                    <li key={index} className="flex items-start gap-2">
-                      <span className="w-1.5 h-1.5 bg-blue-600 rounded-full mt-2 flex-shrink-0" />
-                      <span className="text-gray-900">{condition}</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-gray-600">No medical conditions on file.</p>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Current Medications</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {emergency.currentMedications.length > 0 ? (
-                <ul className="space-y-2">
-                  {emergency.currentMedications.map((medication, index) => (
-                    <li key={index} className="flex items-start gap-2">
-                      <span className="w-1.5 h-1.5 bg-green-600 rounded-full mt-2 flex-shrink-0" />
-                      <span className="text-gray-900">{medication}</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-gray-600">No medications on file.</p>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Emergency Contacts</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               {emergency.emergencyContacts.length > 0 ? (
@@ -589,20 +861,7 @@ export function PatientDetails({ patient, onNavigate }: PatientDetailsProps) {
               </div>
             </CardContent>
           </Card>
-
-          <div className="text-sm text-gray-500 text-right">
-            Last updated: {formatDateTime(emergency.lastUpdated)}
-          </div>
         </div>
-      )}
-
-      {showAddVisitModal && (
-        <AddVisitModal
-          open={showAddVisitModal}
-          onClose={() => setShowAddVisitModal(false)}
-          onSubmit={handleAddVisit}
-          patientName={displayName}
-        />
       )}
     </div>
   );

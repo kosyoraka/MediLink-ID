@@ -126,6 +126,53 @@ export type RecordRequest = {
   resolvedAt: string | null;
 };
 
+export type HealthSummaryVital = {
+  recordedAt: string;
+  systolic: number;
+  diastolic: number;
+  heartRate: number;
+  weight: number;
+  bloodSugar: number;
+};
+
+export type HealthSummaryCondition = {
+  id: string;
+  name: string;
+  status: string;
+  diagnosed: string;
+  metric: string;
+  provider: string;
+};
+
+export type HealthSummaryAllergy = {
+  id: string;
+  name: string;
+  severity: "MILD" | "MODERATE" | "SEVERE";
+  reaction: string;
+};
+
+export type HealthSummaryImmunization = {
+  id: string;
+  name: string;
+  detail: string;
+  status: string;
+};
+
+export type HealthSummaryFamilyHistory = {
+  id: string;
+  relation: string;
+  condition: string;
+};
+
+export type HealthSummaryPayload = {
+  vitals: HealthSummaryVital[];
+  conditions: HealthSummaryCondition[];
+  allergies: HealthSummaryAllergy[];
+  immunizations: HealthSummaryImmunization[];
+  familyHistory: HealthSummaryFamilyHistory[];
+  updatedAt: string | null;
+};
+
 export const api = {
   // directory
   listProviders: () => request<{ providers: Provider[] }>("/api/providers"),
@@ -189,6 +236,12 @@ export const api = {
   }) =>
     request<{ request: RecordRequest }>("/api/patient/record-requests", {
       method: "POST",
+      body: JSON.stringify(body),
+    }),
+  getMyHealthSummary: () => request<{ summary: HealthSummaryPayload }>("/api/patient/health-summary"),
+  updateMyHealthSummary: (body: Omit<HealthSummaryPayload, "updatedAt">) =>
+    request<{ summary: HealthSummaryPayload }>("/api/patient/health-summary", {
+      method: "PUT",
       body: JSON.stringify(body),
     }),
   listConnectedHospitals: () =>

@@ -294,7 +294,12 @@ export default function App() {
         return <HealthTasks onBack={() => handleNavigation('dashboard', 'home')} />;
 
       case 'health-summary':
-        return <HealthSummary onBack={() => handleNavigation('dashboard', 'home')} />;
+        return (
+          <HealthSummary
+            onBack={() => handleNavigation('dashboard', 'home')}
+            onOpenMedications={() => handleNavigation('medications', 'home')}
+          />
+        );
 
       case 'care-journeys':
         return <CareJourneys onBack={() => handleNavigation('dashboard', 'home')} />;

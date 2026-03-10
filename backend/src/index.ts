@@ -156,11 +156,34 @@ async function ensureActiveConnection(patientId: string, providerId: string) {
 const isDev = process.env.NODE_ENV !== "production";
 
 async function ensureDocumentsSchema() {
-  try {
-    const sql = await readFile(path.resolve(__dirname, "../004_documents_domain.sql"), "utf8");
-    await pool.query(sql);
-  } catch (error) {
-    console.error("Documents schema setup skipped:", error);
+  const sql = await readFile(path.resolve(__dirname, "../004_documents_domain.sql"), "utf8");
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    try {
+      await pool.query(sql);
+      return;
+    } catch (error) {
+      if (attempt === 5) {
+        console.error("Documents schema setup skipped:", error);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+    }
+  }
+}
+
+async function ensureHealthSummarySchema() {
+  const sql = await readFile(path.resolve(__dirname, "../005_health_summary.sql"), "utf8");
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    try {
+      await pool.query(sql);
+      return;
+    } catch (error) {
+      if (attempt === 5) {
+        console.error("Health summary schema setup skipped:", error);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+    }
   }
 }
 
@@ -180,12 +203,12 @@ function formatFileSize(size: number | null | undefined) {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function documentStatusLabel(status: string, uploadedByPatient: boolean) {
+function documentStatusLabel(status: string, uploadedByPatient: boolean, viewer: "patient" | "provider") {
   if (status === "provider_uploaded" || status === "provider_verified" || status === "organization_verified") {
     return "Verified";
   }
   if (status === "patient_uploaded" || uploadedByPatient) {
-    return "Uploaded by you";
+    return viewer === "patient" ? "Uploaded by you" : "Patient upload";
   }
   if (status === "unverified") return "Pending review";
   if (status === "rejected") return "Needs replacement";
@@ -214,7 +237,7 @@ function mapDocumentRow(row: any, viewer: "patient" | "provider") {
       row.hospital_name ||
       (uploadedByPatient ? "Personal upload" : "Provider upload"),
     verificationStatus: row.verification_status,
-    verificationLabel: documentStatusLabel(String(row.verification_status), uploadedByPatient),
+    verificationLabel: documentStatusLabel(String(row.verification_status), uploadedByPatient, viewer),
     visibilityStatus: row.visibility_status,
     serviceDate: row.service_date,
     uploadDate: row.created_at,
@@ -233,6 +256,17 @@ function mapDocumentRow(row: any, viewer: "patient" | "provider") {
         ? "patient"
         : "provider",
     verifiedByName: row.verified_by_staff_name || null,
+  };
+}
+
+function normalizeHealthSummaryRow(row: any) {
+  return {
+    vitals: Array.isArray(row?.vitals) ? row.vitals : [],
+    conditions: Array.isArray(row?.conditions) ? row.conditions : [],
+    allergies: Array.isArray(row?.allergies) ? row.allergies : [],
+    immunizations: Array.isArray(row?.immunizations) ? row.immunizations : [],
+    familyHistory: Array.isArray(row?.family_history) ? row.family_history : [],
+    updatedAt: row?.updated_at || null,
   };
 }
 
@@ -3464,6 +3498,160 @@ app.post("/api/patient/record-requests", requirePatientAuth, async (req: any, re
   }
 });
 
+app.get("/api/patient/health-summary", requirePatientAuth, async (req: any, res) => {
+  const patientId = req.patientId;
+
+  try {
+    const result = await pool.query(
+      `
+      SELECT patient_id, vitals, conditions, allergies, immunizations, family_history, updated_at
+      FROM patient_health_summaries
+      WHERE patient_id = $1::uuid
+      LIMIT 1
+      `,
+      [patientId]
+    );
+
+    if ((result.rowCount ?? 0) === 0) {
+      return res.json({
+        summary: {
+          vitals: [],
+          conditions: [],
+          allergies: [],
+          immunizations: [],
+          familyHistory: [],
+          updatedAt: null,
+        },
+      });
+    }
+
+    return res.json({ summary: normalizeHealthSummaryRow(result.rows[0]) });
+  } catch (e: any) {
+    console.error("GET /api/patient/health-summary error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to fetch health summary" });
+  }
+});
+
+app.put("/api/patient/health-summary", requirePatientAuth, async (req: any, res) => {
+  const patientId = req.patientId;
+  const {
+    vitals = [],
+    conditions = [],
+    allergies = [],
+    immunizations = [],
+    familyHistory = [],
+  } = req.body ?? {};
+
+  if (
+    !Array.isArray(vitals) ||
+    !Array.isArray(conditions) ||
+    !Array.isArray(allergies) ||
+    !Array.isArray(immunizations) ||
+    !Array.isArray(familyHistory)
+  ) {
+    return res.status(400).json({ message: "Invalid health summary payload" });
+  }
+
+  try {
+    const result = await pool.query(
+      `
+      INSERT INTO patient_health_summaries (
+        patient_id, vitals, conditions, allergies, immunizations, family_history, updated_at
+      )
+      VALUES (
+        $1::uuid, $2::jsonb, $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb, NOW()
+      )
+      ON CONFLICT (patient_id) DO UPDATE SET
+        vitals = EXCLUDED.vitals,
+        conditions = EXCLUDED.conditions,
+        allergies = EXCLUDED.allergies,
+        immunizations = EXCLUDED.immunizations,
+        family_history = EXCLUDED.family_history,
+        updated_at = NOW()
+      RETURNING patient_id, vitals, conditions, allergies, immunizations, family_history, updated_at
+      `,
+      [
+        patientId,
+        JSON.stringify(vitals),
+        JSON.stringify(conditions),
+        JSON.stringify(allergies),
+        JSON.stringify(immunizations),
+        JSON.stringify(familyHistory),
+      ]
+    );
+
+    return res.json({ summary: normalizeHealthSummaryRow(result.rows[0]) });
+  } catch (e: any) {
+    console.error("PUT /api/patient/health-summary error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to save health summary" });
+  }
+});
+
+app.get("/api/staff/patients/:id/health-summary", requireStaffAuth, async (req: any, res) => {
+  const staffHospitalId = req.staffHospitalId;
+  const patientId = String(req.params.id || "");
+
+  if (!isUuid(patientId)) {
+    return res.status(400).json({ message: "Invalid patient id" });
+  }
+
+  try {
+    const relation = await pool.query(
+      `
+      SELECT 1
+      WHERE EXISTS (
+        SELECT 1
+        FROM patient_hospital_connections phc
+        WHERE phc.patient_id = $1::uuid
+          AND phc.hospital_id = $2::uuid
+          AND phc.disconnected_at IS NULL
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM patient_provider_connections ppc
+        WHERE ppc.patient_id = $1::uuid
+          AND ppc.provider_id = $2::uuid
+          AND ppc.disconnected_at IS NULL
+      )
+      LIMIT 1
+      `,
+      [patientId, staffHospitalId]
+    );
+
+    if ((relation.rowCount ?? 0) === 0) {
+      return res.status(403).json({ message: "This patient is not linked to your hospital" });
+    }
+
+    const result = await pool.query(
+      `
+      SELECT patient_id, vitals, conditions, allergies, immunizations, family_history, updated_at
+      FROM patient_health_summaries
+      WHERE patient_id = $1::uuid
+      LIMIT 1
+      `,
+      [patientId]
+    );
+
+    if ((result.rowCount ?? 0) === 0) {
+      return res.json({
+        summary: {
+          vitals: [],
+          conditions: [],
+          allergies: [],
+          immunizations: [],
+          familyHistory: [],
+          updatedAt: null,
+        },
+      });
+    }
+
+    return res.json({ summary: normalizeHealthSummaryRow(result.rows[0]) });
+  } catch (e: any) {
+    console.error("GET /api/staff/patients/:id/health-summary error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to fetch patient health summary" });
+  }
+});
+
 app.get("/api/staff/documents", requireStaffAuth, async (req: any, res) => {
   const hospitalId = req.staffHospitalId;
   const category = normalizeDocumentCategory(req.query.category);
@@ -3802,6 +3990,7 @@ const port = Number(process.env.PORT || 4000);
 
 async function bootstrap() {
   await ensureDocumentsSchema();
+  await ensureHealthSummarySchema();
   app.listen(port, "0.0.0.0", () => {
     console.log(`Backend running on http://0.0.0.0:${port}`);
   });

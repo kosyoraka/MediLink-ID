@@ -12,6 +12,7 @@ import { Documents } from "./pages/Documents";
 import { Settings } from "./pages/Settings";
 import { conversations } from "./lib/mockData";
 import { Patient } from "./lib/types";
+import { apiFetch } from "./lib/api";
 
 type Page =
   | "dashboard"
@@ -35,19 +36,45 @@ function App() {
 
   // ✅ Auto-auth if staff exists (localStorage remember-me OR sessionStorage)
   useEffect(() => {
+    let cancelled = false;
+
     try {
       const staffRaw =
         localStorage.getItem("medilink_staff") ||
         sessionStorage.getItem("medilink_staff_session");
+      const token =
+        localStorage.getItem("medilink_token") ||
+        sessionStorage.getItem("medilink_token");
 
-      if (staffRaw) {
-        setIsAuthenticated(true);
-        setAuthPage("login");
-        setCurrentPage("dashboard");
-      }
+      if (!staffRaw || !token) return;
+
+      apiFetch("/api/staff/me")
+        .then(() => {
+          if (cancelled) return;
+          setIsAuthenticated(true);
+          setAuthPage("login");
+          setCurrentPage("dashboard");
+        })
+        .catch(() => {
+          if (cancelled) return;
+          try {
+            localStorage.removeItem("medilink_token");
+            localStorage.removeItem("medilink_staff");
+            sessionStorage.removeItem("medilink_token");
+            sessionStorage.removeItem("medilink_staff_session");
+          } catch {
+            // ignore
+          }
+          setIsAuthenticated(false);
+          setAuthPage("login");
+        });
     } catch {
       // ignore
     }
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleLogin = () => {
