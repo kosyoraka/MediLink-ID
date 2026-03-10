@@ -1,7 +1,7 @@
 import { Shield, CheckCircle } from 'lucide-react';
 import { Button } from '../ui/button';
 import { ImageWithFallback } from '../figma/ImageWithFallback';
-import logo from "@/assets/medilink-logo.png";
+import logo from 'figma:asset/0e99e426ad6fec528013e68613d43f5c6919d2a0.png';
 import { API_BASE } from "@/config/api";
 
 interface WelcomeLandingProps {
