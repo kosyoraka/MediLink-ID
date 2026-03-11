@@ -2750,3 +2750,13 @@ app.listen(port, "0.0.0.0", () => {
 //   console.log(`API running on port ${PORT}`);
 // });
 
+// Added for testing 
+app.get("/test-db", async (req, res) => {
+  try {
+    const result = await pool.query("SELECT NOW()"); // simple query to check connection
+    res.json({ dbTime: result.rows[0] });
+  } catch (err) {
+    console.error("DB test failed:", err);
+    res.status(500).json({ error: "Failed to connect to DB" });
+  }
+});

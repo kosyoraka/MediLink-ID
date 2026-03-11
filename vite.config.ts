@@ -82,7 +82,7 @@ export default defineConfig({
   // },
   proxy: {
   "/api": {
-    target: "http://api:4000",
+    target: "http://localhost:4000",
     changeOrigin: true,
   },
 },
