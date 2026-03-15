@@ -1,5 +1,4 @@
 import "dotenv/config";
-console.log("DATABASE_URL at startup:", process.env.DATABASE_URL);
 
 import express from "express";
 import cors from "cors";
@@ -24,7 +23,7 @@ import { requireAuth, requireStaffAuth, requirePatientAuth }
 
 const app = express();
 
-const allowList = new Set([
+const defaultAllowList = new Set([
   "http://localhost:3000",
   "http://10.0.0.203:3000",
 
@@ -154,6 +153,26 @@ async function ensureActiveConnection(patientId: string, providerId: string) {
 
 
 const isDev = process.env.NODE_ENV !== "production";
+
+function getAllowedOrigins() {
+  const configured = (process.env.ALLOWED_ORIGINS || "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  return configured.length > 0 ? new Set(configured) : defaultAllowList;
+}
+
+function getFrontendBaseUrl() {
+  const configured = process.env.FRONTEND_BASE_URL?.trim();
+
+  if (configured) return configured.replace(/\/+$/, "");
+  if (!isDev) {
+    throw new Error("Missing env var: FRONTEND_BASE_URL");
+  }
+
+  return "http://localhost:5173";
+}
 
 async function ensureDocumentsSchema() {
   const sql = await readFile(path.resolve(__dirname, "../004_documents_domain.sql"), "utf8");
@@ -648,6 +667,7 @@ const documentSelectSql = `
 app.use(
   cors({
     origin(origin, cb) {
+      const allowList = getAllowedOrigins();
       if (!origin) return cb(null, true);
 
       if (allowList.has(origin)) return cb(null, true);
@@ -671,10 +691,7 @@ app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 app.use('/api/ai', aiRouter);
 
-// IMPORTANT: this should be reachable from iPhone.
-// For now you can hardcode your LAN IP, or set FRONTEND_BASE_URL in .env
-const FRONTEND_BASE_URL =
-  process.env.FRONTEND_BASE_URL || "http://10.0.0.203:3000";
+const FRONTEND_BASE_URL = getFrontendBaseUrl();
 
 // URL-safe token without relying on Node's base64url support
 const makeUrlSafeToken = () => {

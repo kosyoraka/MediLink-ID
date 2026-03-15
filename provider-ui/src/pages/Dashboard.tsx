@@ -77,6 +77,7 @@ type PatientListRow = {
 type StaffConversationRow = {
   id: string;
   unread_count: number;
+  open_medication_change_count?: number;
 };
 
 type StaffConversationsResponse = {
@@ -99,6 +100,7 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
 
   const [patientCount, setPatientCount] = useState<number | null>(null);
   const [unreadMessages, setUnreadMessages] = useState<number>(0);
+  const [medicationChangeRequests, setMedicationChangeRequests] = useState<number>(0);
 
   // ✅ NEW: real appointments from DB (for Today's Appointments count)
   const [appointments, setAppointments] = useState<StaffAppointmentRow[]>([]);
@@ -166,11 +168,17 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
           (sum, c) => sum + (Number(c.unread_count) || 0),
           0
         );
+        const medicationChangeTotal = (data.conversations || []).reduce(
+          (sum, c) => sum + (Number(c.open_medication_change_count) || 0),
+          0
+        );
 
         setUnreadMessages(total);
+        setMedicationChangeRequests(medicationChangeTotal);
       } catch {
         if (!alive) return;
         setUnreadMessages(0);
+        setMedicationChangeRequests(0);
       }
     })();
 
@@ -371,7 +379,7 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
                     <p className="text-xs text-gray-500">Upcoming today</p>
                     <p className="mt-1 text-xl font-semibold text-gray-900">{upcomingToday}</p>
@@ -379,10 +387,6 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
                   <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
                     <p className="text-xs text-gray-500">Pending confirmations</p>
                     <p className="mt-1 text-xl font-semibold text-gray-900">{pendingAppointments}</p>
-                  </div>
-                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
-                    <p className="text-xs text-gray-500">Record requests</p>
-                    <p className="mt-1 text-xl font-semibold text-gray-900">{requests.length}</p>
                   </div>
                 </div>
 
@@ -496,44 +500,90 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
               <CardTitle>Work Queue</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="rounded-lg border border-gray-200 p-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <ClipboardList className="w-4 h-4 text-blue-600" />
-                    <p className="text-sm text-gray-900">Pending record requests</p>
+              <p className="text-sm text-gray-600">
+                Start with the items that need action now, then move into quick tasks.
+              </p>
+
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  className="w-full rounded-xl border border-gray-200 p-3 text-left transition-colors hover:bg-gray-50"
+                  onClick={() => onNavigate("documents")}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <div className="mt-0.5 rounded-full bg-blue-100 p-2 text-blue-600">
+                        <ClipboardList className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">Record Requests</p>
+                        <p className="text-xs text-gray-500">Review and fulfill patient document requests</p>
+                      </div>
+                    </div>
+                    <Badge variant="outline">{requests.length}</Badge>
                   </div>
-                  <Badge variant="outline">{requests.length}</Badge>
-                </div>
-              </div>
-              <div className="rounded-lg border border-gray-200 p-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Activity className="w-4 h-4 text-green-600" />
-                    <p className="text-sm text-gray-900">Unread conversations</p>
+                </button>
+
+                <button
+                  type="button"
+                  className="w-full rounded-xl border border-gray-200 p-3 text-left transition-colors hover:bg-gray-50"
+                  onClick={() => onNavigate("messages")}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <div className="mt-0.5 rounded-full bg-green-100 p-2 text-green-600">
+                        <Activity className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">Unread Messages</p>
+                        <p className="text-xs text-gray-500">Catch up on patient conversations</p>
+                      </div>
+                    </div>
+                    <Badge variant="outline">{unreadMessages}</Badge>
                   </div>
-                  <Badge variant="outline">{unreadMessages}</Badge>
-                </div>
+                </button>
+
+                <button
+                  type="button"
+                  className="w-full rounded-xl border border-gray-200 p-3 text-left transition-colors hover:bg-gray-50"
+                  onClick={() => onNavigate("messages")}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <div className="mt-0.5 rounded-full bg-amber-100 p-2 text-amber-600">
+                        <MessageSquare className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">Medication Changes</p>
+                        <p className="text-xs text-gray-500">Open medication change requests waiting on review</p>
+                      </div>
+                    </div>
+                    <Badge variant="outline">{medicationChangeRequests}</Badge>
+                  </div>
+                </button>
               </div>
-              <Button
-                className="w-full justify-start gap-2"
-                variant="outline"
-                onClick={onAddPatientClick}
-              >
-                <UserPlus className="w-4 h-4" />
-                Add New Patient
-              </Button>
-              <Button className="w-full justify-start gap-2" variant="outline">
-                <Upload className="w-4 h-4" />
-                Upload Document
-              </Button>
-              <Button
-                className="w-full justify-start gap-2"
-                variant="outline"
-                onClick={() => onNavigate("documents")}
-              >
-                <FileText className="w-4 h-4" />
-                Review Requests
-              </Button>
+
+              <div className="pt-2">
+                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Quick Actions</p>
+              </div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <Button
+                  className="justify-start gap-2"
+                  variant="outline"
+                  onClick={onAddPatientClick}
+                >
+                  <UserPlus className="w-4 h-4" />
+                  Add Patient
+                </Button>
+                <Button
+                  className="justify-start gap-2"
+                  variant="outline"
+                  onClick={() => onNavigate("documents")}
+                >
+                  <Upload className="w-4 h-4" />
+                  Open Documents
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>

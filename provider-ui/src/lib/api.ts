@@ -96,12 +96,13 @@ export type ProviderDocumentRequest = {
 
 export type ProviderHealthSummaryVital = {
   recordedAt: string;
-  systolic: number;
-  diastolic: number;
-  heartRate: number;
-  weight: number;
+  type?: "bloodPressure" | "heartRate" | "weight" | "bloodSugar";
+  systolic?: number;
+  diastolic?: number;
+  heartRate?: number;
+  weight?: number;
   weightUnit?: "lbs" | "kg";
-  bloodSugar: number;
+  bloodSugar?: number;
 };
 
 export type ProviderHealthSummaryCondition = {

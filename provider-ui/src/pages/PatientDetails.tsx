@@ -199,13 +199,18 @@ const formatConditionDate = (value?: string | null) => {
 
 type WeightUnit = 'lbs' | 'kg';
 type ProviderVitalType = 'bloodPressure' | 'heartRate' | 'weight' | 'bloodSugar';
+type VitalRange = '1w' | '1m' | '6m' | '1y' | '2y' | '3y' | '4y' | '5y';
 
-const formatShortDate = (value?: string | null) => {
-  if (!value) return '—';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-};
+const vitalRangeOptions: Array<{ key: VitalRange; label: string }> = [
+  { key: '1w', label: 'Past Week' },
+  { key: '1m', label: '1 Month' },
+  { key: '6m', label: '6M' },
+  { key: '1y', label: '1Y' },
+  { key: '2y', label: '2Y' },
+  { key: '3y', label: '3Y' },
+  { key: '4y', label: '4Y' },
+  { key: '5y', label: '5Y' },
+];
 
 const toLbs = (weight: number, unit: WeightUnit = 'lbs') => (unit === 'kg' ? weight * 2.20462 : weight);
 const fromLbs = (weight: number, unit: WeightUnit = 'lbs') => (unit === 'kg' ? weight / 2.20462 : weight);
@@ -215,22 +220,47 @@ const convertWeight = (weight: number, from: WeightUnit = 'lbs', to: WeightUnit 
 const formatWeight = (weight: number, unit: WeightUnit = 'lbs') =>
   `${Number(weight.toFixed(unit === 'kg' ? 1 : 0))} ${unit}`;
 
+const getProviderVitalsForType = (
+  vitals: ProviderHealthSummary['vitals'],
+  type: ProviderVitalType,
+  direction: 'asc' | 'desc' = 'desc'
+) =>
+  vitals
+    .filter((entry) => {
+      if (entry.type) return entry.type === type;
+      if (type === 'bloodPressure') return typeof entry.systolic === 'number' && typeof entry.diastolic === 'number';
+      if (type === 'heartRate') return typeof entry.heartRate === 'number';
+      if (type === 'weight') return typeof entry.weight === 'number';
+      return typeof entry.bloodSugar === 'number';
+    })
+    .slice()
+    .sort((a, b) =>
+      direction === 'desc'
+        ? new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime()
+        : new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime()
+    );
+
+const getLatestProviderVitalForType = (vitals: ProviderHealthSummary['vitals'], type: ProviderVitalType) =>
+  getProviderVitalsForType(vitals, type, 'desc')[0];
+
 const getProviderVitalNumericValue = (
   entry: ProviderHealthSummary['vitals'][number],
   type: ProviderVitalType,
   weightUnit: WeightUnit = 'lbs'
 ) => {
-  if (type === 'bloodPressure') return entry.systolic;
-  if (type === 'heartRate') return entry.heartRate;
-  if (type === 'weight') return convertWeight(entry.weight, (entry.weightUnit as WeightUnit | undefined) || 'lbs', weightUnit);
-  return entry.bloodSugar;
+  if (type === 'bloodPressure') return entry.systolic ?? 0;
+  if (type === 'heartRate') return entry.heartRate ?? 0;
+  if (type === 'weight') return convertWeight(entry.weight ?? 0, (entry.weightUnit as WeightUnit | undefined) || 'lbs', weightUnit);
+  return entry.bloodSugar ?? 0;
 };
 
 function TrendChart({
   values,
+  labels,
   color = '#2563eb',
 }: {
   values: number[];
+  labels?: string[];
   color?: string;
 }) {
   if (values.length === 0) {
@@ -238,35 +268,146 @@ function TrendChart({
   }
 
   const width = 260;
-  const height = 88;
-  const padding = 10;
+  const height = 102;
+  const padding = 14;
   const min = Math.min(...values);
   const max = Math.max(...values);
-  const range = max - min || 1;
+  const floorMin = Math.floor(min);
+  const ceilMax = Math.ceil(max);
+  const span = Math.max(1, ceilMax - floorMin);
+  const tickStep = Math.max(1, Math.ceil(span / 4));
+  const paddedMin = floorMin - tickStep;
+  const paddedMax = ceilMax + tickStep;
+  const range = paddedMax - paddedMin || 1;
   const stepX = values.length === 1 ? 0 : (width - padding * 2) / (values.length - 1);
+  const gridLines = 4;
   const points = values.map((value, index) => {
     const x = padding + index * stepX;
-    const y = height - padding - ((value - min) / range) * (height - padding * 2);
+    const y = height - padding - ((value - paddedMin) / range) * (height - padding * 2);
     return `${x},${y}`;
   });
+  const yLabels = Array.from({ length: gridLines + 1 }, (_, index) => {
+    return `${paddedMax - tickStep * index}`;
+  });
+  const xLabels = labels && labels.length > 0 ? [labels[0], labels[Math.floor((labels.length - 1) / 2)], labels[labels.length - 1]] : [];
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="h-20 w-full rounded-xl bg-gray-50">
-      <polyline
-        fill="none"
-        stroke={color}
-        strokeWidth="3"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        points={points.join(' ')}
-      />
-      {points.map((point, index) => {
-        const [cx, cy] = point.split(',');
-        return <circle key={`${point}-${index}`} cx={cx} cy={cy} r="3" fill={color} />;
-      })}
-    </svg>
+    <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+      <div className="flex items-start gap-3">
+        <div className="flex h-[80px] w-11 flex-col justify-between text-[10px] leading-none text-gray-500">
+          {yLabels.map((label) => (
+            <span key={label}>{label}</span>
+          ))}
+        </div>
+        <svg viewBox={`0 0 ${width} ${height}`} className="h-[80px] w-full">
+          {Array.from({ length: gridLines + 1 }, (_, index) => {
+            const y = padding + ((height - padding * 2) / gridLines) * index;
+            return (
+              <line
+                key={`grid-${index}`}
+                x1={padding}
+                x2={width - padding}
+                y1={y}
+                y2={y}
+                stroke="#d1d5db"
+                strokeDasharray="3 3"
+                strokeWidth="1"
+              />
+            );
+          })}
+          <polyline
+            fill="none"
+            stroke={color}
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            points={points.join(' ')}
+          />
+          {points.map((point, index) => {
+            const [cx, cy] = point.split(',');
+            return <circle key={`${point}-${index}`} cx={cx} cy={cy} r="3" fill={color} />;
+          })}
+        </svg>
+      </div>
+      {xLabels.length === 3 ? (
+        <div className="mt-3 grid grid-cols-3 text-[10px] leading-none text-gray-500">
+          <span>{xLabels[0]}</span>
+          <span className="text-center">{xLabels[1]}</span>
+          <span className="text-right">{xLabels[2]}</span>
+        </div>
+      ) : null}
+    </div>
   );
 }
+
+const filterVitalsByRange = <T extends { recordedAt: string }>(entries: T[], range: VitalRange) => {
+  if (entries.length === 0) return entries;
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  if (range === '1w') start.setDate(start.getDate() - 7);
+  if (range === '1m') start.setMonth(start.getMonth() - 1);
+  if (range === '6m') start.setMonth(start.getMonth() - 6);
+  if (range === '1y') start.setFullYear(start.getFullYear() - 1);
+  if (range === '2y') start.setFullYear(start.getFullYear() - 2);
+  if (range === '3y') start.setFullYear(start.getFullYear() - 3);
+  if (range === '4y') start.setFullYear(start.getFullYear() - 4);
+  if (range === '5y') start.setFullYear(start.getFullYear() - 5);
+  return entries.filter((entry) => new Date(entry.recordedAt).getTime() >= start.getTime());
+};
+
+const buildTrendLabels = (dates: string[], range: VitalRange) =>
+  dates.map((value) => {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return value;
+    if (range === '1w') return String(d.getDate());
+    if (range === '1m') {
+      return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    }
+    return d.toLocaleDateString(undefined, { month: 'short' });
+  });
+
+const startOfDay = (date: Date) => {
+  const next = new Date(date);
+  next.setHours(0, 0, 0, 0);
+  return next;
+};
+
+const formatMonthYear = (value: string) =>
+  new Date(value).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+
+const groupVitalLogs = <T extends { date: string; value: string }>(entries: T[]) => {
+  const now = new Date();
+  const today = startOfDay(now);
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const pastWeek = new Date(today);
+  pastWeek.setDate(pastWeek.getDate() - 7);
+
+  const groups = new Map<string, T[]>();
+
+  entries.forEach((entry) => {
+    const entryDate = new Date(entry.date);
+    const entryDay = startOfDay(entryDate);
+    let label = '';
+
+    if (entryDay.getTime() === today.getTime()) {
+      label = 'Today';
+    } else if (entryDay.getTime() === yesterday.getTime()) {
+      label = 'Yesterday';
+    } else if (entryDay.getTime() > pastWeek.getTime()) {
+      label = 'Past Week';
+    } else if (entryDate.getFullYear() === now.getFullYear()) {
+      label = formatMonthYear(entry.date);
+    } else {
+      label = String(entryDate.getFullYear());
+    }
+
+    if (!groups.has(label)) groups.set(label, []);
+    groups.get(label)?.push(entry);
+  });
+
+  return Array.from(groups.entries()).map(([label, items]) => ({ label, items }));
+};
 
 export function PatientDetails({ patient, onNavigate, medicationContext }: PatientDetailsProps) {
   const [activeTab, setActiveTab] = useState<'history' | 'documents' | 'appointments' | 'emergency'>('history');
@@ -281,6 +422,8 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
   const [showConditionModal, setShowConditionModal] = useState(false);
   const [editingCondition, setEditingCondition] = useState<ProviderHealthSummaryCondition | null>(null);
   const [showVitalsModal, setShowVitalsModal] = useState(false);
+  const [vitalRange, setVitalRange] = useState<VitalRange>('1y');
+  const [expandedProviderVitalGroups, setExpandedProviderVitalGroups] = useState<Record<string, boolean>>({});
   const [pendingMedicationResolve, setPendingMedicationResolve] = useState<{ medicationId: string; requestId: string } | null>(
     medicationContext?.medicationId && medicationContext?.medicationChangeRequestId
       ? { medicationId: medicationContext.medicationId, requestId: medicationContext.medicationChangeRequestId }
@@ -782,81 +925,95 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
     }
   };
 
-  const latestSharedVital = useMemo(
-    () =>
-      (patientHealthSummary?.vitals || [])
-        .slice()
-        .sort((a, b) => new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime())[0] || null,
-    [patientHealthSummary]
+  const allSharedVitals = patientHealthSummary?.vitals || [];
+  const latestSharedBloodPressure = useMemo(
+    () => getLatestProviderVitalForType(allSharedVitals, 'bloodPressure') || null,
+    [allSharedVitals]
   );
-  const sortedSharedVitals = useMemo(
-    () =>
-      (patientHealthSummary?.vitals || [])
-        .slice()
-        .sort((a, b) => new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime()),
-    [patientHealthSummary]
+  const latestSharedHeartRate = useMemo(
+    () => getLatestProviderVitalForType(allSharedVitals, 'heartRate') || null,
+    [allSharedVitals]
   );
-  const providerWeightUnit: WeightUnit = (latestSharedVital?.weightUnit as WeightUnit | undefined) || 'lbs';
-  const providerVitalSections = useMemo(() => {
-    const entries = (patientHealthSummary?.vitals || [])
+  const latestSharedWeight = useMemo(
+    () => getLatestProviderVitalForType(allSharedVitals, 'weight') || null,
+    [allSharedVitals]
+  );
+  const latestSharedBloodSugar = useMemo(
+    () => getLatestProviderVitalForType(allSharedVitals, 'bloodSugar') || null,
+    [allSharedVitals]
+  );
+  const latestSharedVitalAt = useMemo(() => {
+    const latest = allSharedVitals
       .slice()
-      .sort((a, b) => new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime());
-    const historyDesc = entries.slice().reverse();
+      .sort((a, b) => new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime())[0];
+    return latest?.recordedAt || null;
+  }, [allSharedVitals]);
+  const providerWeightUnit: WeightUnit = (latestSharedWeight?.weightUnit as WeightUnit | undefined) || 'lbs';
+  const providerVitalSections = useMemo(() => {
+    const makeSection = (key: ProviderVitalType, label: string, latestLabel: string) => {
+      const allEntries = getProviderVitalsForType(allSharedVitals, key, 'asc');
+      const entries = filterVitalsByRange(allEntries, vitalRange);
+      const historyDescAll = getProviderVitalsForType(allSharedVitals, key, 'desc');
+      return {
+        key,
+        label,
+        latest: latestLabel,
+        values: entries.map((entry) => getProviderVitalNumericValue(entry, key, providerWeightUnit)),
+        labels: buildTrendLabels(entries.map((entry) => entry.recordedAt), vitalRange),
+        logs: groupVitalLogs(
+          historyDescAll.map((entry) => {
+            if (key === 'bloodPressure') {
+              return { date: entry.recordedAt, value: `${entry.systolic ?? '—'}/${entry.diastolic ?? '—'} mmHg` };
+            }
+            if (key === 'heartRate') {
+              return { date: entry.recordedAt, value: `${entry.heartRate ?? '—'} bpm` };
+            }
+            if (key === 'weight') {
+              return {
+                date: entry.recordedAt,
+                value: formatWeight(
+                  convertWeight(entry.weight ?? 0, (entry.weightUnit as WeightUnit | undefined) || 'lbs', providerWeightUnit),
+                  providerWeightUnit
+                ),
+              };
+            }
+            return { date: entry.recordedAt, value: `${entry.bloodSugar ?? '—'} mg/dL` };
+          })
+        ),
+      };
+    };
     return [
-      {
-        key: 'bloodPressure' as const,
-        label: 'Blood Pressure',
-        latest: latestSharedVital ? `${latestSharedVital.systolic}/${latestSharedVital.diastolic} mmHg` : '—',
-        values: entries.map((entry) => getProviderVitalNumericValue(entry, 'bloodPressure', providerWeightUnit)),
-        logs: historyDesc.map((entry) => ({
-          date: entry.recordedAt,
-          value: `${entry.systolic}/${entry.diastolic} mmHg`,
-        })),
-      },
-      {
-        key: 'heartRate' as const,
-        label: 'Heart Rate',
-        latest: latestSharedVital ? `${latestSharedVital.heartRate} bpm` : '—',
-        values: entries.map((entry) => getProviderVitalNumericValue(entry, 'heartRate', providerWeightUnit)),
-        logs: historyDesc.map((entry) => ({
-          date: entry.recordedAt,
-          value: `${entry.heartRate} bpm`,
-        })),
-      },
-      {
-        key: 'weight' as const,
-        label: 'Weight',
-        latest: latestSharedVital
+      makeSection(
+        'bloodPressure',
+        'Blood Pressure',
+        latestSharedBloodPressure ? `${latestSharedBloodPressure.systolic ?? '—'}/${latestSharedBloodPressure.diastolic ?? '—'} mmHg` : '—'
+      ),
+      makeSection(
+        'heartRate',
+        'Heart Rate',
+        latestSharedHeartRate && typeof latestSharedHeartRate.heartRate === 'number' ? `${latestSharedHeartRate.heartRate} bpm` : '—'
+      ),
+      makeSection(
+        'weight',
+        'Weight',
+        latestSharedWeight && typeof latestSharedWeight.weight === 'number'
           ? formatWeight(
               convertWeight(
-                latestSharedVital.weight,
-                (latestSharedVital.weightUnit as WeightUnit | undefined) || 'lbs',
+                latestSharedWeight.weight,
+                (latestSharedWeight.weightUnit as WeightUnit | undefined) || 'lbs',
                 providerWeightUnit
               ),
               providerWeightUnit
             )
-          : '—',
-        values: entries.map((entry) => getProviderVitalNumericValue(entry, 'weight', providerWeightUnit)),
-        logs: historyDesc.map((entry) => ({
-          date: entry.recordedAt,
-          value: formatWeight(
-            convertWeight(entry.weight, (entry.weightUnit as WeightUnit | undefined) || 'lbs', providerWeightUnit),
-            providerWeightUnit
-          ),
-        })),
-      },
-      {
-        key: 'bloodSugar' as const,
-        label: 'Blood Sugar',
-        latest: latestSharedVital ? `${latestSharedVital.bloodSugar} mg/dL` : '—',
-        values: entries.map((entry) => getProviderVitalNumericValue(entry, 'bloodSugar', providerWeightUnit)),
-        logs: historyDesc.map((entry) => ({
-          date: entry.recordedAt,
-          value: `${entry.bloodSugar} mg/dL`,
-        })),
-      },
+          : '—'
+      ),
+      makeSection(
+        'bloodSugar',
+        'Blood Sugar',
+        latestSharedBloodSugar && typeof latestSharedBloodSugar.bloodSugar === 'number' ? `${latestSharedBloodSugar.bloodSugar} mg/dL` : '—'
+      ),
     ];
-  }, [latestSharedVital, patientHealthSummary, providerWeightUnit]);
+  }, [allSharedVitals, latestSharedBloodPressure, latestSharedHeartRate, latestSharedWeight, latestSharedBloodSugar, providerWeightUnit, vitalRange]);
   const activeConditions = useMemo(
     () => patientConditions.filter((condition) => condition.isActive !== false),
     [patientConditions]
@@ -1010,7 +1167,7 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                {latestSharedVital ? (
+                {latestSharedBloodPressure || latestSharedHeartRate || latestSharedWeight || latestSharedBloodSugar ? (
                   <button
                     type="button"
                     onClick={() => setShowVitalsModal(true)}
@@ -1018,22 +1175,24 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
                   >
                     <p className="text-sm text-gray-600">Latest shared vitals</p>
                     <div className="mt-2 space-y-1 text-sm text-gray-900">
-                      <p>Blood pressure: {latestSharedVital.systolic}/{latestSharedVital.diastolic} mmHg</p>
-                      <p>Heart rate: {latestSharedVital.heartRate} bpm</p>
+                      <p>Blood pressure: {latestSharedBloodPressure ? `${latestSharedBloodPressure.systolic ?? '—'}/${latestSharedBloodPressure.diastolic ?? '—'} mmHg` : '—'}</p>
+                      <p>Heart rate: {latestSharedHeartRate && typeof latestSharedHeartRate.heartRate === 'number' ? `${latestSharedHeartRate.heartRate} bpm` : '—'}</p>
                       <p>
                         Weight:{' '}
-                        {formatWeight(
-                          convertWeight(
-                            latestSharedVital.weight,
-                            (latestSharedVital.weightUnit as WeightUnit | undefined) || 'lbs',
-                            providerWeightUnit
-                          ),
-                          providerWeightUnit
-                        )}
+                        {latestSharedWeight && typeof latestSharedWeight.weight === 'number'
+                          ? formatWeight(
+                              convertWeight(
+                                latestSharedWeight.weight,
+                                (latestSharedWeight.weightUnit as WeightUnit | undefined) || 'lbs',
+                                providerWeightUnit
+                              ),
+                              providerWeightUnit
+                            )
+                          : '—'}
                       </p>
-                      <p>Blood sugar: {latestSharedVital.bloodSugar} mg/dL</p>
+                      <p>Blood sugar: {latestSharedBloodSugar && typeof latestSharedBloodSugar.bloodSugar === 'number' ? `${latestSharedBloodSugar.bloodSugar} mg/dL` : '—'}</p>
                     </div>
-                    <p className="mt-2 text-xs text-gray-500">Logged {formatDateTime(latestSharedVital.recordedAt)}</p>
+                    <p className="mt-2 text-xs text-gray-500">Logged {formatDateTime(latestSharedVitalAt)}</p>
                     <p className="mt-3 text-xs font-medium text-blue-700">View all trends and logs</p>
                   </button>
                 ) : (
@@ -1579,6 +1738,20 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
                 Close
               </button>
             </div>
+            <div className="flex flex-wrap gap-2">
+              {vitalRangeOptions.map((option) => (
+                <button
+                  key={option.key}
+                  type="button"
+                  onClick={() => setVitalRange(option.key)}
+                  className={`rounded-full px-3 py-1 text-xs ${
+                    vitalRange === option.key ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
               {providerVitalSections.map((section) => (
                 <div key={section.key} className="rounded-2xl border border-gray-200 p-4">
@@ -1587,17 +1760,39 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
                       <p className="text-sm text-gray-500">{section.label}</p>
                       <p className="text-lg font-semibold text-gray-900">{section.latest}</p>
                     </div>
-                    <p className="text-xs text-gray-500">
-                      {sortedSharedVitals[0] ? `Latest: ${formatDateTime(sortedSharedVitals[0].recordedAt)}` : 'No logs yet'}
-                    </p>
+                      <p className="text-xs text-gray-500">{latestSharedVitalAt ? `Latest: ${formatDateTime(latestSharedVitalAt)}` : 'No logs yet'}</p>
                   </div>
-                  <TrendChart values={section.values} />
+                  <TrendChart
+                    values={section.values}
+                    labels={section.labels}
+                  />
                   <div className="mt-3 space-y-2 max-h-48 overflow-y-auto">
                     {section.logs.length > 0 ? (
-                      section.logs.map((log, index) => (
-                        <div key={`${section.key}-${log.date}-${index}`} className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2">
-                          <span className="text-sm text-gray-900">{log.value}</span>
-                          <span className="text-xs text-gray-500">{formatShortDate(log.date)}</span>
+                      section.logs.map((group) => (
+                        <div key={`${section.key}-${group.label}`} className="space-y-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedProviderVitalGroups((current) => ({
+                                ...current,
+                                [`${section.key}-${group.label}`]: !current[`${section.key}-${group.label}`],
+                              }))
+                            }
+                            className="flex w-full items-center justify-between rounded-xl bg-gray-50 px-3 py-2 text-left"
+                          >
+                            <span className="text-xs font-medium uppercase tracking-wide text-gray-500">{group.label}</span>
+                            <span className="text-xs text-gray-500">
+                              {group.items.length} {group.items.length === 1 ? 'entry' : 'entries'}
+                            </span>
+                          </button>
+                          {expandedProviderVitalGroups[`${section.key}-${group.label}`] ? (
+                            group.items.map((log, index) => (
+                              <div key={`${section.key}-${group.label}-${log.date}-${index}`} className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2">
+                                <span className="text-sm text-gray-900">{log.value}</span>
+                                <span className="text-xs text-gray-500">{formatDateTime(log.date)}</span>
+                              </div>
+                            ))
+                          ) : null}
                         </div>
                       ))
                     ) : (

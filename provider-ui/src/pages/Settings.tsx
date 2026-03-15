@@ -260,7 +260,6 @@ export function Settings() {
         <CardContent className="space-y-6">
           <div className="flex flex-col sm:flex-row items-start gap-6">
             <div className="relative">
-              {/* You don’t store photo in DB yet. Keep placeholder */}
               <div className="w-24 h-24 rounded-full bg-gray-200 flex items-center justify-center text-gray-600">
                 <Camera className="w-6 h-6" />
               </div>

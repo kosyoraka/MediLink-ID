@@ -87,6 +87,105 @@ export default function App() {
 
   const [emergencyToken, setEmergencyToken] = useState('');
 
+  const syncOnboardingState = async (
+    email: string,
+    options?: { firstName?: string; lastName?: string }
+  ) => {
+    const patientId = localStorage.getItem("patientId");
+    const token = localStorage.getItem("patient_token");
+
+    setUserEmail(email);
+
+    if (!patientId) {
+      setProfilePrefill({
+        firstName: options?.firstName || "",
+        lastName: options?.lastName || "",
+      });
+      handleNavigation("profile-setup");
+      return;
+    }
+
+    try {
+      const authHeaders = token
+        ? { Authorization: `Bearer ${token}` }
+        : undefined;
+
+      const [profileRes, emergencyRes, providersRes] = await Promise.all([
+        fetch(`${API_BASE}/api/patients/${patientId}/profile`),
+        fetch(`${API_BASE}/api/patients/${patientId}/emergency-profile`),
+        fetch(`${API_BASE}/api/patient/connected-providers`, {
+          headers: authHeaders,
+        }),
+      ]);
+
+      const profile = profileRes.ok ? await profileRes.json() : null;
+      const emergency = emergencyRes.ok ? await emergencyRes.json() : null;
+      const providersData = providersRes.ok ? await providersRes.json() : null;
+
+      const profileComplete = Boolean(
+        profile?.first_name &&
+          profile?.last_name &&
+          profile?.dob &&
+          profile?.health_card &&
+          profile?.phone_number
+      );
+      const emergencyComplete = Boolean(emergency?.updated_at);
+      const connectedProviderIds = Array.isArray(providersData?.providers)
+        ? providersData.providers.map((provider: { id: string }) => provider.id)
+        : [];
+
+      setConnectedProviders(connectedProviderIds);
+
+      if (profile?.first_name || profile?.last_name) {
+        setProfilePrefill({
+          firstName: profile?.first_name || options?.firstName || "",
+          lastName: profile?.last_name || options?.lastName || "",
+        });
+      } else {
+        setProfilePrefill({
+          firstName: options?.firstName || "",
+          lastName: options?.lastName || "",
+        });
+      }
+
+      if (profileComplete) {
+        setUserName(
+          [profile.first_name, profile.last_name].filter(Boolean).join(" ").trim()
+        );
+        setUserHealthCard(profile.health_card || "");
+        setUserDOB(profile.dob || "");
+        localStorage.setItem("profileComplete", "true");
+      } else {
+        localStorage.removeItem("profileComplete");
+      }
+
+      if (emergencyComplete) {
+        localStorage.setItem("emergencyComplete", "true");
+      } else {
+        localStorage.removeItem("emergencyComplete");
+      }
+
+      if (!profileComplete) {
+        handleNavigation("profile-setup");
+        return;
+      }
+
+      if (!emergencyComplete) {
+        handleNavigation("emergency-setup");
+        return;
+      }
+
+      completeOnboarding();
+    } catch (error) {
+      console.error("Failed to sync onboarding state:", error);
+      setProfilePrefill({
+        firstName: options?.firstName || "",
+        lastName: options?.lastName || "",
+      });
+      handleNavigation("profile-setup");
+    }
+  };
+
   const handleNavigation = (screen: Screen, navItem?: NavItem) => {
     setCurrentScreen(screen);
     if (navItem) setActiveNav(navItem);
@@ -147,20 +246,7 @@ export default function App() {
         return (
           <SignIn
             onSignIn={(userData) => {
-              setUserEmail(userData.email);
-
-              if (userData.name) {
-                setUserName(userData.name);
-                setUserHealthCard(userData.healthCard);
-                setUserDOB(userData.dob);
-              }
-
-              // If you ever start returning connected provider IDs on signin, this will still work
-              if ((userData as any).connectedProviders) {
-                setConnectedProviders((userData as any).connectedProviders);
-              }
-
-              completeOnboarding();
+              void syncOnboardingState(userData.email);
             }}
             onBack={() => handleNavigation('welcome')}
             onGoToSignUp={() => handleNavigation('signup')}
@@ -173,12 +259,7 @@ export default function App() {
             onBack={() => handleNavigation('welcome')}
             onGoToSignIn={() => handleNavigation('signin')}
             onSignUp={(email, prefill) => {
-              setUserEmail(email);
-              setProfilePrefill({
-                firstName: prefill?.firstName || '',
-                lastName: prefill?.lastName || '',
-              });
-              handleNavigation('profile-setup');
+              void syncOnboardingState(email, prefill);
             }}
           />
         );

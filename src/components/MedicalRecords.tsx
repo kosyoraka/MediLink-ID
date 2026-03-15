@@ -58,8 +58,32 @@ const subtypeOptions: Record<Exclude<DocumentCategory, "all">, string[]> = {
   other: ["Other"],
 };
 
-function buildDocumentTitle(category: string, subtype: string, customSubtype: string) {
+const coverageTypeOptions = ["OHIP", "UHIP", "Private Insurance", "Other"] as const;
+
+const insuranceProviderOptions = ["Blue Cross", "Sun Life", "Manulife", "Green Shield", "Other"] as const;
+
+function buildDocumentTitle(
+  category: string,
+  subtype: string,
+  customSubtype: string,
+  coverageType = "",
+  customCoverageType = "",
+  insuranceProvider = "",
+  customInsuranceProvider = ""
+) {
   const resolvedSubtype = subtype === "Other" ? customSubtype.trim() : subtype.trim();
+  const resolvedCoverageType =
+    coverageType === "Other" ? customCoverageType.trim() : coverageType.trim();
+  const resolvedInsuranceProvider =
+    insuranceProvider === "Other" ? customInsuranceProvider.trim() : insuranceProvider.trim();
+  if (category === "insurance") {
+    const coverageLabel = resolvedCoverageType || "Insurance";
+    const insuranceLabel =
+      coverageLabel === "Private Insurance" && resolvedInsuranceProvider
+        ? `${coverageLabel} (${resolvedInsuranceProvider})`
+        : coverageLabel;
+    return resolvedSubtype ? `${insuranceLabel} - ${resolvedSubtype}` : insuranceLabel;
+  }
   if (resolvedSubtype) return resolvedSubtype;
 
   const match = documentCategories.find((item) => item.key === category);
@@ -146,6 +170,10 @@ export default function MedicalRecords() {
     category: "labs",
     subtype: "CBC",
     customSubtype: "",
+    coverageType: "OHIP",
+    customCoverageType: "",
+    insuranceProvider: "",
+    customInsuranceProvider: "",
     description: "",
   });
   const [requestForm, setRequestForm] = useState({
@@ -242,6 +270,33 @@ export default function MedicalRecords() {
       return;
     }
 
+    if (uploadForm.category === "insurance") {
+      const resolvedCoverageType =
+        uploadForm.coverageType === "Other"
+          ? uploadForm.customCoverageType.trim()
+          : uploadForm.coverageType.trim();
+      if (!resolvedCoverageType) {
+        toast.error("Choose the coverage type");
+        return;
+      }
+
+      if (resolvedCoverageType === "Private Insurance") {
+        const resolvedInsuranceProvider =
+          uploadForm.insuranceProvider === "Other"
+            ? uploadForm.customInsuranceProvider.trim()
+            : uploadForm.insuranceProvider.trim();
+        if (!resolvedInsuranceProvider) {
+          toast.error("Choose the insurance provider");
+          return;
+        }
+      }
+
+      if (uploadForm.subtype === "Other" && !uploadForm.customSubtype.trim()) {
+        toast.error("Enter the insurance document type");
+        return;
+      }
+    }
+
     if (
       uploadLinkMode === "provider" &&
       uploadForm.category !== "insurance" &&
@@ -254,7 +309,15 @@ export default function MedicalRecords() {
     setUploading(true);
     try {
       const fileDataUrl = await fileToDataUrl(uploadFile);
-      const title = buildDocumentTitle(uploadForm.category, uploadForm.subtype, uploadForm.customSubtype);
+      const title = buildDocumentTitle(
+        uploadForm.category,
+        uploadForm.subtype,
+        uploadForm.customSubtype,
+        uploadForm.coverageType,
+        uploadForm.customCoverageType,
+        uploadForm.insuranceProvider,
+        uploadForm.customInsuranceProvider
+      );
       const created = await api.uploadMyRecord({
         hospitalId:
           uploadForm.category === "insurance" || uploadLinkMode === "personal"
@@ -282,6 +345,10 @@ export default function MedicalRecords() {
         category: "labs",
         subtype: "CBC",
         customSubtype: "",
+        coverageType: "OHIP",
+        customCoverageType: "",
+        insuranceProvider: "",
+        customInsuranceProvider: "",
         description: "",
       });
       toast.success("Document uploaded");
@@ -662,7 +729,11 @@ export default function MedicalRecords() {
                       category: nextCategory,
                       subtype: nextSubtype,
                       customSubtype: "",
-                      hospitalId: nextCategory === "insurance" ? "" : prev.hospitalId,
+                      coverageType: nextCategory === "insurance" ? "OHIP" : prev.coverageType,
+                      customCoverageType: nextCategory === "insurance" ? "" : prev.customCoverageType,
+                      insuranceProvider: nextCategory === "insurance" ? "" : prev.insuranceProvider,
+                      customInsuranceProvider:
+                        nextCategory === "insurance" ? "" : prev.customInsuranceProvider,
                     }));
                   }}
                 >
@@ -699,6 +770,80 @@ export default function MedicalRecords() {
                 placeholder="Enter document type"
               />
             </div>
+            ) : null}
+            {uploadForm.category === "insurance" ? (
+              <div className="grid grid-cols-1 gap-3">
+                <div>
+                  <label className="text-sm text-gray-700 mb-1 block">Coverage Type</label>
+                  <select
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 bg-white"
+                    value={uploadForm.coverageType}
+                    onChange={(e) =>
+                      setUploadForm((prev) => ({
+                        ...prev,
+                        coverageType: e.target.value,
+                        customCoverageType: "",
+                        insuranceProvider: e.target.value === "Private Insurance" ? prev.insuranceProvider : "",
+                        customInsuranceProvider:
+                          e.target.value === "Private Insurance" ? prev.customInsuranceProvider : "",
+                      }))
+                    }
+                  >
+                    {coverageTypeOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {uploadForm.coverageType === "Other" ? (
+                  <div>
+                    <label className="text-sm text-gray-700 mb-1 block">Specify Coverage Type</label>
+                    <Input
+                      value={uploadForm.customCoverageType}
+                      onChange={(e) =>
+                        setUploadForm((prev) => ({ ...prev, customCoverageType: e.target.value }))
+                      }
+                      placeholder="Enter coverage type"
+                    />
+                  </div>
+                ) : null}
+                {uploadForm.coverageType === "Private Insurance" ? (
+                  <div>
+                    <label className="text-sm text-gray-700 mb-1 block">Insurance Provider</label>
+                    <select
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2 bg-white"
+                      value={uploadForm.insuranceProvider}
+                      onChange={(e) =>
+                        setUploadForm((prev) => ({
+                          ...prev,
+                          insuranceProvider: e.target.value,
+                          customInsuranceProvider: "",
+                        }))
+                      }
+                    >
+                      <option value="">Select provider</option>
+                      {insuranceProviderOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : null}
+                {uploadForm.coverageType === "Private Insurance" && uploadForm.insuranceProvider === "Other" ? (
+                  <div>
+                    <label className="text-sm text-gray-700 mb-1 block">Specify Insurance Provider</label>
+                    <Input
+                      value={uploadForm.customInsuranceProvider}
+                      onChange={(e) =>
+                        setUploadForm((prev) => ({ ...prev, customInsuranceProvider: e.target.value }))
+                      }
+                      placeholder="Enter insurance provider"
+                    />
+                  </div>
+                ) : null}
+              </div>
             ) : null}
             <div>
               <label className="text-sm text-gray-700 mb-1 block">Notes</label>

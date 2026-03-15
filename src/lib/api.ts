@@ -128,12 +128,13 @@ export type RecordRequest = {
 
 export type HealthSummaryVital = {
   recordedAt: string;
-  systolic: number;
-  diastolic: number;
-  heartRate: number;
-  weight: number;
+  type?: "bloodPressure" | "heartRate" | "weight" | "bloodSugar";
+  systolic?: number;
+  diastolic?: number;
+  heartRate?: number;
+  weight?: number;
   weightUnit?: "lbs" | "kg";
-  bloodSugar: number;
+  bloodSugar?: number;
 };
 
 export type HealthSummaryCondition = {

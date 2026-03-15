@@ -9,8 +9,8 @@ services:
     environment:
       NODE_ENV: development
       PORT: 4000
-      DB_HOST: host.docker.internal
-      DB_PORT: "5433"
+      FRONTEND_BASE_URL: http://localhost:5173
+      ALLOWED_ORIGINS: http://localhost:5173,http://localhost:5174
     ports:
       - "4000:4000"
     volumes:

@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Search, Send } from "lucide-react";
+import { Search, Send, CheckCircle2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/toast";
 import { apiFetch } from "@/lib/api";
+import type { Patient } from "@/lib/types";
 
 type StaffConversation = {
   id: string;
@@ -19,7 +20,27 @@ type StaffConversation = {
   last_message_at: string | null;
 
   unread_count: number;
+  open_medication_change_count: number;
+  active_medication_change_request_id: string | null;
+  active_medication_change_medication_id: string | null;
 };
+
+type PatientListRow = {
+  patient_id: string;
+  email: string;
+  first_name: string | null;
+  last_name: string | null;
+  dob: string | null;
+  health_card: string | null;
+  phone_number: string | null;
+  connected_at?: string;
+  disconnected_at?: string | null;
+  connection_status?: "Active" | "Inactive";
+};
+
+interface MessagesProps {
+  onNavigate: (page: string, data?: any) => void;
+}
 
 type ChatMessage = {
   id: string;
@@ -63,11 +84,30 @@ function displayPatientName(c: StaffConversation) {
   return full || c.patient_email || c.patient_id;
 }
 
-export function Messages() {
+const calcAge = (dob: string | null) => {
+  if (!dob) return 0;
+  const d = new Date(dob);
+  if (Number.isNaN(d.getTime())) return 0;
+  const diff = Date.now() - d.getTime();
+  return Math.floor(diff / (365.25 * 24 * 60 * 60 * 1000));
+};
+
+const toPatientIdLabel = (uuid: string) => {
+  const suffix = uuid.replace(/-/g, "").slice(-6).toUpperCase();
+  return `PT-${suffix}`;
+};
+
+function isMedicationChangeConversation(c: StaffConversation) {
+  return Number(c.open_medication_change_count || 0) > 0;
+}
+
+export function Messages({ onNavigate }: MessagesProps) {
   const [conversations, setConversations] = useState<StaffConversation[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [patientsById, setPatientsById] = useState<Record<string, Patient>>({});
   const [searchQuery, setSearchQuery] = useState("");
+  const [filter, setFilter] = useState<"all" | "medication-change">("all");
   const [newMessage, setNewMessage] = useState("");
   const [loadingConversations, setLoadingConversations] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
@@ -80,14 +120,20 @@ export function Messages() {
 
   const filteredConversations = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return conversations;
-
-    return conversations.filter((c) => {
+    const base = conversations.filter((c) => {
+      if (filter === "medication-change" && !isMedicationChangeConversation(c)) return false;
+      if (!q) return true;
       const name = displayPatientName(c).toLowerCase();
       const email = (c.patient_email || "").toLowerCase();
       return name.includes(q) || email.includes(q) || c.patient_id.toLowerCase().includes(q);
     });
-  }, [conversations, searchQuery]);
+    return base;
+  }, [conversations, searchQuery, filter]);
+
+  const medicationChangeConversationCount = useMemo(
+    () => conversations.filter((c) => isMedicationChangeConversation(c)).length,
+    [conversations]
+  );
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -104,6 +150,47 @@ export function Messages() {
       toast.error(err?.message || "Failed to load conversations");
     } finally {
       setLoadingConversations(false);
+    }
+  }
+
+  async function loadPatients() {
+    try {
+      const rows = await apiFetch<PatientListRow[]>("/api/staff/patients/connected");
+      const mapped = Object.fromEntries(
+        rows.map((r) => {
+          const fullName = `${r.first_name ?? ""} ${r.last_name ?? ""}`.trim() || "Unnamed Patient";
+          const patient: Patient = {
+            id: r.patient_id,
+            name: fullName,
+            patientId: toPatientIdLabel(r.patient_id),
+            photo: `https://ui-avatars.com/api/?background=2563eb&color=fff&name=${encodeURIComponent(fullName)}`,
+            age: calcAge(r.dob),
+            dateOfBirth: r.dob ?? "",
+            lastVisit: r.connected_at ?? new Date().toISOString(),
+            status: r.connection_status ?? (r.disconnected_at ? "Inactive" : "Active"),
+            phone: r.phone_number ?? "—",
+            email: r.email,
+            address: "—",
+            insurance: "—",
+            visitRecords: [],
+            documents: [],
+            emergencyInfo: {
+              healthCardNumber: r.health_card ?? "—",
+              allergies: [],
+              bloodType: "—",
+              medicalConditions: [],
+              currentMedications: [],
+              emergencyContacts: [],
+              advanceDirectives: { dnrStatus: "—", livingWill: "—" },
+              lastUpdated: new Date().toISOString(),
+            },
+          };
+          return [r.patient_id, patient];
+        })
+      );
+      setPatientsById(mapped);
+    } catch {
+      setPatientsById({});
     }
   }
 
@@ -135,6 +222,7 @@ export function Messages() {
 
   useEffect(() => {
     loadConversations();
+    loadPatients();
   }, []);
 
   useEffect(() => {
@@ -204,6 +292,20 @@ export function Messages() {
     }
   };
 
+  const handleResolveMedicationChange = (conversation: StaffConversation) => {
+    const patient = patientsById[conversation.patient_id];
+    if (!patient || !conversation.active_medication_change_request_id || !conversation.active_medication_change_medication_id) {
+      toast.error("Could not open the related patient medication right now.");
+      return;
+    }
+
+    onNavigate("patient-details", {
+      patient,
+      medicationId: conversation.active_medication_change_medication_id,
+      medicationChangeRequestId: conversation.active_medication_change_request_id,
+    });
+  };
+
   return (
     <div className="h-[calc(100vh-4rem)] flex flex-col lg:flex-row">
       {/* Conversations List */}
@@ -222,6 +324,27 @@ export function Messages() {
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10"
             />
+          </div>
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              onClick={() => setFilter("all")}
+              className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                filter === "all" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600"
+              }`}
+            >
+              All
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilter("medication-change")}
+              className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                filter === "medication-change" ? "bg-amber-500 text-white" : "bg-amber-50 text-amber-700"
+              }`}
+            >
+              Medication Change
+              {medicationChangeConversationCount > 0 ? ` (${medicationChangeConversationCount})` : ""}
+            </button>
           </div>
           {loadingConversations && (
             <p className="text-xs text-gray-500 mt-2">Loading…</p>
@@ -260,9 +383,36 @@ export function Messages() {
                         {getRelativeTime(conversation.last_message_at)}
                       </span>
                     </div>
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      {isMedicationChangeConversation(conversation) ? (
+                        <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+                          Medication Change
+                          {conversation.open_medication_change_count > 0
+                            ? ` • ${conversation.open_medication_change_count} open`
+                            : ""}
+                        </span>
+                      ) : null}
+                    </div>
                     <p className="text-sm text-gray-600 truncate">
                       {conversation.last_message_preview || "No messages yet"}
                     </p>
+                    {isMedicationChangeConversation(conversation) ? (
+                      <div className="mt-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="gap-2"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleResolveMedicationChange(conversation);
+                          }}
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
+                          Resolve
+                        </Button>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               </button>
@@ -303,6 +453,18 @@ export function Messages() {
                   {selectedConversation.patient_email || selectedConversation.patient_id}
                 </p>
               </div>
+              {isMedicationChangeConversation(selectedConversation) ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="ml-auto gap-2"
+                  onClick={() => handleResolveMedicationChange(selectedConversation)}
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  Resolve
+                </Button>
+              ) : null}
             </div>
 
             {/* Messages */}

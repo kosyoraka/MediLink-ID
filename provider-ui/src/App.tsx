@@ -30,6 +30,7 @@ function App() {
   const [authPage, setAuthPage] = useState<AuthPage>("login");
   const [currentPage, setCurrentPage] = useState<Page>("dashboard");
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [patientDetailsContext, setPatientDetailsContext] = useState<{ medicationId?: string; medicationChangeRequestId?: string } | null>(null);
 
   // Calculate unread messages count
   const unreadCount = conversations.reduce((sum, conv) => sum + conv.unreadCount, 0);
@@ -105,12 +106,22 @@ function App() {
 
   const handleNavigate = (page: string, data?: any) => {
     if (page === "patient-details" && data) {
-      setSelectedPatient(data);
+      if (data?.patient) {
+        setSelectedPatient(data.patient);
+        setPatientDetailsContext({
+          medicationId: data.medicationId,
+          medicationChangeRequestId: data.medicationChangeRequestId,
+        });
+      } else {
+        setSelectedPatient(data);
+        setPatientDetailsContext(null);
+      }
       setCurrentPage("patient-details");
       return;
     }
 
     setSelectedPatient(null);
+    setPatientDetailsContext(null);
     setCurrentPage(page as Page);
   };
 
@@ -155,12 +166,12 @@ function App() {
         {currentPage === "patients" && <Patients onNavigate={handleNavigate} />}
 
         {currentPage === "patient-details" && selectedPatient && (
-          <PatientDetails patient={selectedPatient} onNavigate={handleNavigate} />
+          <PatientDetails patient={selectedPatient} onNavigate={handleNavigate} medicationContext={patientDetailsContext} />
         )}
 
         {currentPage === "appointments" && <Appointments onNavigate={handleNavigate} />}
 
-        {currentPage === "messages" && <Messages />}
+        {currentPage === "messages" && <Messages onNavigate={handleNavigate} />}
 
         {currentPage === "documents" && <Documents />}
 

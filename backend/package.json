@@ -7,7 +7,11 @@
   "scripts": {
     "dev": "nodemon --watch src --exec ts-node src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "legacy:report": "node scripts/migrate-legacy-dump.js report",
+    "legacy:migrate": "node scripts/migrate-legacy-dump.js apply",
+    "gcp:report": "node scripts/migrate-gcp-to-supabase.js report",
+    "gcp:migrate": "node scripts/migrate-gcp-to-supabase.js apply"
   },
   "keywords": [],
   "author": "",

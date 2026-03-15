@@ -9,9 +9,9 @@ The platform includes:
 - A patient-facing portal
 - A provider-facing portal
 - A shared backend API
-- A shared PostgreSQL database hosted on Google Cloud SQL
+- A shared PostgreSQL database
 
-All services run locally using Docker Compose, while all developers connect to the same Cloud SQL database via Cloud SQL Proxy to ensure consistent data across the team.
+All services run locally using Docker Compose. The current production/dev database migration to Supabase is being prepared in a dedicated branch; until that migration is complete, do not assume the repo is already running on Supabase.
 
 ---
 
@@ -44,7 +44,7 @@ Instant access to emergency profiles through QR/NFC-style access, enabling faste
 - AI-powered symptom guidance (non-diagnostic)
 - Prisma-managed PostgreSQL database
 - Dockerized local development
-- Shared Cloud SQL database (single source of truth)
+- Shared PostgreSQL database (single source of truth)
 
 ---
 
@@ -61,36 +61,41 @@ Instant access to emergency profiles through QR/NFC-style access, enabling faste
 - Express
 - TypeScript
 - Prisma ORM
-- PostgreSQL (Cloud SQL)
+- PostgreSQL (Supabase)
 
 ### Infrastructure
 - Docker
 - Docker Compose
-- Google Cloud SQL
-- Cloud SQL Proxy
+- Google Cloud SQL or Supabase during migration
 - pgAdmin
 - GitHub
 
 ---
 
-## Getting Started (Local Development with Cloud SQL)
+## Supabase Migration Prep
 
 ### ⚠️ Important
 
-MediLink no longer uses a local PostgreSQL container for development.
+This repo now includes the files needed to move the backend to Supabase:
 
-All developers connect to the shared Google Cloud SQL database using Cloud SQL Proxy.
+- [`backend/.env.supabase.example`](/Users/kennie/Downloads/MedilinkTest/MedilinkidPatientPrototype/backend/.env.supabase.example)
+- [`backend/supabase_setup.sql`](/Users/kennie/Downloads/MedilinkTest/MedilinkidPatientPrototype/backend/supabase_setup.sql)
 
----
+But the migration is not complete until you:
 
-## 1. Prerequisites
+1. create the Supabase project / confirm access
+2. update the existing schema/data there
+3. point `DATABASE_URL` and `SHADOW_DATABASE_URL` to Supabase
+4. remove the remaining local Cloud SQL assumptions from your runtime setup
+
+## Getting Started (Local Development with Supabase)
+
+### 1. Prerequisites
 
 Before starting, install:
 
 - Docker Desktop
 - Git
-- Google Cloud SDK (gcloud)
-- Cloud SQL Proxy
 - Node.js v18+ (optional, Docker recommended)
 
 ---
@@ -98,62 +103,56 @@ Before starting, install:
 ## 2. Clone the Repository
 ```bash
 git clone <REPO_URL>
-cd MedilinkidPatientPrototype/backend
+cd MedilinkidPatientPrototype
 ```
 
 ---
 
-## 3. Authenticate with Google Cloud
+### 2. Get Supabase Access
 
-Ask Kennie to add you to the GCP project.
+Ask the team for:
 
-Then run:
+- The Supabase project reference
+- The database password
+- Any required Google sign-in client IDs if you need OAuth locally
+
+### 3. Enable Required Extensions
+
+In the Supabase SQL editor, run:
 ```bash
-gcloud auth login
-gcloud config set project medilink-dev-486803
+-- paste backend/supabase_setup.sql
 ```
+
+This ensures `pgcrypto` is enabled before Prisma touches the schema.
 
 ---
 
-## 4. Start Cloud SQL Proxy (Required)
+### 4. Create Environment File
 
-In a separate terminal:
-```bash
-./cloud-sql-proxy \
-  --port 5433 \
-  medilink-dev-486803:northamerica-northeast2:medilink-dev-db
-```
-
-This exposes the shared database at:
-```
-localhost:5433
-```
-
-Leave this running while you develop.
-
----
-
-## 5. Create Environment File
-
-Inside `backend/`, create `.env.docker`:
+Inside `backend/`, create `.env.docker` from [`backend/.env.supabase.example`](/Users/kennie/Downloads/MedilinkTest/MedilinkidPatientPrototype/backend/.env.supabase.example):
 ```env
-DATABASE_URL="postgresql://medilink_app:medilinkapp@host.docker.internal:5433/medilink?schema=public"
-SHADOW_DATABASE_URL="postgresql://medilink_app:medilinkapp@host.docker.internal:5433/medilink_shadow?schema=public"
-
 PORT=4000
 NODE_ENV=development
+JWT_SECRET=change_me
+
+DATABASE_URL="postgresql://postgres.<project-ref>:<password>@aws-0-us-east-1.pooler.supabase.com:6543/postgres?sslmode=require"
+SHADOW_DATABASE_URL="postgresql://postgres.<project-ref>:<password>@db.<project-ref>.supabase.co:5432/postgres?sslmode=require"
+
 OPENAI_API_KEY=YOUR_OPENAI_API_KEY
+GOOGLE_CLIENT_ID=YOUR_GOOGLE_CLIENT_ID
 ```
 
 Notes:
 
 - `.env.docker` is intentionally not committed
-- Ask Kennie for DB credentials if needed
+- Use the Supabase transaction pooler URL for `DATABASE_URL`
+- Use the direct database host for `SHADOW_DATABASE_URL`
 - Never commit secrets
+- Google sign-in remains optional and separate from the database provider
 
 ---
 
-## 6. Run the Application Stack
+### 5. Run the Application Stack
 ```bash
 docker compose up -d --build
 ```
@@ -165,11 +164,11 @@ This starts:
 - Provider UI
 - pgAdmin
 
-(No local database container is started)
+(No local database container is started once Supabase is the active database)
 
 ---
 
-## 7. Access the Running Services
+### 6. Access the Running Services
 
 - **Patient Portal:** http://localhost:5173
 - **Provider Portal:** http://localhost:5174
@@ -178,9 +177,9 @@ This starts:
 
 ---
 
-## 8. Prisma Migrations (IMPORTANT)
+### 7. Prisma Migrations (IMPORTANT)
 
-Migrations are already applied on Cloud SQL.
+Migrations should be coordinated carefully against the shared Supabase database.
 
 Run only to verify:
 ```bash
@@ -197,7 +196,7 @@ Unless explicitly instructed.
 
 ---
 
-## 9. pgAdmin Setup (Optional)
+### 8. pgAdmin Setup (Optional)
 
 Login:
 
@@ -206,19 +205,19 @@ Login:
 
 Create a server:
 
-- Host: `host.docker.internal`
-- Port: `5433`
-- Database: `medilink`
-- Username: `medilink_app`
-- Password: (ask Kennie)
+- Host: `db.<project-ref>.supabase.co`
+- Port: `5432`
+- Database: `postgres`
+- Username: `postgres.<project-ref>`
+- Password: (ask the team)
 
-You should see live production-like data (e.g., 24 hospitals).
+You should then see the shared Supabase schema and team data.
 
 ---
 
 ## Database Rules (Read Carefully)
 
-- Cloud SQL is the single source of truth
+- Supabase Postgres becomes the single source of truth after migration is completed
 - All developers see the same data
 - Prisma migrations are controlled
 - Never drop schemas or reset the DB
@@ -254,8 +253,7 @@ Current functionality:
 
 ## Development Rules (Non-Negotiable)
 
-- Cloud SQL is the database
-- Cloud SQL Proxy is required
+- When the Supabase migration is completed, `.env.docker` should use the Supabase connection strings
 - Do not commit `.env` files
 - Do not reset the database
 - One person manages migrations

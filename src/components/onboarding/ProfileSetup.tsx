@@ -34,6 +34,38 @@ export default function ProfileSetup({
     setLastName(initialLastName);
   }, [initialLastName]);
 
+  useEffect(() => {
+    const patientId = localStorage.getItem("patientId");
+    if (!patientId) return;
+
+    const loadExistingProfile = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/patients/${patientId}/profile`, {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+        });
+
+        if (!res.ok) return;
+
+        const data = await res.json().catch(() => null);
+        if (!data) return;
+
+        setFirstName((current) => current || data.first_name || "");
+        setLastName((current) => current || data.last_name || "");
+        setDob((current) => current || (data.dob ? String(data.dob).slice(0, 10) : ""));
+        setHealthCard((current) =>
+          current || (data.health_card ? formatHealthCard(String(data.health_card)) : "")
+        );
+        setPhone((current) => current || data.phone_number || "");
+      } catch (err) {
+        console.error("Could not prefill existing profile:", err);
+      }
+    };
+
+    void loadExistingProfile();
+  }, []);
+
   // Format health card number as XXXX-XXX-XXX
   const formatHealthCard = (value: string) => {
     const digitsOnly = value.replace(/\D/g, '');
