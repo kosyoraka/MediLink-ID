@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   Activity,
-  AlertTriangle,
   Droplet,
   Heart,
   Scale,
@@ -55,6 +54,7 @@ type ProfileResponse = {
 };
 
 type VitalType = 'bloodPressure' | 'heartRate' | 'weight' | 'bloodSugar' | null;
+type WeightUnit = 'lbs' | 'kg';
 type EditorType =
   | 'allergies'
   | 'immunizations'
@@ -137,6 +137,74 @@ const formatConditionDate = (value?: string | null) => {
   return /^\d{4}-\d{2}-\d{2}$/.test(value) ? formatDate(value) : value;
 };
 
+const formatShortDate = (value?: string | null) => {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+};
+
+const toLbs = (weight: number, unit: WeightUnit = 'lbs') => (unit === 'kg' ? weight * 2.20462 : weight);
+const fromLbs = (weight: number, unit: WeightUnit = 'lbs') => (unit === 'kg' ? weight / 2.20462 : weight);
+const convertWeight = (weight: number, from: WeightUnit = 'lbs', to: WeightUnit = 'lbs') =>
+  from === to ? weight : fromLbs(toLbs(weight, from), to);
+
+const formatWeight = (weight: number, unit: WeightUnit = 'lbs') =>
+  `${Number(weight.toFixed(unit === 'kg' ? 1 : 0))} ${unit}`;
+
+const getVitalNumericValue = (
+  entry: HealthSummaryPayload['vitals'][number],
+  type: Exclude<VitalType, null>,
+  weightUnit: WeightUnit = 'lbs'
+) => {
+  if (type === 'bloodPressure') return entry.systolic;
+  if (type === 'heartRate') return entry.heartRate;
+  if (type === 'weight') return convertWeight(entry.weight, (entry.weightUnit as WeightUnit | undefined) || 'lbs', weightUnit);
+  return entry.bloodSugar;
+};
+
+function TrendChart({
+  values,
+  color = '#0f766e',
+}: {
+  values: number[];
+  color?: string;
+}) {
+  if (values.length === 0) {
+    return <div className="h-24 rounded-xl bg-gray-50 border border-dashed border-gray-200" />;
+  }
+
+  const width = 280;
+  const height = 96;
+  const padding = 10;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const stepX = values.length === 1 ? 0 : (width - padding * 2) / (values.length - 1);
+  const points = values.map((value, index) => {
+    const x = padding + index * stepX;
+    const y = height - padding - ((value - min) / range) * (height - padding * 2);
+    return `${x},${y}`;
+  });
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="h-24 w-full rounded-xl bg-gray-50">
+      <polyline
+        fill="none"
+        stroke={color}
+        strokeWidth="3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        points={points.join(' ')}
+      />
+      {points.map((point, index) => {
+        const [cx, cy] = point.split(',');
+        return <circle key={`${point}-${index}`} cx={cx} cy={cy} r="3.5" fill={color} />;
+      })}
+    </svg>
+  );
+}
+
 const latestProfileDate = (profile: ProfileResponse | null, summary: HealthSummaryPayload | null) =>
   formatDateTime(summary?.updatedAt || profile?.emergency_updated_at || profile?.emergency_created_at);
 
@@ -156,10 +224,10 @@ const emptySummary = (): HealthSummaryPayload => ({
 });
 
 const getDefaultVitals = () => [
-  { recordedAt: '2025-10-15T09:00:00.000Z', systolic: 126, diastolic: 84, heartRate: 78, weight: 171, bloodSugar: 108 },
-  { recordedAt: '2025-11-12T09:00:00.000Z', systolic: 124, diastolic: 82, heartRate: 76, weight: 169, bloodSugar: 102 },
-  { recordedAt: '2025-12-10T09:00:00.000Z', systolic: 122, diastolic: 80, heartRate: 74, weight: 167, bloodSugar: 98 },
-  { recordedAt: '2026-01-14T09:00:00.000Z', systolic: 120, diastolic: 80, heartRate: 72, weight: 165, bloodSugar: 95 },
+  { recordedAt: '2025-10-15T09:00:00.000Z', systolic: 126, diastolic: 84, heartRate: 78, weight: 171, weightUnit: 'lbs' as const, bloodSugar: 108 },
+  { recordedAt: '2025-11-12T09:00:00.000Z', systolic: 124, diastolic: 82, heartRate: 76, weight: 169, weightUnit: 'lbs' as const, bloodSugar: 102 },
+  { recordedAt: '2025-12-10T09:00:00.000Z', systolic: 122, diastolic: 80, heartRate: 74, weight: 167, weightUnit: 'lbs' as const, bloodSugar: 98 },
+  { recordedAt: '2026-01-14T09:00:00.000Z', systolic: 120, diastolic: 80, heartRate: 72, weight: 165, weightUnit: 'lbs' as const, bloodSugar: 95 },
 ];
 
 const defaultConditionMeta = (name: string): Omit<HealthSummaryCondition, 'id' | 'name'> => {
@@ -294,7 +362,14 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
   const [conditionRequestOpen, setConditionRequestOpen] = useState(false);
   const [requestingCondition, setRequestingCondition] = useState<HealthSummaryCondition | null>(null);
   const [conditionRequestMessage, setConditionRequestMessage] = useState('');
-  const [vitalForm, setVitalForm] = useState({ systolic: '120', diastolic: '80', heartRate: '72', weight: '165', bloodSugar: '95' });
+  const [vitalForm, setVitalForm] = useState({
+    systolic: '120',
+    diastolic: '80',
+    heartRate: '72',
+    weight: '165',
+    weightUnit: 'lbs' as WeightUnit,
+    bloodSugar: '95',
+  });
   const [conditionForm, setConditionForm] = useState<HealthSummaryCondition>(emptyCondition());
   const [allergyForm, setAllergyForm] = useState<HealthSummaryAllergy>(emptyAllergy());
   const [immunizationForm, setImmunizationForm] = useState<HealthSummaryImmunization>(emptyImmunization());
@@ -419,6 +494,11 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
   );
   const latestVital = sortedVitals[0];
   const previousVital = sortedVitals[1];
+  const latestWeightUnit: WeightUnit = (latestVital?.weightUnit as WeightUnit | undefined) || 'lbs';
+  const latestWeight = latestVital ? convertWeight(latestVital.weight, (latestVital.weightUnit as WeightUnit | undefined) || 'lbs', latestWeightUnit) : 0;
+  const previousWeight = previousVital
+    ? convertWeight(previousVital.weight, (previousVital.weightUnit as WeightUnit | undefined) || 'lbs', latestWeightUnit)
+    : undefined;
 
   const vitals = latestVital
     ? [
@@ -445,10 +525,10 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
         {
           key: 'weight' as const,
           label: 'Weight',
-          value: String(latestVital.weight),
-          unit: 'lbs',
-          status: `${weightDelta(latestVital.weight, previousVital?.weight).label} ${weightDelta(latestVital.weight, previousVital?.weight).value}`,
-          subtext: `Previous: ${previousVital?.weight ?? '—'} lbs`,
+          value: String(Number(latestWeight.toFixed(latestWeightUnit === 'kg' ? 1 : 0))),
+          unit: latestWeightUnit,
+          status: `${weightDelta(latestWeight, previousWeight).label} ${weightDelta(latestWeight, previousWeight).value}`,
+          subtext: `Previous: ${previousWeight ? formatWeight(previousWeight, latestWeightUnit) : '—'}`,
           icon: Scale,
           color: 'bg-purple-100 text-purple-600',
         },
@@ -502,6 +582,7 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
       diastolic: latest?.diastolic ?? 0,
       heartRate: latest?.heartRate ?? 0,
       weight: latest?.weight ?? 0,
+      weightUnit: ((latest?.weightUnit as WeightUnit | undefined) || 'lbs') as WeightUnit,
       bloodSugar: latest?.bloodSugar ?? 0,
     };
 
@@ -514,6 +595,7 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
     }
     if (editingVital === 'weight') {
       nextEntry.weight = Number(vitalForm.weight) || 0;
+      nextEntry.weightUnit = vitalForm.weightUnit;
     }
     if (editingVital === 'bloodSugar') {
       nextEntry.bloodSugar = Number(vitalForm.bloodSugar) || 0;
@@ -706,13 +788,31 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
   const selectedVitalHistory = useMemo(() => {
     if (!summary || !selectedVital) return [];
     const entries = summary.vitals.slice().sort((a, b) => new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime());
+    const displayWeightUnit: WeightUnit = ((entries[0]?.weightUnit as WeightUnit | undefined) || 'lbs');
     return entries.map((entry) => {
       if (selectedVital === 'bloodPressure') return { date: entry.recordedAt, value: `${entry.systolic}/${entry.diastolic} mmHg` };
       if (selectedVital === 'heartRate') return { date: entry.recordedAt, value: `${entry.heartRate} bpm` };
-      if (selectedVital === 'weight') return { date: entry.recordedAt, value: `${entry.weight} lbs` };
+      if (selectedVital === 'weight') {
+        return {
+          date: entry.recordedAt,
+          value: formatWeight(
+            convertWeight(entry.weight, (entry.weightUnit as WeightUnit | undefined) || 'lbs', displayWeightUnit),
+            displayWeightUnit
+          ),
+        };
+      }
       return { date: entry.recordedAt, value: `${entry.bloodSugar} mg/dL` };
     });
   }, [selectedVital, summary]);
+
+  const selectedVitalTrendValues = useMemo(() => {
+    if (!summary || !selectedVital) return [];
+    const entries = summary.vitals
+      .slice()
+      .sort((a, b) => new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime());
+    const displayWeightUnit: WeightUnit = ((sortedVitals[0]?.weightUnit as WeightUnit | undefined) || 'lbs');
+    return entries.map((entry) => getVitalNumericValue(entry, selectedVital, displayWeightUnit));
+  }, [selectedVital, sortedVitals, summary]);
 
   const activeConditions = useMemo(
     () => conditions.filter((condition) => condition.isActive !== false),
@@ -811,6 +911,15 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
                     onClick={(e) => {
                       e.stopPropagation();
                       setEditingVital(vital.key);
+                      const latest = sortedVitals[0];
+                      setVitalForm({
+                        systolic: String(latest?.systolic ?? 120),
+                        diastolic: String(latest?.diastolic ?? 80),
+                        heartRate: String(latest?.heartRate ?? 72),
+                        weight: String(latest?.weight ?? 165),
+                        weightUnit: ((latest?.weightUnit as WeightUnit | undefined) || 'lbs'),
+                        bloodSugar: String(latest?.bloodSugar ?? 95),
+                      });
                       setVitalsOpen(true);
                     }}
                     className="text-xs text-teal-700 font-medium"
@@ -1142,7 +1251,19 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
               <label className="block text-sm text-gray-600">Heart Rate<input className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2" value={vitalForm.heartRate} onChange={(e) => setVitalForm({ ...vitalForm, heartRate: e.target.value })} /></label>
             )}
             {editingVital === 'weight' && (
-              <label className="block text-sm text-gray-600">Weight<input className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2" value={vitalForm.weight} onChange={(e) => setVitalForm({ ...vitalForm, weight: e.target.value })} /></label>
+              <div className="grid grid-cols-[1fr_120px] gap-3">
+                <label className="block text-sm text-gray-600">
+                  Weight
+                  <input className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2" value={vitalForm.weight} onChange={(e) => setVitalForm({ ...vitalForm, weight: e.target.value })} />
+                </label>
+                <label className="block text-sm text-gray-600">
+                  Unit
+                  <select className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2" value={vitalForm.weightUnit} onChange={(e) => setVitalForm({ ...vitalForm, weightUnit: e.target.value as WeightUnit })}>
+                    <option value="lbs">lbs</option>
+                    <option value="kg">kg</option>
+                  </select>
+                </label>
+              </div>
             )}
             {editingVital === 'bloodSugar' && (
               <label className="block text-sm text-gray-600">Blood Sugar<input className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2" value={vitalForm.bloodSugar} onChange={(e) => setVitalForm({ ...vitalForm, bloodSugar: e.target.value })} /></label>
@@ -1170,6 +1291,10 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
             <div className="flex items-center justify-between">
               <h3 className="text-gray-900">{vitals.find((item) => item.key === selectedVital)?.label} History</h3>
               <button type="button" onClick={() => setSelectedVital(null)} className="text-sm text-gray-500">Close</button>
+            </div>
+            <div>
+              <p className="text-xs uppercase tracking-wide text-gray-500 mb-2">Trend</p>
+              <TrendChart values={selectedVitalTrendValues} />
             </div>
             <div className="space-y-3 max-h-80 overflow-y-auto">
               {selectedVitalHistory.map((entry, index) => (

@@ -132,6 +132,7 @@ export type HealthSummaryVital = {
   diastolic: number;
   heartRate: number;
   weight: number;
+  weightUnit?: "lbs" | "kg";
   bloodSugar: number;
 };
 
