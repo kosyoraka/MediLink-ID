@@ -2,53 +2,16 @@
 
 ## Project Summary
 
-MediLink is a smart patient portal and medical ID platform that centralizes healthcare information across providers. It enables patients to manage medical records, appointments, medications, and emergency health profiles in one secure system, while also supporting instant emergency access via QR/NFC-style workflows.
+MediLink is a patient portal and provider portal backed by a shared Express/Postgres API. The current working stack on this branch uses Supabase Postgres as the shared database and runs locally through Docker Compose.
 
 The platform includes:
 
 - A patient-facing portal
 - A provider-facing portal
 - A shared backend API
-- A shared PostgreSQL database
+- A shared Supabase PostgreSQL database
 
-All services run locally using Docker Compose. The current production/dev database migration to Supabase is being prepared in a dedicated branch; until that migration is complete, do not assume the repo is already running on Supabase.
-
----
-
-## Problem Statement
-
-### Fragmented Medical Records
-
-Patients are forced to manage healthcare information across multiple disconnected systems such as family doctors, specialists, and walk-in clinics.
-
-**Our Solution:**  
-A centralized patient portal that aggregates records, appointments, and health data in one secure place.
-
----
-
-### Emergency Access to Health Information
-
-In emergency situations, critical health information (allergies, chronic conditions, medications) is often unavailable or delayed.
-
-**Our Solution:**  
-Instant access to emergency profiles through QR/NFC-style access, enabling faster and safer care delivery.
-
----
-
-## Key Features
-
-- Centralized patient health records
-- Emergency health profile with controlled sharing
-- Patient and provider portals
-- Secure authentication
-- AI-powered symptom guidance (non-diagnostic)
-- Prisma-managed PostgreSQL database
-- Dockerized local development
-- Shared PostgreSQL database (single source of truth)
-
----
-
-## Technology Stack
+## Stack
 
 ### Frontend
 - React
@@ -60,201 +23,172 @@ Instant access to emergency profiles through QR/NFC-style access, enabling faste
 - Node.js
 - Express
 - TypeScript
-- Prisma ORM
-- PostgreSQL (Supabase)
+- Prisma
+- PostgreSQL
 
 ### Infrastructure
+- Supabase
 - Docker
 - Docker Compose
-- Google Cloud SQL or Supabase during migration
 - pgAdmin
 - GitHub
 
----
+## Current Status
 
-## Supabase Migration Prep
+This branch is on the Supabase path now.
 
-### ⚠️ Important
+- Docker/local backend config no longer depends on the Cloud SQL proxy
+- Supabase is the active database target for local development
+- The latest GCP dataset has been migrated into Supabase
+- Google sign-in is wired locally when `GOOGLE_CLIENT_ID` is provided
+- Patient onboarding now checks saved backend data instead of relying only on local browser flags
 
-This repo now includes the files needed to move the backend to Supabase:
+## Prerequisites
 
-- [`backend/.env.supabase.example`](/Users/kennie/Downloads/MedilinkTest/MedilinkidPatientPrototype/backend/.env.supabase.example)
-- [`backend/supabase_setup.sql`](/Users/kennie/Downloads/MedilinkTest/MedilinkidPatientPrototype/backend/supabase_setup.sql)
-
-But the migration is not complete until you:
-
-1. create the Supabase project / confirm access
-2. update the existing schema/data there
-3. point `DATABASE_URL` and `SHADOW_DATABASE_URL` to Supabase
-4. remove the remaining local Cloud SQL assumptions from your runtime setup
-
-## Getting Started (Local Development with Supabase)
-
-### 1. Prerequisites
-
-Before starting, install:
+Install:
 
 - Docker Desktop
 - Git
-- Node.js v18+ (optional, Docker recommended)
+- Node.js 18+ if you want to run commands outside Docker
 
----
+## Environment Setup
 
-## 2. Clone the Repository
-```bash
-git clone <REPO_URL>
-cd MedilinkidPatientPrototype
-```
+The backend uses [`backend/.env.docker`](/Users/kennie/Downloads/MedilinkTest/MedilinkidPatientPrototype/backend/.env.docker) for Docker-based local runs.
 
----
+Start from the tracked template:
 
-### 2. Get Supabase Access
+[`backend/.env.supabase.example`](/Users/kennie/Downloads/MedilinkTest/MedilinkidPatientPrototype/backend/.env.supabase.example)
 
-Ask the team for:
+Required values:
 
-- The Supabase project reference
-- The database password
-- Any required Google sign-in client IDs if you need OAuth locally
-
-### 3. Enable Required Extensions
-
-In the Supabase SQL editor, run:
-```bash
--- paste backend/supabase_setup.sql
-```
-
-This ensures `pgcrypto` is enabled before Prisma touches the schema.
-
----
-
-### 4. Create Environment File
-
-Inside `backend/`, create `.env.docker` from [`backend/.env.supabase.example`](/Users/kennie/Downloads/MedilinkTest/MedilinkidPatientPrototype/backend/.env.supabase.example):
 ```env
 PORT=4000
 NODE_ENV=development
 JWT_SECRET=change_me
 
-DATABASE_URL="postgresql://postgres.<project-ref>:<password>@aws-0-us-east-1.pooler.supabase.com:6543/postgres?sslmode=require"
-SHADOW_DATABASE_URL="postgresql://postgres.<project-ref>:<password>@db.<project-ref>.supabase.co:5432/postgres?sslmode=require"
+DATABASE_URL="postgresql://postgres.<project-ref>:<password>@<pooler-host>:5432/postgres"
+SHADOW_DATABASE_URL="postgresql://postgres:<password>@db.<project-ref>.supabase.co:5432/postgres"
+DATABASE_SSL_REJECT_UNAUTHORIZED=false
 
-OPENAI_API_KEY=YOUR_OPENAI_API_KEY
-GOOGLE_CLIENT_ID=YOUR_GOOGLE_CLIENT_ID
+FRONTEND_BASE_URL="http://localhost:5173"
+ALLOWED_ORIGINS="http://localhost:5173,http://localhost:5174"
+
+OPENAI_API_KEY=""
+GOOGLE_CLIENT_ID=""
 ```
 
 Notes:
 
-- `.env.docker` is intentionally not committed
-- Use the Supabase transaction pooler URL for `DATABASE_URL`
-- Use the direct database host for `SHADOW_DATABASE_URL`
-- Never commit secrets
-- Google sign-in remains optional and separate from the database provider
+- `DATABASE_URL` should use the Supabase pooler connection string
+- `SHADOW_DATABASE_URL` should use the direct database connection
+- `DATABASE_SSL_REJECT_UNAUTHORIZED=false` is currently used for local Docker connectivity to Supabase
+- `GOOGLE_CLIENT_ID` is required if you want Google sign-in locally
+- Do not commit real secrets
 
----
+## Supabase Setup
 
-### 5. Run the Application Stack
+If the project is not already prepared, run the SQL in:
+
+[`backend/supabase_setup.sql`](/Users/kennie/Downloads/MedilinkTest/MedilinkidPatientPrototype/backend/supabase_setup.sql)
+
+This enables `pgcrypto`, which the schema expects.
+
+## Running The System
+
+From:
+
+[`backend`](/Users/kennie/Downloads/MedilinkTest/MedilinkidPatientPrototype/backend)
+
+run:
+
 ```bash
 docker compose up -d --build
 ```
 
 This starts:
 
-- Backend API
-- Patient UI
-- Provider UI
-- pgAdmin
+- API on `http://localhost:4000`
+- Patient app on `http://localhost:5173`
+- Provider app on `http://localhost:5174`
+- pgAdmin on `http://localhost:5050`
 
-(No local database container is started once Supabase is the active database)
+Useful commands:
 
----
+```bash
+docker compose ps
+docker compose logs -f api
+docker compose down
+```
 
-### 6. Access the Running Services
+## Local URLs
 
-- **Patient Portal:** http://localhost:5173
-- **Provider Portal:** http://localhost:5174
-- **Backend API:** http://localhost:4000/health
-- **pgAdmin:** http://localhost:5050
+- Patient portal: `http://localhost:5173`
+- Provider portal: `http://localhost:5174`
+- Backend API: `http://localhost:4000`
+- pgAdmin: `http://localhost:5050`
 
----
+## Database Migration Utilities
 
-### 7. Prisma Migrations (IMPORTANT)
+The backend includes migration/report scripts in [`backend/package.json`](/Users/kennie/Downloads/MedilinkTest/MedilinkidPatientPrototype/backend/package.json):
 
-Migrations should be coordinated carefully against the shared Supabase database.
+```bash
+npm run gcp:report
+npm run gcp:migrate
+```
 
-Run only to verify:
+What they do:
+
+- `gcp:report` compares the live GCP source database against Supabase
+- `gcp:migrate` copies the live GCP dataset into Supabase
+
+These scripts were used to bring over the newer data set, including:
+
+- patients and profiles
+- emergency data
+- appointments
+- messaging
+- provider connections
+- documents
+- health summaries
+- medications and conditions
+
+Use them only if you intentionally need to compare or re-run migration work.
+
+## Prisma Guidance
+
+Be careful with Prisma commands against the shared Supabase database.
+
+Safe verification command:
+
 ```bash
 docker compose exec api npx prisma migrate status
 ```
 
-🚫 **Do NOT run:**
+Do not run these casually against the shared database:
 
 - `prisma migrate dev`
 - `prisma migrate reset`
 - `prisma db push`
 
-Unless explicitly instructed.
+## pgAdmin
 
----
+pgAdmin runs locally at `http://localhost:5050`.
 
-### 8. pgAdmin Setup (Optional)
-
-Login:
+Default login:
 
 - Email: `admin@medilink.com`
 - Password: `admin`
 
-Create a server:
+To connect pgAdmin to Supabase, use the direct host from your Supabase project:
 
 - Host: `db.<project-ref>.supabase.co`
 - Port: `5432`
 - Database: `postgres`
-- Username: `postgres.<project-ref>`
-- Password: (ask the team)
+- Username: `postgres`
+- Password: your Supabase database password
 
-You should then see the shared Supabase schema and team data.
+## Important Notes
 
----
-
-## Database Rules (Read Carefully)
-
-- Supabase Postgres becomes the single source of truth after migration is completed
-- All developers see the same data
-- Prisma migrations are controlled
-- Never drop schemas or reset the DB
-- No local Postgres containers
-
----
-
-## Current Project Status
-
-MediLink is in active MVP development.
-
-Current functionality:
-
-- Authentication (patients & staff)
-- Patient profiles
-- Emergency health profiles
-- Appointment management
-- Provider portal (simulated)
-- AI-powered symptom guidance foundation
-
----
-
-## Team
-
-- Oloruntimilehin (Timi) Olajonlu
-- Kennie Oraka
-- Kosy Oraka
-- Elysprit (Elyse) Dhaliwal
-- Andrew Tissi
-- Amira Mohamed
-
----
-
-## Development Rules (Non-Negotiable)
-
-- When the Supabase migration is completed, `.env.docker` should use the Supabase connection strings
-- Do not commit `.env` files
-- Do not reset the database
-- One person manages migrations
-- If unsure → ask before running DB commands
+- You do not need the GCP Cloud SQL proxy command for normal app usage on this branch
+- You only need the old GCP connection if you plan to inspect or re-migrate from the old source database
+- Supabase is the current shared source of truth for this branch

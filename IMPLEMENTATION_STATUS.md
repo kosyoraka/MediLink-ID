@@ -11,6 +11,22 @@ This is based on the current code state in:
 - provider app: `provider-ui/src/`
 - backend API: `backend/src/index.ts`
 
+## 0. Platform / Infrastructure
+
+### Implemented
+- [x] Local Docker development is configured for Supabase-backed runtime
+- [x] Backend Docker startup no longer waits on a local Cloud SQL proxy
+- [x] Backend DB connectivity supports Supabase SSL settings through environment config
+- [x] Supabase setup SQL exists in [`backend/supabase_setup.sql`](/Users/kennie/Downloads/MedilinkTest/MedilinkidPatientPrototype/backend/supabase_setup.sql)
+- [x] Supabase example env file exists in [`backend/.env.supabase.example`](/Users/kennie/Downloads/MedilinkTest/MedilinkidPatientPrototype/backend/.env.supabase.example)
+- [x] Live GCP-to-Supabase migration tooling exists in [`backend/scripts/migrate-gcp-to-supabase.js`](/Users/kennie/Downloads/MedilinkTest/MedilinkidPatientPrototype/backend/scripts/migrate-gcp-to-supabase.js)
+- [x] Live GCP data has been migrated into Supabase for the current working environment
+
+### Gaps
+- [ ] Shared environment secret management is still manual
+- [ ] Prisma migration workflow against the shared Supabase database still needs stricter team process/documentation
+- [ ] Object/file storage is still not moved to a dedicated managed storage layer
+
 ## 1. Authentication
 
 ### Patient authentication
@@ -46,11 +62,13 @@ This is based on the current code state in:
 - [x] Profile setup flow exists
 - [x] Emergency setup flow exists
 - [x] Provider connection flow exists during onboarding
+- [x] Post-auth onboarding routing now checks saved backend data before deciding whether profile/emergency setup is still needed
 
 ### Patient profile
 - [x] Personal information page exists
 - [x] Patient profile data is persisted in backend profile tables
 - [x] Emergency profile information is persisted
+- [x] Existing profile values are prefetched into the profile setup form when present
 
 ### Profile gaps
 - [ ] Profile photo upload/edit is not implemented
