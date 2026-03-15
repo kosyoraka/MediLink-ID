@@ -132,10 +132,24 @@ export type ProviderHealthSummaryFamilyHistory = {
   condition: string;
 };
 
+export type ProviderHealthSummaryEmergencyContact = {
+  id?: string;
+  name: string;
+  relationship: string;
+  phone: string;
+};
+
 export type ProviderHealthSummary = {
   vitals: ProviderHealthSummaryVital[];
   conditions: ProviderHealthSummaryCondition[];
   allergies: ProviderHealthSummaryAllergy[];
+  bloodType: string | null;
+  currentMedications: string[];
+  emergencyContacts: ProviderHealthSummaryEmergencyContact[];
+  advanceDirectives: {
+    dnrStatus?: string;
+    livingWill?: string;
+  };
   immunizations: ProviderHealthSummaryImmunization[];
   familyHistory: ProviderHealthSummaryFamilyHistory[];
   updatedAt: string | null;

@@ -11,11 +11,9 @@ import {
   FileText,
   Shield,
   Smartphone,
-  Wallet,
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Switch } from './ui/switch';
-import { Input } from './ui/input';
 
 type SettingsState = {
   personalInfo: boolean;
@@ -215,12 +213,7 @@ export default function EmergencyProfile({ onBack }: EmergencyProfileProps) {
     run();
   }, [patientId]);
 
-  const toggleSetting = (key: keyof SettingsState) => {
-    setSettings((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
-
-  // PUT: save to DB
-  const handleSave = async () => {
+  const persistEmergencyProfile = async (nextSettings: SettingsState) => {
     setError(null);
     setSaveMsg(null);
 
@@ -233,14 +226,13 @@ export default function EmergencyProfile({ onBack }: EmergencyProfileProps) {
       setSaving(true);
 
       const payload = {
-        //sharePersonalInfo: settings.personalInfo,
-        sharePersonalInfo: true, // ✅ always on (locked)
-        shareBloodType: settings.bloodType,
-        shareAllergies: settings.allergies,
-        shareMedicalConditions: settings.conditions,
-        shareCurrentMedications: settings.medications,
-        shareEmergencyContacts: settings.emergencyContacts,
-        shareAdvanceDirectives: settings.advanceDirectives,
+        sharePersonalInfo: true,
+        shareBloodType: nextSettings.bloodType,
+        shareAllergies: nextSettings.allergies,
+        shareMedicalConditions: nextSettings.conditions,
+        shareCurrentMedications: nextSettings.medications,
+        shareEmergencyContacts: nextSettings.emergencyContacts,
+        shareAdvanceDirectives: nextSettings.advanceDirectives,
 
         bloodType: bloodType || null,
         allergies: allergies || null,
@@ -268,16 +260,20 @@ export default function EmergencyProfile({ onBack }: EmergencyProfileProps) {
         return;
       }
 
-      // Backend returns updated row; grab updated_at if present
       if (data?.updated_at) setUpdatedAt(data.updated_at);
-      setSaveMsg('Saved');
+      setSaveMsg('Sharing settings updated');
     } catch (e: any) {
       setError(e?.message || String(e));
     } finally {
       setSaving(false);
-      // hide "Saved" after a bit
       setTimeout(() => setSaveMsg(null), 1500);
     }
+  };
+
+  const toggleSetting = (key: keyof SettingsState) => {
+    const nextSettings = { ...settings, [key]: !settings[key] };
+    setSettings(nextSettings);
+    void persistEmergencyProfile(nextSettings);
   };
 
   // Emergency Mode view (now uses DB values, no hardcoded lists)
@@ -542,54 +538,6 @@ export default function EmergencyProfile({ onBack }: EmergencyProfileProps) {
           </Button>
         </div>
 
-        {/* Add to Wallet */}
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <div className="flex items-start gap-3 mb-4">
-            <Wallet className="w-6 h-6 text-teal-600 flex-shrink-0" />
-            <div className="flex-1">
-              <h3 className="text-gray-900 mb-1">Quick Access from Lock Screen</h3>
-              <p className="text-sm text-gray-600">
-                Add your emergency profile to your digital wallet for instant access, even when your phone is locked
-              </p>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <Button className="w-full bg-black hover:bg-gray-900 text-white h-12 flex items-center justify-center gap-2">
-              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.675-.546 9.103 1.519 12.09 1.013 1.454 2.208 3.09 3.792 3.039 1.52-.065 2.09-.987 3.935-.987 1.831 0 2.35.987 3.96.948 1.637-.026 2.676-1.48 3.676-2.948 1.156-1.688 1.636-3.325 1.662-3.415-.039-.013-3.182-1.221-3.22-4.857-.026-3.04 2.48-4.494 2.597-4.559-1.429-2.09-3.623-2.324-4.39-2.376-2-.156-3.675 1.09-4.61 1.09zM15.53 3.83c.843-1.012 1.4-2.427 1.245-3.83-1.207.052-2.662.805-3.532 1.818-.78.896-1.454 2.338-1.273 3.714 1.338.104 2.715-.688 3.559-1.701" />
-              </svg>
-              <span>Add to Apple Wallet</span>
-            </Button>
-
-            <Button variant="outline" className="w-full h-12 flex items-center justify-center gap-2 border-gray-300">
-              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-                <path
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                  fill="#4285F4"
-                />
-                <path
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                  fill="#34A853"
-                />
-                <path
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                  fill="#FBBC05"
-                />
-                <path
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                  fill="#EA4335"
-                />
-              </svg>
-              <span>Add to Google Wallet</span>
-            </Button>
-          </div>
-
-          <p className="text-xs text-gray-500 mt-3">
-            Your emergency card will be accessible from your device&apos;s lock screen or wallet app
-          </p>
-        </div>
-
         {/* Information to Share (toggles) */}
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="p-4 bg-gray-50 border-b border-gray-200">
@@ -628,107 +576,12 @@ export default function EmergencyProfile({ onBack }: EmergencyProfileProps) {
           </div>
         </div>
 
-        {/* Update Emergency Information (now bound to DB state) */}
         <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <h3 className="text-gray-900 mb-4">Update Emergency Information</h3>
-
-          <div className="space-y-4">
-            <div>
-              <label className="block text-gray-700 mb-2">Blood Type</label>
-              <select
-                value={bloodType}
-                onChange={(e) => setBloodType(e.target.value)}
-                className="w-full p-3 border border-gray-300 rounded-lg bg-white"
-              >
-                <option value="">Select…</option>
-                <option value="O Positive">O Positive</option>
-                <option value="O Negative">O Negative</option>
-                <option value="A Positive">A Positive</option>
-                <option value="A Negative">A Negative</option>
-                <option value="B Positive">B Positive</option>
-                <option value="B Negative">B Negative</option>
-                <option value="AB Positive">AB Positive</option>
-                <option value="AB Negative">AB Negative</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-gray-700 mb-2">Allergies (one per line)</label>
-              <textarea
-                value={allergies}
-                onChange={(e) => setAllergies(e.target.value)}
-                className="w-full min-h-[90px] p-3 border border-gray-300 rounded-lg"
-                placeholder="e.g. Penicillin (Severe)"
-              />
-            </div>
-
-            <div>
-              <label className="block text-gray-700 mb-2">Medical Conditions (one per line)</label>
-              <textarea
-                value={conditions}
-                onChange={(e) => setConditions(e.target.value)}
-                className="w-full min-h-[90px] p-3 border border-gray-300 rounded-lg"
-                placeholder="e.g. Type 2 Diabetes"
-              />
-            </div>
-
-            <div>
-              <label className="block text-gray-700 mb-2">Current Medications (one per line)</label>
-              <textarea
-                value={medications}
-                onChange={(e) => setMedications(e.target.value)}
-                className="w-full min-h-[90px] p-3 border border-gray-300 rounded-lg"
-                placeholder="e.g. Metformin 500mg - Twice daily"
-              />
-            </div>
-
-            <div>
-              <label className="block text-gray-700 mb-2">Primary Emergency Contact</label>
-              <Input
-                value={emergencyContactFullName}
-                onChange={(e) => setEmergencyContactFullName(e.target.value)}
-                placeholder="Full Name"
-                className="mb-2"
-              />
-              <Input
-                value={emergencyContactRelationship}
-                onChange={(e) => setEmergencyContactRelationship(e.target.value)}
-                placeholder="Relationship"
-                className="mb-2"
-              />
-              <Input
-                value={emergencyContactPhone}
-                onChange={(e) => setEmergencyContactPhone(e.target.value)}
-                placeholder="Phone Number"
-                type="tel"
-              />
-            </div>
-
-            <div>
-              <label className="block text-gray-700 mb-2">Advance Directives (Notes for Emergency Responders)</label>
-              <Input
-                value={dnrStatus}
-                onChange={(e) => setDnrStatus(e.target.value)}
-                placeholder="DNR Status (optional)"
-                className="mb-2"
-              />
-              <Input
-                value={livingWill}
-                onChange={(e) => setLivingWill(e.target.value)}
-                placeholder="Living Will (optional)"
-              />
-            </div>
-
-            <Button
-              onClick={handleSave}
-              disabled={saving || !!error || !patientId}
-              className="w-full bg-teal-600 hover:bg-teal-700 text-white"
-            >
-              {saving ? 'Saving…' : 'Save Changes'}
-            </Button>
-
-            {saveMsg && <p className="text-sm text-green-700">{saveMsg}</p>}
-          </div>
+          <p className="text-sm text-gray-600">
+            Health details like blood type, allergies, conditions, medications, and emergency contacts are managed from
+            your health summary and emergency setup flow. This screen is only for choosing what gets shown in emergency mode.
+          </p>
+          {saveMsg && <p className="text-sm text-green-700 mt-3">{saveMsg}</p>}
         </div>
 
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">

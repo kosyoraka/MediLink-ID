@@ -164,10 +164,26 @@ export type HealthSummaryFamilyHistory = {
   condition: string;
 };
 
+export type HealthSummaryEmergencyContact = {
+  id?: string;
+  name: string;
+  relationship: string;
+  phone: string;
+};
+
+export type HealthSummaryAdvanceDirectives = {
+  dnrStatus?: string;
+  livingWill?: string;
+};
+
 export type HealthSummaryPayload = {
   vitals: HealthSummaryVital[];
   conditions: HealthSummaryCondition[];
   allergies: HealthSummaryAllergy[];
+  bloodType: string | null;
+  currentMedications: string[];
+  emergencyContacts: HealthSummaryEmergencyContact[];
+  advanceDirectives: HealthSummaryAdvanceDirectives;
   immunizations: HealthSummaryImmunization[];
   familyHistory: HealthSummaryFamilyHistory[];
   updatedAt: string | null;

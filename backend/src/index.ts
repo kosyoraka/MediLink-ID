@@ -264,10 +264,41 @@ function normalizeHealthSummaryRow(row: any) {
     vitals: Array.isArray(row?.vitals) ? row.vitals : [],
     conditions: Array.isArray(row?.conditions) ? row.conditions : [],
     allergies: Array.isArray(row?.allergies) ? row.allergies : [],
+    bloodType: row?.blood_type || null,
+    currentMedications: Array.isArray(row?.current_medications) ? row.current_medications : [],
+    emergencyContacts: Array.isArray(row?.emergency_contacts) ? row.emergency_contacts : [],
+    advanceDirectives:
+      row?.advance_directives && typeof row.advance_directives === "object" && !Array.isArray(row.advance_directives)
+        ? row.advance_directives
+        : {},
     immunizations: Array.isArray(row?.immunizations) ? row.immunizations : [],
     familyHistory: Array.isArray(row?.family_history) ? row.family_history : [],
     updatedAt: row?.updated_at || null,
   };
+}
+
+function summarizeHealthSummaryText(items: any[] | null | undefined, type: "allergy" | "condition") {
+  if (!Array.isArray(items) || items.length === 0) return null;
+
+  return items
+    .map((item: any) => {
+      const name = String(item?.name ?? "").trim();
+      if (!name) return "";
+
+      if (type === "allergy") {
+        const severity = String(item?.severity ?? "").trim();
+        const reaction = String(item?.reaction ?? "").trim();
+        return [name, severity ? `(${severity})` : "", reaction ? `- ${reaction}` : ""]
+          .filter(Boolean)
+          .join(" ")
+          .trim();
+      }
+
+      const status = String(item?.status ?? "").trim();
+      return [name, status ? `(${status})` : ""].filter(Boolean).join(" ").trim();
+    })
+    .filter(Boolean)
+    .join("\n");
 }
 
 const documentSelectSql = `
@@ -1606,7 +1637,39 @@ app.get("/api/patients/:id/profile", async (req, res) => {
       return res.status(404).json({ message: "Patient not found" });
     }
 
-    return res.status(200).json(result.rows[0]);
+    const profileRow = result.rows[0];
+    const summaryResult = await pool.query(
+      `
+      SELECT vitals, conditions, allergies, blood_type, current_medications, emergency_contacts, advance_directives, immunizations, family_history, updated_at
+      FROM patient_health_summaries
+      WHERE patient_id = $1::uuid
+      LIMIT 1
+      `,
+      [patientId]
+    );
+
+    const summary = summaryResult.rowCount ? normalizeHealthSummaryRow(summaryResult.rows[0]) : null;
+
+    return res.status(200).json({
+      ...profileRow,
+      blood_type: summary?.bloodType ?? profileRow.blood_type ?? null,
+      allergies: summarizeHealthSummaryText(summary?.allergies, "allergy") || profileRow.allergies || null,
+      medical_conditions: summarizeHealthSummaryText(summary?.conditions, "condition") || profileRow.medical_conditions || null,
+      current_medications:
+        (summary?.currentMedications || []).length > 0
+          ? summary?.currentMedications.join(", ")
+          : profileRow.current_medications || null,
+      emergency_contacts:
+        (summary?.emergencyContacts || []).length > 0 ? summary?.emergencyContacts : profileRow.emergency_contacts,
+      dnr_status:
+        typeof summary?.advanceDirectives?.dnrStatus === "string" && summary.advanceDirectives.dnrStatus.trim()
+          ? summary.advanceDirectives.dnrStatus
+          : profileRow.dnr_status || null,
+      living_will:
+        typeof summary?.advanceDirectives?.livingWill === "string" && summary.advanceDirectives.livingWill.trim()
+          ? summary.advanceDirectives.livingWill
+          : profileRow.living_will || null,
+    });
   } catch (e: any) {
     console.error("PATIENT PROFILE ERROR:", e);
     return res.status(500).json({ message: e?.message || String(e), code: e?.code });
@@ -1632,7 +1695,9 @@ app.get("/api/patients/:patientId/emergency-profile", async (req, res) => {
          pp.first_name,
          pp.last_name,
          pp.dob,
-         pp.health_card
+         pp.health_card,
+         pp.blood_type,
+         pp.current_medications
        FROM patients p
        LEFT JOIN patient_profiles pp ON pp.patient_id = p.id
        WHERE p.id = $1`,
@@ -1645,7 +1710,6 @@ app.get("/api/patients/:patientId/emergency-profile", async (req, res) => {
 
     const emergency = await pool.query(
       `SELECT
-        
         share_personal_info,
          share_blood_type,
          share_allergies,
@@ -1653,10 +1717,6 @@ app.get("/api/patients/:patientId/emergency-profile", async (req, res) => {
          share_current_medications,
          share_emergency_contacts,
          share_advance_directives,
-         blood_type,
-         allergies,
-         medical_conditions,
-         current_medications,
          emergency_contact_full_name,
          emergency_contact_relationship,
          emergency_contact_phone,
@@ -1676,10 +1736,6 @@ app.get("/api/patients/:patientId/emergency-profile", async (req, res) => {
       share_current_medications: true,
       share_emergency_contacts: true,
       share_advance_directives: false,
-      blood_type: null,
-      allergies: null,
-      medical_conditions: null,
-      current_medications: null,
       emergency_contact_full_name: null,
       emergency_contact_relationship: null,
       emergency_contact_phone: null,
@@ -1688,9 +1744,45 @@ app.get("/api/patients/:patientId/emergency-profile", async (req, res) => {
       updated_at: null,
     };
 
+    const summaryResult = await pool.query(
+      `
+      SELECT vitals, conditions, allergies, blood_type, current_medications, emergency_contacts, advance_directives, immunizations, family_history, updated_at
+      FROM patient_health_summaries
+      WHERE patient_id = $1::uuid
+      LIMIT 1
+      `,
+      [patientId]
+    );
+
+    const summary = summaryResult.rowCount ? normalizeHealthSummaryRow(summaryResult.rows[0]) : null;
+    const pData = personal.rows[0];
+    const eData = emergency.rowCount ? emergency.rows[0] : defaults;
+
     return res.status(200).json({
-      ...personal.rows[0],
-      ...(emergency.rowCount ? emergency.rows[0] : defaults),
+      ...pData,
+      ...eData,
+      blood_type: summary?.bloodType ?? pData.blood_type ?? null,
+      allergies: summarizeHealthSummaryText(summary?.allergies, "allergy"),
+      medical_conditions: summarizeHealthSummaryText(summary?.conditions, "condition"),
+      current_medications:
+        Array.isArray(summary?.currentMedications) && summary.currentMedications.length > 0
+          ? summary.currentMedications.join("\n")
+          : pData.current_medications ?? null,
+      emergency_contact_full_name:
+        summary?.emergencyContacts?.[0]?.name || eData.emergency_contact_full_name || null,
+      emergency_contact_relationship:
+        summary?.emergencyContacts?.[0]?.relationship || eData.emergency_contact_relationship || null,
+      emergency_contact_phone:
+        summary?.emergencyContacts?.[0]?.phone || eData.emergency_contact_phone || null,
+      dnr_status:
+        typeof summary?.advanceDirectives?.dnrStatus === "string" && summary.advanceDirectives.dnrStatus.trim()
+          ? summary.advanceDirectives.dnrStatus
+          : eData.dnr_status,
+      living_will:
+        typeof summary?.advanceDirectives?.livingWill === "string" && summary.advanceDirectives.livingWill.trim()
+          ? summary.advanceDirectives.livingWill
+          : eData.living_will,
+      health_summary_updated_at: summary?.updatedAt || null,
     });
   } catch (e: any) {
     console.error("EMERGENCY GET ERROR:", e);
@@ -1714,6 +1806,7 @@ app.put("/api/patients/:patientId/emergency-profile", async (req, res) => {
     shareBloodType,
     shareAllergies,
     shareMedicalConditions,
+    shareChronicConditions,
     shareCurrentMedications,
     shareEmergencyContacts,
     shareAdvanceDirectives,
@@ -1780,7 +1873,7 @@ app.put("/api/patients/:patientId/emergency-profile", async (req, res) => {
         true,                       // $3 always share personal info
         !!shareBloodType,           // $4
         !!shareAllergies,           // $5
-        !!shareMedicalConditions,   // $6
+        !!(shareMedicalConditions ?? shareChronicConditions),   // $6
         !!shareCurrentMedications,  // $7
         !!shareEmergencyContacts,   // $8
         !!shareAdvanceDirectives,   // $9
@@ -1878,7 +1971,9 @@ app.get("/api/emergency/by-token/:token", async (req, res) => {
          pp.first_name,
          pp.last_name,
          pp.dob,
-         pp.health_card
+         pp.health_card,
+         pp.blood_type,
+         pp.current_medications
        FROM patients p
        LEFT JOIN patient_profiles pp ON pp.patient_id = p.id
        WHERE p.id = $1`,
@@ -1887,7 +1982,7 @@ app.get("/api/emergency/by-token/:token", async (req, res) => {
 
     if (personal.rowCount === 0) return res.status(404).json({ message: "Patient not found" });
 
-    // Emergency sharing + fields
+    // Emergency sharing + emergency-only fields
     const emergency = await pool.query(
       `SELECT
          share_personal_info,
@@ -1897,10 +1992,6 @@ app.get("/api/emergency/by-token/:token", async (req, res) => {
          share_current_medications,
          share_emergency_contacts,
          share_advance_directives,
-         blood_type,
-         allergies,
-         medical_conditions,
-         current_medications,
          emergency_contact_full_name,
          emergency_contact_relationship,
          emergency_contact_phone,
@@ -1920,10 +2011,6 @@ app.get("/api/emergency/by-token/:token", async (req, res) => {
       share_current_medications: true,
       share_emergency_contacts: true,
       share_advance_directives: false,
-      blood_type: null,
-      allergies: null,
-      medical_conditions: null,
-      current_medications: null,
       emergency_contact_full_name: null,
       emergency_contact_relationship: null,
       emergency_contact_phone: null,
@@ -1932,6 +2019,17 @@ app.get("/api/emergency/by-token/:token", async (req, res) => {
       updated_at: null,
     };
 
+    const summaryResult = await pool.query(
+      `
+      SELECT vitals, conditions, allergies, blood_type, current_medications, emergency_contacts, advance_directives, immunizations, family_history, updated_at
+      FROM patient_health_summaries
+      WHERE patient_id = $1::uuid
+      LIMIT 1
+      `,
+      [patientId]
+    );
+
+    const summary = summaryResult.rowCount ? normalizeHealthSummaryRow(summaryResult.rows[0]) : null;
     const eData = emergency.rowCount ? emergency.rows[0] : defaults;
     const pData = personal.rows[0];
 
@@ -1950,6 +2048,28 @@ app.get("/api/emergency/by-token/:token", async (req, res) => {
     return res.status(200).json({
       ...personalOut,
       ...eData,
+      blood_type: summary?.bloodType ?? pData.blood_type ?? null,
+      allergies: summarizeHealthSummaryText(summary?.allergies, "allergy"),
+      medical_conditions: summarizeHealthSummaryText(summary?.conditions, "condition"),
+      current_medications:
+        Array.isArray(summary?.currentMedications) && summary.currentMedications.length > 0
+          ? summary.currentMedications.join("\n")
+          : pData.current_medications ?? null,
+      emergency_contact_full_name:
+        summary?.emergencyContacts?.[0]?.name || eData.emergency_contact_full_name || null,
+      emergency_contact_relationship:
+        summary?.emergencyContacts?.[0]?.relationship || eData.emergency_contact_relationship || null,
+      emergency_contact_phone:
+        summary?.emergencyContacts?.[0]?.phone || eData.emergency_contact_phone || null,
+      dnr_status:
+        typeof summary?.advanceDirectives?.dnrStatus === "string" && summary.advanceDirectives.dnrStatus.trim()
+          ? summary.advanceDirectives.dnrStatus
+          : eData.dnr_status,
+      living_will:
+        typeof summary?.advanceDirectives?.livingWill === "string" && summary.advanceDirectives.livingWill.trim()
+          ? summary.advanceDirectives.livingWill
+          : eData.living_will,
+      health_summary_updated_at: summary?.updatedAt || null,
     });
   } catch (e: any) {
     console.error("EMERGENCY BY TOKEN ERROR:", e);
@@ -3504,7 +3624,7 @@ app.get("/api/patient/health-summary", requirePatientAuth, async (req: any, res)
   try {
     const result = await pool.query(
       `
-      SELECT patient_id, vitals, conditions, allergies, immunizations, family_history, updated_at
+      SELECT patient_id, vitals, conditions, allergies, blood_type, current_medications, emergency_contacts, advance_directives, immunizations, family_history, updated_at
       FROM patient_health_summaries
       WHERE patient_id = $1::uuid
       LIMIT 1
@@ -3518,6 +3638,10 @@ app.get("/api/patient/health-summary", requirePatientAuth, async (req: any, res)
           vitals: [],
           conditions: [],
           allergies: [],
+          bloodType: null,
+          currentMedications: [],
+          emergencyContacts: [],
+          advanceDirectives: {},
           immunizations: [],
           familyHistory: [],
           updatedAt: null,
@@ -3538,6 +3662,10 @@ app.put("/api/patient/health-summary", requirePatientAuth, async (req: any, res)
     vitals = [],
     conditions = [],
     allergies = [],
+    bloodType = null,
+    currentMedications = [],
+    emergencyContacts = [],
+    advanceDirectives = {},
     immunizations = [],
     familyHistory = [],
   } = req.body ?? {};
@@ -3546,6 +3674,10 @@ app.put("/api/patient/health-summary", requirePatientAuth, async (req: any, res)
     !Array.isArray(vitals) ||
     !Array.isArray(conditions) ||
     !Array.isArray(allergies) ||
+    !Array.isArray(currentMedications) ||
+    !Array.isArray(emergencyContacts) ||
+    typeof advanceDirectives !== "object" ||
+    Array.isArray(advanceDirectives) ||
     !Array.isArray(immunizations) ||
     !Array.isArray(familyHistory)
   ) {
@@ -3556,25 +3688,33 @@ app.put("/api/patient/health-summary", requirePatientAuth, async (req: any, res)
     const result = await pool.query(
       `
       INSERT INTO patient_health_summaries (
-        patient_id, vitals, conditions, allergies, immunizations, family_history, updated_at
+        patient_id, vitals, conditions, allergies, blood_type, current_medications, emergency_contacts, advance_directives, immunizations, family_history, updated_at
       )
       VALUES (
-        $1::uuid, $2::jsonb, $3::jsonb, $4::jsonb, $5::jsonb, $6::jsonb, NOW()
+        $1::uuid, $2::jsonb, $3::jsonb, $4::jsonb, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9::jsonb, $10::jsonb, NOW()
       )
       ON CONFLICT (patient_id) DO UPDATE SET
         vitals = EXCLUDED.vitals,
         conditions = EXCLUDED.conditions,
         allergies = EXCLUDED.allergies,
+        blood_type = EXCLUDED.blood_type,
+        current_medications = EXCLUDED.current_medications,
+        emergency_contacts = EXCLUDED.emergency_contacts,
+        advance_directives = EXCLUDED.advance_directives,
         immunizations = EXCLUDED.immunizations,
         family_history = EXCLUDED.family_history,
         updated_at = NOW()
-      RETURNING patient_id, vitals, conditions, allergies, immunizations, family_history, updated_at
+      RETURNING patient_id, vitals, conditions, allergies, blood_type, current_medications, emergency_contacts, advance_directives, immunizations, family_history, updated_at
       `,
       [
         patientId,
         JSON.stringify(vitals),
         JSON.stringify(conditions),
         JSON.stringify(allergies),
+        bloodType ? String(bloodType).trim() : null,
+        JSON.stringify(currentMedications),
+        JSON.stringify(emergencyContacts),
+        JSON.stringify(advanceDirectives),
         JSON.stringify(immunizations),
         JSON.stringify(familyHistory),
       ]
@@ -3624,7 +3764,7 @@ app.get("/api/staff/patients/:id/health-summary", requireStaffAuth, async (req: 
 
     const result = await pool.query(
       `
-      SELECT patient_id, vitals, conditions, allergies, immunizations, family_history, updated_at
+      SELECT patient_id, vitals, conditions, allergies, blood_type, current_medications, emergency_contacts, advance_directives, immunizations, family_history, updated_at
       FROM patient_health_summaries
       WHERE patient_id = $1::uuid
       LIMIT 1
@@ -3638,6 +3778,10 @@ app.get("/api/staff/patients/:id/health-summary", requireStaffAuth, async (req: 
           vitals: [],
           conditions: [],
           allergies: [],
+          bloodType: null,
+          currentMedications: [],
+          emergencyContacts: [],
+          advanceDirectives: {},
           immunizations: [],
           familyHistory: [],
           updatedAt: null,

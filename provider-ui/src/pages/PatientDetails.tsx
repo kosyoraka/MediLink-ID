@@ -280,7 +280,9 @@ export function PatientDetails({ patient, onNavigate }: PatientDetailsProps) {
 
   const emergency = useMemo(() => {
   const emergencyContacts =
-    profile?.emergency_contacts
+    patientHealthSummary?.emergencyContacts && patientHealthSummary.emergencyContacts.length > 0
+      ? patientHealthSummary.emergencyContacts
+      : profile?.emergency_contacts
       ? parseEmergencyContacts(profile.emergency_contacts)
       : (profile?.emergency_contact_full_name ||
          profile?.emergency_contact_phone ||
@@ -295,12 +297,20 @@ export function PatientDetails({ patient, onNavigate }: PatientDetailsProps) {
         : (patient.emergencyInfo.emergencyContacts ?? []);
 
   return {
-    bloodType: (profile?.blood_type ?? '').trim() || patient.emergencyInfo.bloodType || '—',
-    allergies: profile?.allergies ? parseStringList(profile.allergies) : (patient.emergencyInfo.allergies ?? []),
-    medicalConditions: profile?.medical_conditions
+    bloodType: (patientHealthSummary?.bloodType ?? '').trim() || (profile?.blood_type ?? '').trim() || patient.emergencyInfo.bloodType || '—',
+    allergies: patientHealthSummary?.allergies?.length
+      ? patientHealthSummary.allergies.map((item) => item.name)
+      : profile?.allergies
+      ? parseStringList(profile.allergies)
+      : (patient.emergencyInfo.allergies ?? []),
+    medicalConditions: patientHealthSummary?.conditions?.length
+      ? patientHealthSummary.conditions.map((item) => item.name)
+      : profile?.medical_conditions
       ? parseStringList(profile.medical_conditions)
       : (patient.emergencyInfo.medicalConditions ?? []),
-    currentMedications: profile?.current_medications
+    currentMedications: patientHealthSummary?.currentMedications?.length
+      ? patientHealthSummary.currentMedications
+      : profile?.current_medications
       ? parseStringList(profile.current_medications)
       : (patient.emergencyInfo.currentMedications ?? []),
 
@@ -308,12 +318,20 @@ export function PatientDetails({ patient, onNavigate }: PatientDetailsProps) {
     emergencyContacts,
 
     advanceDirectives: {
-      dnrStatus: (profile?.dnr_status ?? '').trim() || patient.emergencyInfo.advanceDirectives?.dnrStatus || '—',
-      livingWill: (profile?.living_will ?? '').trim() || patient.emergencyInfo.advanceDirectives?.livingWill || '—',
+      dnrStatus:
+        (patientHealthSummary?.advanceDirectives?.dnrStatus ?? '').trim() ||
+        (profile?.dnr_status ?? '').trim() ||
+        patient.emergencyInfo.advanceDirectives?.dnrStatus ||
+        '—',
+      livingWill:
+        (patientHealthSummary?.advanceDirectives?.livingWill ?? '').trim() ||
+        (profile?.living_will ?? '').trim() ||
+        patient.emergencyInfo.advanceDirectives?.livingWill ||
+        '—',
     },
     lastUpdated: profile?.created_at || patient.emergencyInfo.lastUpdated || new Date().toISOString(),
   };
-}, [profile, patient.emergencyInfo]);
+}, [profile, patient.emergencyInfo, patientHealthSummary]);
 
   const nextAppointment = useMemo(() => {
     const now = Date.now();

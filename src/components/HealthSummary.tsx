@@ -25,6 +25,7 @@ import {
   type HealthSummaryAllergy,
   type HealthSummaryImmunization,
   type HealthSummaryFamilyHistory,
+  type HealthSummaryEmergencyContact,
 } from '@/lib/api';
 
 interface HealthSummaryProps {
@@ -44,12 +45,25 @@ type ProfileResponse = {
   allergies?: string | null;
   medical_conditions?: string | null;
   current_medications?: string | null;
+  emergency_contact_full_name?: string | null;
+  emergency_contact_relationship?: string | null;
+  emergency_contact_phone?: string | null;
+  dnr_status?: string | null;
+  living_will?: string | null;
   emergency_updated_at?: string | null;
   emergency_created_at?: string | null;
 };
 
 type VitalType = 'bloodPressure' | 'heartRate' | 'weight' | 'bloodSugar' | null;
-type EditorType = 'conditions' | 'allergies' | 'immunizations' | 'familyHistory' | null;
+type EditorType =
+  | 'conditions'
+  | 'allergies'
+  | 'immunizations'
+  | 'familyHistory'
+  | 'medications'
+  | 'emergencyContacts'
+  | 'advanceDirectives'
+  | null;
 
 const parseList = (value: unknown): string[] => {
   if (!value) return [];
@@ -96,6 +110,10 @@ const emptySummary = (): HealthSummaryPayload => ({
   vitals: [],
   conditions: [],
   allergies: [],
+  bloodType: null,
+  currentMedications: [],
+  emergencyContacts: [],
+  advanceDirectives: {},
   immunizations: [],
   familyHistory: [],
   updatedAt: null,
@@ -122,6 +140,18 @@ const defaultConditionMeta = (name: string): Omit<HealthSummaryCondition, 'id' |
 const createDefaultSummary = (profile: ProfileResponse | null): HealthSummaryPayload => {
   const conditionNames = parseList(profile?.medical_conditions);
   const allergyNames = parseList(profile?.allergies);
+  const medicationNames = parseList(profile?.current_medications);
+  const emergencyContacts =
+    profile?.emergency_contact_full_name && profile?.emergency_contact_phone
+      ? [
+          {
+            id: createId(),
+            name: profile.emergency_contact_full_name,
+            relationship: profile.emergency_contact_relationship || '',
+            phone: profile.emergency_contact_phone,
+          },
+        ]
+      : [];
   return {
     vitals: getDefaultVitals(),
     conditions:
@@ -139,6 +169,13 @@ const createDefaultSummary = (profile: ProfileResponse | null): HealthSummaryPay
             { id: createId(), name: 'Shellfish', severity: 'MODERATE', reaction: 'Hives, swelling' },
             { id: createId(), name: 'Latex', severity: 'MILD', reaction: 'Skin irritation' },
           ],
+    bloodType: profile?.blood_type || null,
+    currentMedications: medicationNames,
+    emergencyContacts,
+    advanceDirectives: {
+      dnrStatus: profile?.dnr_status || '',
+      livingWill: profile?.living_will || '',
+    },
     immunizations: [
       { id: createId(), name: 'COVID-19', detail: 'Dose 3', status: 'Up to date' },
       { id: createId(), name: 'Flu Shot', detail: 'Oct 2024', status: 'Due Soon' },
@@ -190,6 +227,7 @@ const emptyCondition = (): HealthSummaryCondition => ({ id: createId(), name: ''
 const emptyAllergy = (): HealthSummaryAllergy => ({ id: createId(), name: '', severity: 'MODERATE', reaction: '' });
 const emptyImmunization = (): HealthSummaryImmunization => ({ id: createId(), name: '', detail: '', status: '' });
 const emptyFamilyHistory = (): HealthSummaryFamilyHistory => ({ id: createId(), relation: '', condition: '' });
+const emptyEmergencyContact = (): HealthSummaryEmergencyContact => ({ id: createId(), name: '', relationship: '', phone: '' });
 
 export default function HealthSummary({ onBack, onOpenMedications }: HealthSummaryProps) {
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
@@ -205,6 +243,10 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
   const [allergyForm, setAllergyForm] = useState<HealthSummaryAllergy>(emptyAllergy());
   const [immunizationForm, setImmunizationForm] = useState<HealthSummaryImmunization>(emptyImmunization());
   const [familyHistoryForm, setFamilyHistoryForm] = useState<HealthSummaryFamilyHistory>(emptyFamilyHistory());
+  const [medicationInput, setMedicationInput] = useState('');
+  const [bloodTypeInput, setBloodTypeInput] = useState('');
+  const [emergencyContactForm, setEmergencyContactForm] = useState<HealthSummaryEmergencyContact>(emptyEmergencyContact());
+  const [advanceDirectiveForm, setAdvanceDirectiveForm] = useState({ dnrStatus: '', livingWill: '' });
 
   useEffect(() => {
     const patientId = localStorage.getItem('patientId');
@@ -232,6 +274,9 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
           (summaryRes.summary.vitals.length === 0 &&
             summaryRes.summary.conditions.length === 0 &&
             summaryRes.summary.allergies.length === 0 &&
+            !summaryRes.summary.bloodType &&
+            summaryRes.summary.currentMedications.length === 0 &&
+            summaryRes.summary.emergencyContacts.length === 0 &&
             summaryRes.summary.immunizations.length === 0 &&
             summaryRes.summary.familyHistory.length === 0);
 
@@ -243,6 +288,10 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
               vitals: seeded.vitals,
               conditions: seeded.conditions,
               allergies: seeded.allergies,
+              bloodType: seeded.bloodType,
+              currentMedications: seeded.currentMedications,
+              emergencyContacts: seeded.emergencyContacts,
+              advanceDirectives: seeded.advanceDirectives,
               immunizations: seeded.immunizations,
               familyHistory: seeded.familyHistory,
             });
@@ -273,6 +322,10 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
         vitals: next.vitals,
         conditions: next.conditions,
         allergies: next.allergies,
+        bloodType: next.bloodType,
+        currentMedications: next.currentMedications,
+        emergencyContacts: next.emergencyContacts,
+        advanceDirectives: next.advanceDirectives,
         immunizations: next.immunizations,
         familyHistory: next.familyHistory,
       });
@@ -284,7 +337,7 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
     }
   };
 
-  const medications = useMemo(() => parseList(profile?.current_medications), [profile?.current_medications]);
+  const medications = summary?.currentMedications || [];
 
   const lastCheckup = useMemo(() => {
     const pastAppointments = appointments
@@ -353,7 +406,7 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
       value: loading ? '—' : summary && summary.allergies.length > 0 ? `${summary.allergies.length} Known` : 'None',
       action: null,
     },
-    { label: 'Blood Type', value: loading ? '—' : profile?.blood_type || '—', action: null },
+    { label: 'Blood Type', value: loading ? '—' : summary?.bloodType || '—', action: null },
   ];
 
   const openEditor = (type: EditorType) => {
@@ -362,6 +415,17 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
     if (type === 'allergies') setAllergyForm(emptyAllergy());
     if (type === 'immunizations') setImmunizationForm(emptyImmunization());
     if (type === 'familyHistory') setFamilyHistoryForm(emptyFamilyHistory());
+    if (type === 'medications') {
+      setMedicationInput('');
+      setBloodTypeInput(summary?.bloodType || '');
+    }
+    if (type === 'emergencyContacts') setEmergencyContactForm(emptyEmergencyContact());
+    if (type === 'advanceDirectives') {
+      setAdvanceDirectiveForm({
+        dnrStatus: summary?.advanceDirectives?.dnrStatus || '',
+        livingWill: summary?.advanceDirectives?.livingWill || '',
+      });
+    }
   };
 
   const submitVitals = async () => {
@@ -398,6 +462,31 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
     if (editorType === 'familyHistory' && familyHistoryForm.condition.trim()) {
       await saveSummary({ ...summary, familyHistory: [...summary.familyHistory, { ...familyHistoryForm, id: createId() }] });
     }
+    if (editorType === 'medications') {
+      const nextMeds = medicationInput.trim()
+        ? [...summary.currentMedications, medicationInput.trim()]
+        : summary.currentMedications;
+      await saveSummary({
+        ...summary,
+        bloodType: bloodTypeInput.trim() || null,
+        currentMedications: nextMeds,
+      });
+    }
+    if (editorType === 'emergencyContacts' && emergencyContactForm.name.trim() && emergencyContactForm.phone.trim()) {
+      await saveSummary({
+        ...summary,
+        emergencyContacts: [...summary.emergencyContacts, { ...emergencyContactForm, id: createId() }],
+      });
+    }
+    if (editorType === 'advanceDirectives') {
+      await saveSummary({
+        ...summary,
+        advanceDirectives: {
+          dnrStatus: advanceDirectiveForm.dnrStatus.trim(),
+          livingWill: advanceDirectiveForm.livingWill.trim(),
+        },
+      });
+    }
     setEditorType(null);
   };
 
@@ -407,10 +496,12 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
     if (type === 'allergies') await saveSummary({ ...summary, allergies: summary.allergies.filter((item) => item.id !== id) });
     if (type === 'immunizations') await saveSummary({ ...summary, immunizations: summary.immunizations.filter((item) => item.id !== id) });
     if (type === 'familyHistory') await saveSummary({ ...summary, familyHistory: summary.familyHistory.filter((item) => item.id !== id) });
+    if (type === 'medications') await saveSummary({ ...summary, currentMedications: summary.currentMedications.filter((item) => item !== id) });
+    if (type === 'emergencyContacts') await saveSummary({ ...summary, emergencyContacts: summary.emergencyContacts.filter((item) => item.id !== id) });
   };
 
   const shareSummary = async () => {
-    const text = `Health Summary\nLast checkup: ${formatDate(lastCheckup)}\nActive meds: ${medications.length}\nAllergies: ${summary?.allergies.length ?? 0}\nBlood type: ${profile?.blood_type || '—'}`;
+    const text = `Health Summary\nLast checkup: ${formatDate(lastCheckup)}\nActive meds: ${medications.length}\nAllergies: ${summary?.allergies.length ?? 0}\nBlood type: ${summary?.bloodType || '—'}`;
     if (navigator.share) {
       try {
         await navigator.share({ title: 'MediLink Health Summary', text });
@@ -560,6 +651,89 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
 
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <div className="flex items-center justify-between gap-3 mb-4">
+            <h3 className="text-gray-900">Blood Type & Medications</h3>
+            <Button variant="outline" size="sm" onClick={() => openEditor('medications')} className="gap-2">
+              <Edit3 className="w-4 h-4" />
+              Add or Edit
+            </Button>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-[180px,1fr]">
+            <div className="rounded-xl bg-teal-50 p-4">
+              <p className="text-sm text-gray-600 mb-1">Blood Type</p>
+              <p className="text-2xl text-gray-900">{summary?.bloodType || '—'}</p>
+            </div>
+            <div className="rounded-xl bg-gray-50 p-4">
+              <p className="text-sm text-gray-600 mb-3">Current Medications</p>
+              {medications.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {medications.map((medication) => (
+                    <div key={medication} className="inline-flex items-center gap-2 rounded-full bg-white border border-gray-200 px-3 py-1">
+                      <span className="text-sm text-gray-800">{medication}</span>
+                      <button type="button" onClick={() => removeItem('medications', medication)} className="text-xs text-red-600">
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500">No active medications listed.</p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <h3 className="text-gray-900">Emergency Contacts</h3>
+            <Button variant="outline" size="sm" onClick={() => openEditor('emergencyContacts')} className="gap-2">
+              <Edit3 className="w-4 h-4" />
+              Add or Edit
+            </Button>
+          </div>
+          <div className="space-y-3">
+            {(summary?.emergencyContacts || []).length > 0 ? (
+              summary?.emergencyContacts.map((contact) => (
+                <div key={contact.id || `${contact.name}-${contact.phone}`} className="rounded-xl bg-gray-50 p-4 flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-gray-900">{contact.name}</p>
+                    <p className="text-sm text-gray-600 mt-1">{contact.relationship || 'Relationship not specified'}</p>
+                    <p className="text-sm text-gray-600">{contact.phone}</p>
+                  </div>
+                  <button type="button" onClick={() => contact.id && removeItem('emergencyContacts', contact.id)} className="text-xs text-red-600">
+                    Remove
+                  </button>
+                </div>
+              ))
+            ) : (
+              <div className="rounded-xl bg-gray-50 p-4">
+                <p className="text-sm text-gray-500">No emergency contacts added yet.</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <h3 className="text-gray-900">Advance Directives</h3>
+            <Button variant="outline" size="sm" onClick={() => openEditor('advanceDirectives')} className="gap-2">
+              <Edit3 className="w-4 h-4" />
+              Edit
+            </Button>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="rounded-xl bg-gray-50 p-4">
+              <p className="text-sm text-gray-600 mb-1">DNR Status</p>
+              <p className="text-gray-900">{summary?.advanceDirectives?.dnrStatus || 'Not specified'}</p>
+            </div>
+            <div className="rounded-xl bg-gray-50 p-4">
+              <p className="text-sm text-gray-600 mb-1">Living Will</p>
+              <p className="text-gray-900">{summary?.advanceDirectives?.livingWill || 'Not specified'}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <div className="flex items-center justify-between gap-3 mb-4">
             <div className="flex items-center gap-2">
               <Syringe className="w-5 h-5 text-green-600" />
               <h3 className="text-gray-900">Immunization Record</h3>
@@ -665,7 +839,17 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
         <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-5 space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-gray-900 capitalize">Add {editorType === 'familyHistory' ? 'family history' : editorType.slice(0, -1)}</h3>
+              <h3 className="text-gray-900 capitalize">
+                {editorType === 'familyHistory'
+                  ? 'Add family history'
+                  : editorType === 'medications'
+                  ? 'Update blood type and medications'
+                  : editorType === 'emergencyContacts'
+                  ? 'Add emergency contact'
+                  : editorType === 'advanceDirectives'
+                  ? 'Update advance directives'
+                  : `Add ${editorType.slice(0, -1)}`}
+              </h3>
               <button type="button" onClick={() => setEditorType(null)} className="text-sm text-gray-500">Close</button>
             </div>
 
@@ -703,6 +887,29 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
               <div className="space-y-3">
                 <input className="w-full rounded-lg border border-gray-200 px-3 py-2" placeholder="Relationship" value={familyHistoryForm.relation} onChange={(e) => setFamilyHistoryForm({ ...familyHistoryForm, relation: e.target.value })} />
                 <input className="w-full rounded-lg border border-gray-200 px-3 py-2" placeholder="Condition" value={familyHistoryForm.condition} onChange={(e) => setFamilyHistoryForm({ ...familyHistoryForm, condition: e.target.value })} />
+              </div>
+            )}
+
+            {editorType === 'medications' && (
+              <div className="space-y-3">
+                <input className="w-full rounded-lg border border-gray-200 px-3 py-2" placeholder="Blood type (e.g. O+)" value={bloodTypeInput} onChange={(e) => setBloodTypeInput(e.target.value)} />
+                <input className="w-full rounded-lg border border-gray-200 px-3 py-2" placeholder="Add a medication" value={medicationInput} onChange={(e) => setMedicationInput(e.target.value)} />
+                <p className="text-xs text-gray-500">Leave the medication field empty if you only want to update blood type.</p>
+              </div>
+            )}
+
+            {editorType === 'emergencyContacts' && (
+              <div className="space-y-3">
+                <input className="w-full rounded-lg border border-gray-200 px-3 py-2" placeholder="Full name" value={emergencyContactForm.name} onChange={(e) => setEmergencyContactForm({ ...emergencyContactForm, name: e.target.value })} />
+                <input className="w-full rounded-lg border border-gray-200 px-3 py-2" placeholder="Relationship" value={emergencyContactForm.relationship} onChange={(e) => setEmergencyContactForm({ ...emergencyContactForm, relationship: e.target.value })} />
+                <input className="w-full rounded-lg border border-gray-200 px-3 py-2" placeholder="Phone number" value={emergencyContactForm.phone} onChange={(e) => setEmergencyContactForm({ ...emergencyContactForm, phone: e.target.value })} />
+              </div>
+            )}
+
+            {editorType === 'advanceDirectives' && (
+              <div className="space-y-3">
+                <input className="w-full rounded-lg border border-gray-200 px-3 py-2" placeholder="DNR status" value={advanceDirectiveForm.dnrStatus} onChange={(e) => setAdvanceDirectiveForm({ ...advanceDirectiveForm, dnrStatus: e.target.value })} />
+                <textarea className="w-full rounded-lg border border-gray-200 px-3 py-2 min-h-[120px]" placeholder="Living will or responder instructions" value={advanceDirectiveForm.livingWill} onChange={(e) => setAdvanceDirectiveForm({ ...advanceDirectiveForm, livingWill: e.target.value })} />
               </div>
             )}
 
