@@ -5420,7 +5420,7 @@ app.get("/api/staff/documents", requireStaffAuth, async (req: any, res) => {
           AND phc.disconnected_at IS NULL
       )
     )`,
-    `(d.hospital_id IS NOT NULL OR d.uploaded_by_staff_id IS NOT NULL)`,
+    `(d.hospital_id IS NOT NULL OR d.uploaded_by_staff_id IS NOT NULL OR d.category = 'insurance')`,
   ];
 
   if (category) {

@@ -286,6 +286,7 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [vitalsOpen, setVitalsOpen] = useState(false);
+  const [editingVital, setEditingVital] = useState<VitalType>(null);
   const [selectedVital, setSelectedVital] = useState<VitalType>(null);
   const [editorType, setEditorType] = useState<EditorType>(null);
   const [conditionEditorOpen, setConditionEditorOpen] = useState(false);
@@ -494,22 +495,40 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
 
   const submitVitals = async () => {
     if (!summary) return;
+    const latest = sortedVitals[0];
+    const nextEntry = {
+      recordedAt: new Date().toISOString(),
+      systolic: latest?.systolic ?? 0,
+      diastolic: latest?.diastolic ?? 0,
+      heartRate: latest?.heartRate ?? 0,
+      weight: latest?.weight ?? 0,
+      bloodSugar: latest?.bloodSugar ?? 0,
+    };
+
+    if (editingVital === 'bloodPressure') {
+      nextEntry.systolic = Number(vitalForm.systolic) || 0;
+      nextEntry.diastolic = Number(vitalForm.diastolic) || 0;
+    }
+    if (editingVital === 'heartRate') {
+      nextEntry.heartRate = Number(vitalForm.heartRate) || 0;
+    }
+    if (editingVital === 'weight') {
+      nextEntry.weight = Number(vitalForm.weight) || 0;
+    }
+    if (editingVital === 'bloodSugar') {
+      nextEntry.bloodSugar = Number(vitalForm.bloodSugar) || 0;
+    }
+
     const next = {
       ...summary,
       vitals: [
         ...summary.vitals,
-        {
-          recordedAt: new Date().toISOString(),
-          systolic: Number(vitalForm.systolic) || 0,
-          diastolic: Number(vitalForm.diastolic) || 0,
-          heartRate: Number(vitalForm.heartRate) || 0,
-          weight: Number(vitalForm.weight) || 0,
-          bloodSugar: Number(vitalForm.bloodSugar) || 0,
-        },
+        nextEntry,
       ],
     };
     await saveSummary(next);
     setVitalsOpen(false);
+    setEditingVital(null);
   };
 
   const openConditionEditor = (condition?: HealthSummaryCondition) => {
@@ -746,9 +765,6 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-gray-900">Quick Stats</h3>
-            <Button variant="outline" size="sm" onClick={() => setVitalsOpen(true)}>
-              Update Vitals
-            </Button>
           </div>
           <div className="grid grid-cols-2 gap-4">
             {quickStats.map((stat) => {
@@ -790,6 +806,18 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
                 <p className="text-xs text-gray-500">{vital.unit}</p>
                 <p className="text-xs text-gray-500 mt-2 capitalize">{vital.status}</p>
                 <p className="text-xs text-gray-400 mt-1">{vital.subtext}</p>
+                <div className="mt-3 pt-3 border-t border-gray-200">
+                  <span
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditingVital(vital.key);
+                      setVitalsOpen(true);
+                    }}
+                    className="text-xs text-teal-700 font-medium"
+                  >
+                    Update {vital.label}
+                  </span>
+                </div>
               </button>
             ))}
           </div>
@@ -1088,18 +1116,48 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
         <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-5 space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-gray-900">Update Vitals</h3>
-              <button type="button" onClick={() => setVitalsOpen(false)} className="text-sm text-gray-500">Close</button>
+              <h3 className="text-gray-900">
+                {editingVital
+                  ? `Update ${vitals.find((item) => item.key === editingVital)?.label || 'Vital'}`
+                  : 'Update Vitals'}
+              </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setVitalsOpen(false);
+                  setEditingVital(null);
+                }}
+                className="text-sm text-gray-500"
+              >
+                Close
+              </button>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <label className="text-sm text-gray-600">Systolic<input className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2" value={vitalForm.systolic} onChange={(e) => setVitalForm({ ...vitalForm, systolic: e.target.value })} /></label>
-              <label className="text-sm text-gray-600">Diastolic<input className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2" value={vitalForm.diastolic} onChange={(e) => setVitalForm({ ...vitalForm, diastolic: e.target.value })} /></label>
-              <label className="text-sm text-gray-600">Heart Rate<input className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2" value={vitalForm.heartRate} onChange={(e) => setVitalForm({ ...vitalForm, heartRate: e.target.value })} /></label>
-              <label className="text-sm text-gray-600">Weight<input className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2" value={vitalForm.weight} onChange={(e) => setVitalForm({ ...vitalForm, weight: e.target.value })} /></label>
-              <label className="text-sm text-gray-600 col-span-2">Blood Sugar<input className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2" value={vitalForm.bloodSugar} onChange={(e) => setVitalForm({ ...vitalForm, bloodSugar: e.target.value })} /></label>
-            </div>
+            {editingVital === 'bloodPressure' && (
+              <div className="grid grid-cols-2 gap-3">
+                <label className="text-sm text-gray-600">Systolic<input className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2" value={vitalForm.systolic} onChange={(e) => setVitalForm({ ...vitalForm, systolic: e.target.value })} /></label>
+                <label className="text-sm text-gray-600">Diastolic<input className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2" value={vitalForm.diastolic} onChange={(e) => setVitalForm({ ...vitalForm, diastolic: e.target.value })} /></label>
+              </div>
+            )}
+            {editingVital === 'heartRate' && (
+              <label className="block text-sm text-gray-600">Heart Rate<input className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2" value={vitalForm.heartRate} onChange={(e) => setVitalForm({ ...vitalForm, heartRate: e.target.value })} /></label>
+            )}
+            {editingVital === 'weight' && (
+              <label className="block text-sm text-gray-600">Weight<input className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2" value={vitalForm.weight} onChange={(e) => setVitalForm({ ...vitalForm, weight: e.target.value })} /></label>
+            )}
+            {editingVital === 'bloodSugar' && (
+              <label className="block text-sm text-gray-600">Blood Sugar<input className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2" value={vitalForm.bloodSugar} onChange={(e) => setVitalForm({ ...vitalForm, bloodSugar: e.target.value })} /></label>
+            )}
             <div className="flex gap-3">
-              <Button variant="outline" className="flex-1" onClick={() => setVitalsOpen(false)}>Cancel</Button>
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => {
+                  setVitalsOpen(false);
+                  setEditingVital(null);
+                }}
+              >
+                Cancel
+              </Button>
               <Button className="flex-1" onClick={submitVitals}>Save</Button>
             </div>
           </div>

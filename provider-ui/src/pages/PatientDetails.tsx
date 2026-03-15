@@ -1301,6 +1301,56 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
 
           <Card>
             <CardHeader>
+              <CardTitle className="text-lg">Shared Clinical Details</CardTitle>
+            </CardHeader>
+            <CardContent className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="rounded-lg bg-gray-50 p-4">
+                <p className="text-sm text-gray-600">Allergies</p>
+                {emergency.allergies.length > 0 ? (
+                  <div className="mt-2 space-y-2">
+                    {emergency.allergies.map((item, index) => (
+                      <p key={`${item}-${index}`} className="text-sm font-medium text-gray-900">
+                        {item}
+                      </p>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm text-gray-500">None shared</p>
+                )}
+              </div>
+              <div className="rounded-lg bg-gray-50 p-4">
+                <p className="text-sm text-gray-600">Medical Conditions</p>
+                {emergency.medicalConditions.length > 0 ? (
+                  <div className="mt-2 space-y-2">
+                    {emergency.medicalConditions.map((item, index) => (
+                      <p key={`${item}-${index}`} className="text-sm font-medium text-gray-900">
+                        {item}
+                      </p>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm text-gray-500">None shared</p>
+                )}
+              </div>
+              <div className="rounded-lg bg-gray-50 p-4">
+                <p className="text-sm text-gray-600">Current Medications</p>
+                {emergency.currentMedications.length > 0 ? (
+                  <div className="mt-2 space-y-2">
+                    {emergency.currentMedications.map((item, index) => (
+                      <p key={`${item}-${index}`} className="text-sm font-medium text-gray-900">
+                        {item}
+                      </p>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm text-gray-500">None shared</p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
                 <Pill className="w-5 h-5 text-green-600" />
                 Emergency Contacts

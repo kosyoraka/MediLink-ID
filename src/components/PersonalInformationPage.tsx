@@ -1,9 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Pencil, Lock, MapPin, Phone, User } from "lucide-react";
 import { API_BASE } from "@/config/api";
-// ✅ use API_BASE from config everywhere
-const res = await fetch(`${API_BASE}/api/...`);
-//const API_BASE = "http://localhost:4000";
 
 type Address = {
   line1: string;
@@ -62,6 +59,28 @@ type RowProps = {
   saving?: boolean;
   icon?: React.ReactNode;
 };
+
+function normalizeDateInput(value: string | null | undefined) {
+  if (!value) return "";
+  const raw = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return raw;
+  return d.toISOString().split("T")[0];
+}
+
+function formatDateDisplay(value: string | null | undefined) {
+  if (!value) return "—";
+  const normalized = normalizeDateInput(value);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return normalized;
+  const d = new Date(`${normalized}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return normalized;
+  return d.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
 
 function Row({
   label,
@@ -247,7 +266,7 @@ export default function PersonalInformationPage({ onBack }: { onBack: () => void
     const next: Model = {
       firstName: p.first_name ?? "",
       lastName: p.last_name ?? "",
-      dob: p.dob ?? "",
+      dob: normalizeDateInput(p.dob),
       healthCard: p.health_card ?? "",
       email: p.email || emailLS || "",
       phone: p.phone_number ?? "",
@@ -497,7 +516,7 @@ export default function PersonalInformationPage({ onBack }: { onBack: () => void
           <Row
             icon={<User className="w-4 h-4" />}
             label="Date of birth"
-            value={data.dob || "—"}
+            value={formatDateDisplay(data.dob)}
             onEdit={() => startEdit("dob")}
             editing={editKey === "dob"}
             editor={editorFor("dob")}
