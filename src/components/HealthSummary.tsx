@@ -568,8 +568,8 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
   const archiveCondition = async (conditionId: string) => {
     setSaving(true);
     try {
-      await api.updateMyCondition(conditionId, { isActive: false });
-      setConditions((current) => current.filter((item) => item.id !== conditionId));
+      const res = await api.updateMyCondition(conditionId, { isActive: false });
+      setConditions((current) => current.map((item) => (item.id === conditionId ? res.condition : item)));
       try {
         const refreshed = await api.getMyHealthSummary();
         setSummary(refreshed.summary);
@@ -578,6 +578,24 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
       }
     } catch (error) {
       console.error('Failed to archive condition:', error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const restoreCondition = async (conditionId: string) => {
+    setSaving(true);
+    try {
+      const res = await api.updateMyCondition(conditionId, { isActive: true });
+      setConditions((current) => current.map((item) => (item.id === conditionId ? res.condition : item)));
+      try {
+        const refreshed = await api.getMyHealthSummary();
+        setSummary(refreshed.summary);
+      } catch {
+        // ignore summary refresh failures
+      }
+    } catch (error) {
+      console.error('Failed to restore condition:', error);
     } finally {
       setSaving(false);
     }
@@ -676,6 +694,15 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
       return { date: entry.recordedAt, value: `${entry.bloodSugar} mg/dL` };
     });
   }, [selectedVital, summary]);
+
+  const activeConditions = useMemo(
+    () => conditions.filter((condition) => condition.isActive !== false),
+    [conditions]
+  );
+  const pastConditions = useMemo(
+    () => conditions.filter((condition) => condition.isActive === false),
+    [conditions]
+  );
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -777,7 +804,7 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
             </Button>
           </div>
           <div className="space-y-3">
-            {conditions.map((condition) => (
+            {activeConditions.map((condition) => (
               <div
                 key={condition.id}
                 className={`p-4 rounded-lg ${condition.sourceType === 'provider' ? 'bg-blue-50' : 'bg-amber-50'}`}
@@ -823,16 +850,50 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
                         onClick={() => archiveCondition(condition.id)}
                         className="text-xs text-red-600"
                       >
-                        Remove Concern
+                        Mark Inactive
                       </button>
                     </>
                   )}
                 </div>
               </div>
             ))}
-            {conditions.length === 0 ? (
+            {activeConditions.length === 0 ? (
               <div className="rounded-xl border border-dashed border-gray-300 p-4">
-                <p className="text-sm text-gray-600">No conditions or health concerns are on file yet.</p>
+                <p className="text-sm text-gray-600">No active conditions or health concerns are on file yet.</p>
+              </div>
+            ) : null}
+            {pastConditions.length > 0 ? (
+              <div className="pt-2">
+                <h4 className="text-sm text-gray-500 mb-3">Past Conditions</h4>
+                <div className="space-y-3">
+                  {pastConditions.map((condition) => (
+                    <div key={condition.id} className="p-4 rounded-lg bg-gray-50 border border-gray-200 opacity-80">
+                      <div className="flex items-start justify-between mb-2 gap-3">
+                        <div className="space-y-2">
+                          <h4 className="text-gray-900">{condition.name}</h4>
+                          <div className="flex flex-wrap items-center gap-2">
+                            {condition.status ? (
+                              <Badge className="bg-gray-200 text-gray-700 border-0">{condition.status}</Badge>
+                            ) : null}
+                            <Badge className="bg-gray-200 text-gray-700 border-0">Inactive</Badge>
+                          </div>
+                        </div>
+                        {condition.sourceType !== 'provider' ? (
+                          <Button type="button" variant="outline" size="sm" onClick={() => restoreCondition(condition.id)}>
+                            Restore
+                          </Button>
+                        ) : null}
+                      </div>
+                      <div className="space-y-1 text-sm text-gray-600">
+                        <p>Diagnosed: {formatConditionDate(condition.diagnosed)}</p>
+                        <p>{condition.metric || 'No care metrics recorded yet'}</p>
+                        <p>Provider: {condition.provider || 'Provider not recorded'}</p>
+                        {condition.hospitalName ? <p>Hospital: {condition.hospitalName}</p> : null}
+                        {condition.notes ? <p>{condition.notes}</p> : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             ) : null}
           </div>

@@ -661,11 +661,7 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
           body: JSON.stringify({ isActive: false }),
         }
       );
-      if (res.condition.isActive === false) {
-        setPatientConditions((current) => current.filter((item) => item.id !== conditionId));
-      } else {
-        setPatientConditions((current) => current.map((item) => (item.id === conditionId ? res.condition : item)));
-      }
+      setPatientConditions((current) => current.map((item) => (item.id === conditionId ? res.condition : item)));
       try {
         const refreshed = await apiFetch<{ summary: ProviderHealthSummary }>(`/api/staff/patients/${patient.id}/health-summary`);
         setPatientHealthSummary(refreshed.summary || null);
@@ -677,12 +673,41 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
     }
   };
 
+  const restoreCondition = async (conditionId: string) => {
+    try {
+      const res = await apiFetch<{ condition: ProviderHealthSummaryCondition }>(
+        `/api/staff/patients/${patient.id}/conditions/${conditionId}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ isActive: true }),
+        }
+      );
+      setPatientConditions((current) => current.map((item) => (item.id === conditionId ? res.condition : item)));
+      try {
+        const refreshed = await apiFetch<{ summary: ProviderHealthSummary }>(`/api/staff/patients/${patient.id}/health-summary`);
+        setPatientHealthSummary(refreshed.summary || null);
+      } catch {
+        // ignore refresh failures
+      }
+    } catch (error) {
+      console.error('Failed to restore condition:', error);
+    }
+  };
+
   const latestSharedVital = useMemo(
     () =>
       (patientHealthSummary?.vitals || [])
         .slice()
         .sort((a, b) => new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime())[0] || null,
     [patientHealthSummary]
+  );
+  const activeConditions = useMemo(
+    () => patientConditions.filter((condition) => condition.isActive !== false),
+    [patientConditions]
+  );
+  const pastConditions = useMemo(
+    () => patientConditions.filter((condition) => condition.isActive === false),
+    [patientConditions]
   );
   const tabs = [
     { id: 'history', label: 'Health Summary' },
@@ -897,7 +922,7 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
               <CardContent>
                 {patientConditions.length ? (
                   <div className="space-y-3">
-                    {patientConditions.map((item) => (
+                    {activeConditions.map((item) => (
                       <div key={item.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
                         <div className="flex items-start justify-between gap-3">
                           <div>
@@ -931,6 +956,34 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
                         </div>
                       </div>
                     ))}
+                    {pastConditions.length > 0 ? (
+                      <div className="pt-2">
+                        <h4 className="text-sm text-gray-500 mb-3">Past Conditions</h4>
+                        <div className="space-y-3">
+                          {pastConditions.map((item) => (
+                            <div key={item.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4 opacity-80">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <p className="font-medium text-gray-900">{item.name}</p>
+                                    <Badge className="bg-gray-200 text-gray-700 border-0">Inactive</Badge>
+                                  </div>
+                                  <p className="text-sm text-gray-600 mt-1">{item.status}</p>
+                                  <p className="text-xs text-gray-500 mt-1">Diagnosed: {formatConditionDate(item.diagnosed)}</p>
+                                  {item.metric ? <p className="text-xs text-gray-500 mt-1">{item.metric}</p> : null}
+                                  {item.provider ? <p className="text-xs text-gray-500 mt-1">Provider: {item.provider}</p> : null}
+                                  {item.notes ? <p className="text-xs text-gray-500 mt-1">{item.notes}</p> : null}
+                                  {item.hospitalName ? <p className="text-xs text-gray-500 mt-1">{item.hospitalName}</p> : null}
+                                </div>
+                                <Button variant="outline" size="sm" onClick={() => restoreCondition(item.id)}>
+                                  Restore
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 ) : (
                   <div className="rounded-xl border border-dashed border-gray-300 p-4">

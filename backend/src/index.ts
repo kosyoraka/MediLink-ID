@@ -4091,7 +4091,19 @@ app.get("/api/patient/conditions", requirePatientAuth, async (req: any, res) => 
   const patientId = req.patientId;
   try {
     await seedConditionRowsFromSummary(patientId);
-    const conditions = await syncPatientConditionSummary(patientId);
+    await syncPatientConditionSummary(patientId);
+    const result = await pool.query(
+      `
+      SELECT pc.*, h.name AS hospital_name, sa.full_name AS staff_full_name
+      FROM patient_conditions pc
+      LEFT JOIN hospitals h ON h.id = pc.hospital_id
+      LEFT JOIN staff_accounts sa ON sa.id = pc.staff_id
+      WHERE pc.patient_id = $1::uuid
+      ORDER BY pc.is_active DESC, pc.updated_at DESC, pc.created_at DESC
+      `,
+      [patientId]
+    );
+    const conditions = result.rows.map(mapConditionRow);
     return res.json({ conditions });
   } catch (e: any) {
     console.error("GET /api/patient/conditions error:", e);
@@ -4956,8 +4968,7 @@ app.get("/api/staff/patients/:id/conditions", requireStaffAuth, async (req: any,
       LEFT JOIN hospitals h ON h.id = pc.hospital_id
       LEFT JOIN staff_accounts sa ON sa.id = pc.staff_id
       WHERE pc.patient_id = $1::uuid
-        AND pc.is_active = true
-      ORDER BY pc.updated_at DESC, pc.created_at DESC
+      ORDER BY pc.is_active DESC, pc.updated_at DESC, pc.created_at DESC
       `,
       [patientId]
     );
