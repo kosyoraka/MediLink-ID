@@ -105,11 +105,21 @@ export type ProviderHealthSummaryVital = {
 
 export type ProviderHealthSummaryCondition = {
   id: string;
+  patientId?: string;
+  hospitalId?: string | null;
+  hospitalName?: string | null;
+  staffId?: string | null;
+  sourceType?: "provider" | "patient";
+  verificationStatus?: "provider_verified" | "patient_noted" | "provider_reviewed";
   name: string;
   status: string;
   diagnosed: string;
   metric: string;
   provider: string;
+  notes?: string;
+  isActive?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type ProviderHealthSummaryAllergy = {
@@ -123,6 +133,8 @@ export type ProviderHealthSummaryImmunization = {
   id: string;
   name: string;
   detail: string;
+  dose?: string;
+  date?: string;
   status: string;
 };
 
@@ -153,4 +165,39 @@ export type ProviderHealthSummary = {
   immunizations: ProviderHealthSummaryImmunization[];
   familyHistory: ProviderHealthSummaryFamilyHistory[];
   updatedAt: string | null;
+};
+
+export type ProviderMedication = {
+  id: string;
+  patientId: string;
+  hospitalId: string | null;
+  hospitalName: string | null;
+  staffId: string | null;
+  sourceType: "provider" | "patient";
+  verificationStatus: "provider_prescribed" | "patient_added";
+  name: string;
+  dosage: string;
+  frequency: string;
+  purpose: string;
+  prescriberName: string;
+  pharmacy: string;
+  startDate: string | null;
+  endDate: string | null;
+  refillsRemaining: number | null;
+  notes: string;
+  remindersEnabled: boolean;
+  adherenceStatus: "not_started" | "on_track" | "missed_doses" | "stopped";
+  lastIntakeStatus: "taken" | "missed" | "skipped" | null;
+  lastIntakeDate: string | null;
+  recentIntakeLogs: Array<{
+    id: string;
+    loggedForDate: string;
+    status: "taken" | "missed" | "skipped";
+    note: string;
+    createdAt: string;
+  }>;
+  isActive: boolean;
+  lastRefillRequestedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
 };

@@ -25,11 +25,21 @@ import { Badge } from '@/components/ui/badge';
 
 import type { Patient, EmergencyContact } from '@/lib/types';
 import { formatDate, formatDateTime } from '@/lib/utils';
-import { apiFetch, type ProviderDocument, type ProviderHealthSummary } from '@/lib/api';
+import {
+  apiFetch,
+  type ProviderDocument,
+  type ProviderHealthSummary,
+  type ProviderHealthSummaryCondition,
+  type ProviderMedication,
+} from '@/lib/api';
 
 interface PatientDetailsProps {
   patient: Patient;
   onNavigate: (page: string, data?: any) => void;
+  medicationContext?: {
+    medicationId?: string;
+    medicationChangeRequestId?: string;
+  } | null;
 }
 
 type StaffAppointmentRow = {
@@ -165,12 +175,63 @@ const parseEmergencyContacts = (value: unknown): EmergencyContact[] => {
   return [];
 };
 
-export function PatientDetails({ patient, onNavigate }: PatientDetailsProps) {
+const intakeStatusLabel = (value: 'taken' | 'missed' | 'skipped' | null) => {
+  if (value === 'taken') return 'Taken';
+  if (value === 'missed') return 'Missed';
+  if (value === 'skipped') return 'Skipped';
+  return 'No intake logged';
+};
+
+const conditionStatusOptions = [
+  'Active',
+  'Managed',
+  'Well Controlled',
+  'Monitoring',
+  'Stable',
+  'Resolved',
+  'Inactive',
+] as const;
+
+const formatConditionDate = (value?: string | null) => {
+  if (!value) return 'Not recorded';
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? formatDate(value) : value;
+};
+
+export function PatientDetails({ patient, onNavigate, medicationContext }: PatientDetailsProps) {
   const [activeTab, setActiveTab] = useState<'history' | 'documents' | 'appointments' | 'emergency'>('history');
   const [profile, setProfile] = useState<PatientProfileResponse | null>(null);
   const [patientAppointments, setPatientAppointments] = useState<StaffAppointmentRow[]>([]);
   const [patientDocuments, setPatientDocuments] = useState<ProviderDocument[]>([]);
   const [patientHealthSummary, setPatientHealthSummary] = useState<ProviderHealthSummary | null>(null);
+  const [patientConditions, setPatientConditions] = useState<ProviderHealthSummaryCondition[]>([]);
+  const [patientMedications, setPatientMedications] = useState<ProviderMedication[]>([]);
+  const [showMedicationModal, setShowMedicationModal] = useState(false);
+  const [editingMedication, setEditingMedication] = useState<ProviderMedication | null>(null);
+  const [showConditionModal, setShowConditionModal] = useState(false);
+  const [editingCondition, setEditingCondition] = useState<ProviderHealthSummaryCondition | null>(null);
+  const [pendingMedicationResolve, setPendingMedicationResolve] = useState<{ medicationId: string; requestId: string } | null>(
+    medicationContext?.medicationId && medicationContext?.medicationChangeRequestId
+      ? { medicationId: medicationContext.medicationId, requestId: medicationContext.medicationChangeRequestId }
+      : null
+  );
+  const [medicationForm, setMedicationForm] = useState({
+    name: '',
+    dosage: '',
+    frequency: '',
+    purpose: '',
+    pharmacy: '',
+    startDate: '',
+    endDate: '',
+    refillsRemaining: '',
+    notes: '',
+  });
+  const [conditionForm, setConditionForm] = useState({
+    name: '',
+    status: '',
+    diagnosed: '',
+    metric: '',
+    notes: '',
+  });
 
   useEffect(() => {
     let alive = true;
@@ -184,6 +245,52 @@ export function PatientDetails({ patient, onNavigate }: PatientDetailsProps) {
         console.error('Failed to load patient profile:', e);
         if (!alive) return;
         setProfile(null);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [patient.id]);
+
+  useEffect(() => {
+    let alive = true;
+
+    apiFetch<{ conditions: ProviderHealthSummaryCondition[] }>(`/api/staff/patients/${patient.id}/conditions`)
+      .then((data) => {
+        if (!alive) return;
+        setPatientConditions(data.conditions || []);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setPatientConditions([]);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [patient.id]);
+
+  useEffect(() => {
+    if (medicationContext?.medicationId && medicationContext?.medicationChangeRequestId) {
+      setPendingMedicationResolve({
+        medicationId: medicationContext.medicationId,
+        requestId: medicationContext.medicationChangeRequestId,
+      });
+      setActiveTab('history');
+    }
+  }, [medicationContext?.medicationId, medicationContext?.medicationChangeRequestId]);
+
+  useEffect(() => {
+    let alive = true;
+
+    apiFetch<{ medications: ProviderMedication[] }>(`/api/staff/patients/${patient.id}/medications`)
+      .then((data) => {
+        if (!alive) return;
+        setPatientMedications(data.medications || []);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setPatientMedications([]);
       });
 
     return () => {
@@ -303,8 +410,8 @@ export function PatientDetails({ patient, onNavigate }: PatientDetailsProps) {
       : profile?.allergies
       ? parseStringList(profile.allergies)
       : (patient.emergencyInfo.allergies ?? []),
-    medicalConditions: patientHealthSummary?.conditions?.length
-      ? patientHealthSummary.conditions.map((item) => item.name)
+    medicalConditions: patientConditions.length
+      ? patientConditions.map((item) => item.name)
       : profile?.medical_conditions
       ? parseStringList(profile.medical_conditions)
       : (patient.emergencyInfo.medicalConditions ?? []),
@@ -331,7 +438,7 @@ export function PatientDetails({ patient, onNavigate }: PatientDetailsProps) {
     },
     lastUpdated: profile?.created_at || patient.emergencyInfo.lastUpdated || new Date().toISOString(),
   };
-}, [profile, patient.emergencyInfo, patientHealthSummary]);
+}, [profile, patient.emergencyInfo, patientHealthSummary, patientConditions]);
 
   const nextAppointment = useMemo(() => {
     const now = Date.now();
@@ -362,18 +469,6 @@ export function PatientDetails({ patient, onNavigate }: PatientDetailsProps) {
     return patient.lastVisit || null;
   }, [patient.lastVisit, patient.visitRecords, patientAppointments]);
 
-  const emergencyFlags = useMemo(() => {
-    const flags: string[] = [];
-    if (emergency.allergies.length > 0) flags.push(`${emergency.allergies.length} allergies on file`);
-    if (emergency.medicalConditions.length > 0) flags.push(`${emergency.medicalConditions.length} chronic conditions`);
-    if (emergency.currentMedications.length > 0) flags.push(`${emergency.currentMedications.length} current medications`);
-
-    const dnr = emergency.advanceDirectives.dnrStatus.trim().toLowerCase();
-    if (dnr && dnr !== '—' && dnr !== 'no dnr') flags.push(`Advance directive: ${emergency.advanceDirectives.dnrStatus}`);
-
-    return flags;
-  }, [emergency]);
-
   const completedAppointments = useMemo(
     () =>
       patientAppointments
@@ -381,6 +476,206 @@ export function PatientDetails({ patient, onNavigate }: PatientDetailsProps) {
         .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()),
     [patientAppointments]
   );
+
+  const activeMedications = useMemo(
+    () => patientMedications.filter((medication) => medication.isActive),
+    [patientMedications]
+  );
+
+  useEffect(() => {
+    if (!pendingMedicationResolve) return;
+    const targetMedication = patientMedications.find((med) => med.id === pendingMedicationResolve.medicationId);
+    if (!targetMedication) return;
+    openMedicationModal(targetMedication);
+  }, [pendingMedicationResolve, patientMedications]);
+
+  const openMedicationModal = (medication?: ProviderMedication) => {
+    if (medication) {
+      setEditingMedication(medication);
+      setMedicationForm({
+        name: medication.name || '',
+        dosage: medication.dosage || '',
+        frequency: medication.frequency || '',
+        purpose: medication.purpose || '',
+        pharmacy: medication.pharmacy || '',
+        startDate: medication.startDate ? String(medication.startDate).slice(0, 10) : '',
+        endDate: medication.endDate ? String(medication.endDate).slice(0, 10) : '',
+        refillsRemaining: medication.refillsRemaining == null ? '' : String(medication.refillsRemaining),
+        notes: medication.notes || '',
+      });
+    } else {
+      setEditingMedication(null);
+      setMedicationForm({
+        name: '',
+        dosage: '',
+        frequency: '',
+        purpose: '',
+        pharmacy: '',
+        startDate: '',
+        endDate: '',
+        refillsRemaining: '',
+        notes: '',
+      });
+    }
+    setShowMedicationModal(true);
+  };
+
+  const addMedication = async () => {
+    if (!medicationForm.name.trim()) return;
+    try {
+      const payload = {
+        name: medicationForm.name,
+        dosage: medicationForm.dosage || undefined,
+        frequency: medicationForm.frequency || undefined,
+        purpose: medicationForm.purpose || undefined,
+        pharmacy: medicationForm.pharmacy || undefined,
+        startDate: medicationForm.startDate || undefined,
+        endDate: medicationForm.endDate || undefined,
+        refillsRemaining: medicationForm.refillsRemaining || undefined,
+        notes: medicationForm.notes || undefined,
+      };
+
+      if (editingMedication) {
+        const res = await apiFetch<{ medication: ProviderMedication }>(`/api/staff/patients/${patient.id}/medications/${editingMedication.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        });
+        setPatientMedications((current) => current.map((item) => (item.id === editingMedication.id ? res.medication : item)));
+        if (pendingMedicationResolve && pendingMedicationResolve.medicationId === editingMedication.id) {
+          await apiFetch<{ ok: true }>(`/api/staff/medication-change-requests/${pendingMedicationResolve.requestId}/resolve`, {
+            method: 'POST',
+          });
+          setPendingMedicationResolve(null);
+        }
+      } else {
+        const res = await apiFetch<{ medication: ProviderMedication }>(`/api/staff/patients/${patient.id}/medications`, {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        setPatientMedications((current) => [res.medication, ...current]);
+      }
+      setMedicationForm({
+        name: '',
+        dosage: '',
+        frequency: '',
+        purpose: '',
+        pharmacy: '',
+        startDate: '',
+        endDate: '',
+        refillsRemaining: '',
+        notes: '',
+      });
+      setEditingMedication(null);
+      setShowMedicationModal(false);
+    } catch (error) {
+      console.error('Failed to save medication:', error);
+    }
+  };
+
+  const updateMedication = async (medicationId: string, body: Partial<Pick<ProviderMedication, 'name' | 'isActive' | 'dosage' | 'frequency' | 'purpose' | 'pharmacy' | 'notes' | 'refillsRemaining' | 'startDate' | 'endDate'>>) => {
+    try {
+      const res = await apiFetch<{ medication: ProviderMedication }>(
+        `/api/staff/patients/${patient.id}/medications/${medicationId}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify(body),
+        }
+      );
+      setPatientMedications((current) => current.map((item) => (item.id === medicationId ? res.medication : item)));
+    } catch (error) {
+      console.error('Failed to update medication:', error);
+    }
+  };
+
+  const openConditionModal = (condition?: ProviderHealthSummaryCondition) => {
+    if (condition) {
+      setEditingCondition(condition);
+      setConditionForm({
+        name: condition.name || '',
+        status: condition.status || '',
+        diagnosed: /^\d{4}-\d{2}-\d{2}$/.test(condition.diagnosed || '') ? condition.diagnosed : '',
+        metric: condition.metric || '',
+        notes: condition.notes || '',
+      });
+    } else {
+      setEditingCondition(null);
+      setConditionForm({
+        name: '',
+        status: '',
+        diagnosed: '',
+        metric: '',
+        notes: '',
+      });
+    }
+    setShowConditionModal(true);
+  };
+
+  const saveCondition = async () => {
+    if (!conditionForm.name.trim()) return;
+    try {
+      const payload = {
+        name: conditionForm.name.trim(),
+        status: conditionForm.status.trim() || undefined,
+        diagnosed: conditionForm.diagnosed.trim() || undefined,
+        metric: conditionForm.metric.trim() || undefined,
+        notes: conditionForm.notes.trim() || undefined,
+      };
+
+      if (editingCondition) {
+        const res = await apiFetch<{ condition: ProviderHealthSummaryCondition }>(
+          `/api/staff/patients/${patient.id}/conditions/${editingCondition.id}`,
+          {
+            method: 'PATCH',
+            body: JSON.stringify(payload),
+          }
+        );
+        setPatientConditions((current) => current.map((item) => (item.id === editingCondition.id ? res.condition : item)));
+      } else {
+        const res = await apiFetch<{ condition: ProviderHealthSummaryCondition }>(`/api/staff/patients/${patient.id}/conditions`, {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        setPatientConditions((current) => [res.condition, ...current]);
+      }
+
+      try {
+        const refreshed = await apiFetch<{ summary: ProviderHealthSummary }>(`/api/staff/patients/${patient.id}/health-summary`);
+        setPatientHealthSummary(refreshed.summary || null);
+      } catch {
+        // ignore refresh failures
+      }
+
+      setEditingCondition(null);
+      setShowConditionModal(false);
+    } catch (error) {
+      console.error('Failed to save condition:', error);
+    }
+  };
+
+  const markConditionInactive = async (conditionId: string) => {
+    try {
+      const res = await apiFetch<{ condition: ProviderHealthSummaryCondition }>(
+        `/api/staff/patients/${patient.id}/conditions/${conditionId}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ isActive: false }),
+        }
+      );
+      if (res.condition.isActive === false) {
+        setPatientConditions((current) => current.filter((item) => item.id !== conditionId));
+      } else {
+        setPatientConditions((current) => current.map((item) => (item.id === conditionId ? res.condition : item)));
+      }
+      try {
+        const refreshed = await apiFetch<{ summary: ProviderHealthSummary }>(`/api/staff/patients/${patient.id}/health-summary`);
+        setPatientHealthSummary(refreshed.summary || null);
+      } catch {
+        // ignore refresh failures
+      }
+    } catch (error) {
+      console.error('Failed to update condition:', error);
+    }
+  };
 
   const latestSharedVital = useMemo(
     () =>
@@ -478,11 +773,7 @@ export function PatientDetails({ patient, onNavigate }: PatientDetailsProps) {
 
                   <div className="rounded-xl border border-gray-200 p-4">
                     <p className="text-xs uppercase tracking-wide text-gray-500">Care Snapshot</p>
-                    <div className="mt-3 grid grid-cols-2 gap-3">
-                      <div className="rounded-lg bg-gray-50 p-3">
-                        <p className="text-xs text-gray-500">Connection</p>
-                        <p className="mt-1 font-medium text-gray-900">{patient.status}</p>
-                      </div>
+                    <div className="mt-3 grid grid-cols-1 gap-3">
                       <div className="rounded-lg bg-gray-50 p-3">
                         <p className="text-xs text-gray-500">Last visit</p>
                         <p className="mt-1 font-medium text-gray-900">{lastVisit ? formatDate(lastVisit) : '—'}</p>
@@ -505,87 +796,6 @@ export function PatientDetails({ patient, onNavigate }: PatientDetailsProps) {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <ShieldAlert className="w-5 h-5 text-red-600" />
-              Medical Summary
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="rounded-xl bg-red-50 border border-red-100 p-4">
-              <p className="text-xs uppercase tracking-wide text-red-700">Allergies</p>
-              <p className="mt-2 text-sm font-medium text-gray-900">
-                {emergency.allergies.length > 0 ? emergency.allergies.join(', ') : 'No allergies on file'}
-              </p>
-            </div>
-
-            <div className="rounded-xl bg-blue-50 border border-blue-100 p-4">
-              <p className="text-xs uppercase tracking-wide text-blue-700">Chronic Conditions</p>
-              <p className="mt-2 text-sm font-medium text-gray-900">
-                {emergency.medicalConditions.length > 0 ? emergency.medicalConditions.join(', ') : 'No chronic conditions on file'}
-              </p>
-            </div>
-
-            <div className="rounded-xl bg-green-50 border border-green-100 p-4">
-              <p className="text-xs uppercase tracking-wide text-green-700">Current Medications</p>
-              <p className="mt-2 text-sm font-medium text-gray-900">
-                {emergency.currentMedications.length > 0 ? emergency.currentMedications.join(', ') : 'No medications on file'}
-              </p>
-            </div>
-
-            <div className="rounded-xl border border-gray-200 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-gray-500">Emergency Flags</p>
-                  <p className="mt-1 text-sm text-gray-600">Items staff should notice quickly</p>
-                </div>
-                <Badge variant={emergencyFlags.length > 0 ? 'warning' : 'secondary'}>
-                  {emergencyFlags.length}
-                </Badge>
-              </div>
-              <div className="mt-3 space-y-2">
-                {emergencyFlags.length > 0 ? (
-                  emergencyFlags.map((flag, index) => (
-                    <div key={index} className="flex items-start gap-2">
-                      <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
-                      <p className="text-sm text-gray-900">{flag}</p>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-sm text-gray-600">No critical flags recorded.</p>
-                )}
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-gray-200 p-4">
-              <p className="text-xs uppercase tracking-wide text-gray-500">Activity</p>
-              <div className="mt-3 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Clock3 className="w-4 h-4 text-gray-400" />
-                    <span className="text-sm text-gray-600">Documents on file</span>
-                  </div>
-                  <span className="text-sm font-medium text-gray-900">{patientDocuments.length}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Calendar className="w-4 h-4 text-gray-400" />
-                    <span className="text-sm text-gray-600">Appointments in history</span>
-                  </div>
-                  <span className="text-sm font-medium text-gray-900">{patientAppointments.length}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 text-gray-400" />
-                    <span className="text-sm text-gray-600">Blood type</span>
-                  </div>
-                  <span className="text-sm font-medium text-gray-900">{emergency.bloodType}</span>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
       </div>
 
       <div className="border-b border-gray-200">
@@ -619,18 +829,6 @@ export function PatientDetails({ patient, onNavigate }: PatientDetailsProps) {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                  <p className="text-sm text-gray-600">Last completed appointment</p>
-                  <p className="mt-2 text-sm font-medium text-gray-900">
-                    {completedAppointments[0] ? formatDateTime(completedAppointments[0].startTime) : 'No completed appointment yet'}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                  <p className="text-sm text-gray-600">Upcoming appointment</p>
-                  <p className="mt-2 text-sm font-medium text-gray-900">
-                    {nextAppointment ? formatDateTime(nextAppointment.startTime) : 'No upcoming appointment scheduled'}
-                  </p>
-                </div>
                 {latestSharedVital ? (
                   <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
                     <p className="text-sm text-gray-600">Latest shared vitals</p>
@@ -656,6 +854,197 @@ export function PatientDetails({ patient, onNavigate }: PatientDetailsProps) {
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
+                  <ShieldAlert className="w-5 h-5 text-red-600" />
+                  Allergies & Sensitivities
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {patientHealthSummary?.allergies?.length ? (
+                  <div className="space-y-3">
+                    {patientHealthSummary.allergies.map((item) => (
+                      <div key={item.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="font-medium text-gray-900">{item.name}</p>
+                            <p className="text-sm text-gray-600 mt-1">{item.reaction}</p>
+                          </div>
+                          <Badge variant="outline">{item.severity}</Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-gray-300 p-4">
+                    <p className="text-sm text-gray-600">No structured allergy information has been shared yet.</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between gap-3">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <FileTextIcon className="w-5 h-5 text-slate-600" />
+                    Medical Conditions
+                  </CardTitle>
+                  <Button size="sm" className="gap-2" onClick={() => openConditionModal()}>
+                    <Plus className="w-4 h-4" />
+                    Add Condition
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {patientConditions.length ? (
+                  <div className="space-y-3">
+                    {patientConditions.map((item) => (
+                      <div key={item.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="font-medium text-gray-900">{item.name}</p>
+                              <Badge
+                                className={`border-0 ${
+                                  item.sourceType === 'provider'
+                                    ? 'bg-teal-100 text-teal-700'
+                                    : 'bg-amber-100 text-amber-700'
+                                }`}
+                              >
+                                {item.sourceType === 'provider' ? 'Provider verified' : 'Patient noted'}
+                              </Badge>
+                            </div>
+                            <p className="text-sm text-gray-600 mt-1">{item.status}</p>
+                            <p className="text-xs text-gray-500 mt-1">Diagnosed: {formatConditionDate(item.diagnosed)}</p>
+                            {item.metric ? <p className="text-xs text-gray-500 mt-1">{item.metric}</p> : null}
+                            {item.provider ? <p className="text-xs text-gray-500 mt-1">Provider: {item.provider}</p> : null}
+                            {item.notes ? <p className="text-xs text-gray-500 mt-1">{item.notes}</p> : null}
+                            {item.hospitalName ? <p className="text-xs text-gray-500 mt-1">{item.hospitalName}</p> : null}
+                          </div>
+                          <div className="flex flex-col gap-2">
+                            <Button variant="outline" size="sm" onClick={() => openConditionModal(item)}>
+                              Edit Condition
+                            </Button>
+                            <Button variant="outline" size="sm" onClick={() => markConditionInactive(item.id)}>
+                              Mark Inactive
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-gray-300 p-4">
+                    <p className="text-sm text-gray-600">No conditions or patient-noted health concerns are on file yet.</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Pill className="w-5 h-5 text-emerald-600" />
+                  Current Medications
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-sm text-gray-600">Provider-prescribed medications appear here for the patient automatically.</p>
+                  <Button size="sm" className="gap-2" onClick={() => openMedicationModal()}>
+                    <Plus className="w-4 h-4" />
+                    Add Medication
+                  </Button>
+                </div>
+                {activeMedications.length ? (
+                  <div className="space-y-3">
+                    {activeMedications.map((medication) => (
+                      <div key={medication.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="font-medium text-gray-900">{medication.name}</p>
+                              <Badge className={`${medication.sourceType === 'provider' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'} border-0`}>
+                                {medication.sourceType === 'provider' ? 'Provider-prescribed' : 'Patient-added'}
+                              </Badge>
+                            </div>
+                            <p className="text-sm text-gray-600 mt-1">{[medication.dosage, medication.frequency].filter(Boolean).join(' • ') || 'Details pending'}</p>
+                            <p className="text-xs text-gray-500 mt-1">{medication.prescriberName}</p>
+                            {medication.hospitalName ? <p className="text-xs text-gray-500 mt-1">{medication.hospitalName}</p> : null}
+                            {medication.purpose ? <p className="text-xs text-gray-500 mt-1">Purpose: {medication.purpose}</p> : null}
+                            <p className="text-xs text-gray-500 mt-2">
+                              Latest intake: {intakeStatusLabel(medication.lastIntakeStatus)}
+                              {medication.lastIntakeDate ? ` on ${formatDate(medication.lastIntakeDate)}` : ''}
+                            </p>
+                          </div>
+                          <div className="flex flex-col gap-2">
+                            {medication.sourceType === 'provider' ? (
+                              <Button variant="outline" size="sm" onClick={() => openMedicationModal(medication)}>
+                                Edit Medication
+                              </Button>
+                            ) : null}
+                            <Button variant="outline" size="sm" onClick={() => updateMedication(medication.id, { isActive: false })}>
+                              Mark Inactive
+                            </Button>
+                          </div>
+                        </div>
+                        {medication.recentIntakeLogs.length > 0 ? (
+                          <div className="mt-3 rounded-lg bg-white border border-gray-200 p-3">
+                            <p className="text-xs uppercase tracking-wide text-gray-500 mb-2">Recent Intake Logs</p>
+                            <div className="space-y-2">
+                              {medication.recentIntakeLogs.slice(0, 3).map((log) => (
+                                <div key={log.id} className="flex items-start justify-between gap-3 text-xs text-gray-600">
+                                  <span>{formatDate(log.loggedForDate)}</span>
+                                  <span className="capitalize">{log.status}</span>
+                                  <span className="flex-1 text-right">{log.note || 'No note'}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-gray-300 p-4">
+                    <p className="text-sm text-gray-600">No active medications have been added yet.</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <AlertCircle className="w-5 h-5 text-rose-600" />
+                  Blood Type & Emergency Contacts
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                  <p className="text-sm text-gray-600">Blood Type</p>
+                  <p className="mt-2 text-xl font-semibold text-gray-900">{emergency.bloodType || '—'}</p>
+                </div>
+                {patientHealthSummary?.emergencyContacts?.length ? (
+                  <div className="space-y-3">
+                    {patientHealthSummary.emergencyContacts.map((contact, index) => (
+                      <div key={`${contact.name}-${index}`} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                        <p className="font-medium text-gray-900">{contact.name}</p>
+                        <p className="text-sm text-gray-600 mt-1">{contact.relationship}</p>
+                        <p className="text-sm text-gray-600 mt-1">{contact.phone}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-gray-300 p-4">
+                    <p className="text-sm text-gray-600">No emergency contacts have been shared yet.</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
                   <Syringe className="w-5 h-5 text-green-600" />
                   Immunization Record
                 </CardTitle>
@@ -668,7 +1057,10 @@ export function PatientDetails({ patient, onNavigate }: PatientDetailsProps) {
                         <div className="flex items-center justify-between gap-3">
                           <div>
                             <p className="font-medium text-gray-900">{item.name}</p>
-                            <p className="text-sm text-gray-600 mt-1">{item.detail}</p>
+                            <div className="mt-1 space-y-1 text-sm text-gray-600">
+                              <p>Dose: {item.dose || 'Not recorded'}</p>
+                              <p>Date taken: {item.date ? formatDate(item.date) : 'Not recorded'}</p>
+                            </div>
                           </div>
                           <Badge variant="secondary">{item.status}</Badge>
                         </div>
@@ -711,6 +1103,25 @@ export function PatientDetails({ patient, onNavigate }: PatientDetailsProps) {
                     </p>
                   </div>
                 )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Clock3 className="w-5 h-5 text-gray-600" />
+                  Advance Directives
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                  <p className="text-sm text-gray-600">DNR Status</p>
+                  <p className="mt-1 font-medium text-gray-900">{emergency.advanceDirectives.dnrStatus || '—'}</p>
+                </div>
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                  <p className="text-sm text-gray-600">Living Will</p>
+                  <p className="mt-1 font-medium text-gray-900">{emergency.advanceDirectives.livingWill || '—'}</p>
+                </div>
               </CardContent>
             </Card>
           </div>
@@ -879,6 +1290,79 @@ export function PatientDetails({ patient, onNavigate }: PatientDetailsProps) {
               </div>
             </CardContent>
           </Card>
+        </div>
+      )}
+
+      {showConditionModal && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-gray-900">{editingCondition ? 'Edit Condition' : 'Add Condition'}</h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowConditionModal(false);
+                  setEditingCondition(null);
+                }}
+                className="text-sm text-gray-500"
+              >
+                Close
+              </button>
+            </div>
+            <div className="space-y-3">
+              <input className="w-full rounded-lg border border-gray-200 px-3 py-2" placeholder="Condition name" value={conditionForm.name} onChange={(e) => setConditionForm({ ...conditionForm, name: e.target.value })} />
+              <select className="w-full rounded-lg border border-gray-200 px-3 py-2" value={conditionForm.status} onChange={(e) => setConditionForm({ ...conditionForm, status: e.target.value })}>
+                <option value="">Select status</option>
+                {conditionStatusOptions.map((option) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
+              <input type="date" className="w-full rounded-lg border border-gray-200 px-3 py-2" value={conditionForm.diagnosed} onChange={(e) => setConditionForm({ ...conditionForm, diagnosed: e.target.value })} />
+              <input className="w-full rounded-lg border border-gray-200 px-3 py-2" placeholder="Metric or care note" value={conditionForm.metric} onChange={(e) => setConditionForm({ ...conditionForm, metric: e.target.value })} />
+              <textarea className="w-full rounded-lg border border-gray-200 px-3 py-2 min-h-[100px]" placeholder="Notes" value={conditionForm.notes} onChange={(e) => setConditionForm({ ...conditionForm, notes: e.target.value })} />
+            </div>
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => {
+                setShowConditionModal(false);
+                setEditingCondition(null);
+              }}>Cancel</Button>
+              <Button className="flex-1" onClick={saveCondition}>{editingCondition ? 'Save Changes' : 'Save Condition'}</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showMedicationModal && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-gray-900">{editingMedication ? 'Edit Medication' : 'Add Medication'}</h3>
+              <button type="button" onClick={() => {
+                setShowMedicationModal(false);
+                setEditingMedication(null);
+              }} className="text-sm text-gray-500">Close</button>
+            </div>
+            <div className="space-y-3">
+              <input className="w-full rounded-lg border border-gray-200 px-3 py-2" placeholder="Medication name" value={medicationForm.name} onChange={(e) => setMedicationForm({ ...medicationForm, name: e.target.value })} />
+              <input className="w-full rounded-lg border border-gray-200 px-3 py-2" placeholder="Dosage" value={medicationForm.dosage} onChange={(e) => setMedicationForm({ ...medicationForm, dosage: e.target.value })} />
+              <input className="w-full rounded-lg border border-gray-200 px-3 py-2" placeholder="Frequency" value={medicationForm.frequency} onChange={(e) => setMedicationForm({ ...medicationForm, frequency: e.target.value })} />
+              <input className="w-full rounded-lg border border-gray-200 px-3 py-2" placeholder="Purpose" value={medicationForm.purpose} onChange={(e) => setMedicationForm({ ...medicationForm, purpose: e.target.value })} />
+              <input className="w-full rounded-lg border border-gray-200 px-3 py-2" placeholder="Pharmacy" value={medicationForm.pharmacy} onChange={(e) => setMedicationForm({ ...medicationForm, pharmacy: e.target.value })} />
+              <div className="grid grid-cols-2 gap-3">
+                <input type="date" className="w-full rounded-lg border border-gray-200 px-3 py-2" value={medicationForm.startDate} onChange={(e) => setMedicationForm({ ...medicationForm, startDate: e.target.value })} />
+                <input type="date" className="w-full rounded-lg border border-gray-200 px-3 py-2" value={medicationForm.endDate} onChange={(e) => setMedicationForm({ ...medicationForm, endDate: e.target.value })} />
+              </div>
+              <input className="w-full rounded-lg border border-gray-200 px-3 py-2" placeholder="Refills remaining" value={medicationForm.refillsRemaining} onChange={(e) => setMedicationForm({ ...medicationForm, refillsRemaining: e.target.value })} />
+              <textarea className="w-full rounded-lg border border-gray-200 px-3 py-2 min-h-[100px]" placeholder="Notes" value={medicationForm.notes} onChange={(e) => setMedicationForm({ ...medicationForm, notes: e.target.value })} />
+            </div>
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => {
+                setShowMedicationModal(false);
+                setEditingMedication(null);
+              }}>Cancel</Button>
+              <Button className="flex-1" onClick={addMedication}>{editingMedication ? 'Save Changes' : 'Save Medication'}</Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

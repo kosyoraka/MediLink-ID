@@ -137,11 +137,21 @@ export type HealthSummaryVital = {
 
 export type HealthSummaryCondition = {
   id: string;
+  patientId?: string;
+  hospitalId?: string | null;
+  hospitalName?: string | null;
+  staffId?: string | null;
+  sourceType?: "provider" | "patient";
+  verificationStatus?: "provider_verified" | "patient_noted" | "provider_reviewed";
   name: string;
   status: string;
   diagnosed: string;
   metric: string;
   provider: string;
+  notes?: string;
+  isActive?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type HealthSummaryAllergy = {
@@ -155,6 +165,8 @@ export type HealthSummaryImmunization = {
   id: string;
   name: string;
   detail: string;
+  dose?: string;
+  date?: string;
   status: string;
 };
 
@@ -187,6 +199,41 @@ export type HealthSummaryPayload = {
   immunizations: HealthSummaryImmunization[];
   familyHistory: HealthSummaryFamilyHistory[];
   updatedAt: string | null;
+};
+
+export type PatientMedication = {
+  id: string;
+  patientId: string;
+  hospitalId: string | null;
+  hospitalName: string | null;
+  staffId: string | null;
+  sourceType: "provider" | "patient";
+  verificationStatus: "provider_prescribed" | "patient_added";
+  name: string;
+  dosage: string;
+  frequency: string;
+  purpose: string;
+  prescriberName: string;
+  pharmacy: string;
+  startDate: string | null;
+  endDate: string | null;
+  refillsRemaining: number | null;
+  notes: string;
+  remindersEnabled: boolean;
+  adherenceStatus: "not_started" | "on_track" | "missed_doses" | "stopped";
+  lastIntakeStatus: "taken" | "missed" | "skipped" | null;
+  lastIntakeDate: string | null;
+  recentIntakeLogs: Array<{
+    id: string;
+    loggedForDate: string;
+    status: "taken" | "missed" | "skipped";
+    note: string;
+    createdAt: string;
+  }>;
+  isActive: boolean;
+  lastRefillRequestedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export const api = {
@@ -258,6 +305,97 @@ export const api = {
   updateMyHealthSummary: (body: Omit<HealthSummaryPayload, "updatedAt">) =>
     request<{ summary: HealthSummaryPayload }>("/api/patient/health-summary", {
       method: "PUT",
+      body: JSON.stringify(body),
+    }),
+  listMyConditions: () => request<{ conditions: HealthSummaryCondition[] }>("/api/patient/conditions"),
+  createMyCondition: (body: {
+    name: string;
+    status?: string;
+    diagnosed?: string;
+    metric?: string;
+    notes?: string;
+  }) =>
+    request<{ condition: HealthSummaryCondition }>("/api/patient/conditions", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateMyCondition: (
+    conditionId: string,
+    body: {
+      name?: string;
+      status?: string;
+      diagnosed?: string;
+      metric?: string;
+      notes?: string;
+      isActive?: boolean;
+    }
+  ) =>
+    request<{ condition: HealthSummaryCondition }>(`/api/patient/conditions/${conditionId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  requestConditionChange: (conditionId: string, body: { message: string }) =>
+    request<{ ok: boolean; conversationId: string }>(`/api/patient/conditions/${conditionId}/request-change`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  listMyMedications: () => request<{ medications: PatientMedication[] }>("/api/patient/medications"),
+  createMyMedication: (body: {
+    name: string;
+    dosage?: string;
+    frequency?: string;
+    purpose?: string;
+    pharmacy?: string;
+    startDate?: string;
+    notes?: string;
+  }) =>
+    request<{ medication: PatientMedication }>("/api/patient/medications", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateMyMedication: (
+    medicationId: string,
+    body: {
+      name?: string;
+      dosage?: string;
+      frequency?: string;
+      purpose?: string;
+      pharmacy?: string;
+      startDate?: string;
+      notes?: string;
+      remindersEnabled?: boolean;
+      adherenceStatus?: PatientMedication["adherenceStatus"];
+      isActive?: boolean;
+    }
+  ) =>
+    request<{ medication: PatientMedication }>(`/api/patient/medications/${medicationId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  requestMedicationRefill: (medicationId: string) =>
+    request<{ ok: boolean; medication: PatientMedication }>(`/api/patient/medications/${medicationId}/refill-request`, {
+      method: "POST",
+    }),
+  requestMedicationChange: (medicationId: string, body: { message: string }) =>
+    request<{ ok: boolean; conversationId: string }>(`/api/patient/medications/${medicationId}/request-change`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  logMedicationIntake: (
+    medicationId: string,
+    body: { status: "taken" | "missed" | "skipped"; loggedForDate?: string; note?: string }
+  ) =>
+    request<{
+      log: {
+        id: string;
+        loggedForDate: string;
+        status: "taken" | "missed" | "skipped";
+        note: string;
+        createdAt: string;
+      };
+      medication: PatientMedication;
+    }>(`/api/patient/medications/${medicationId}/intake-logs`, {
+      method: "POST",
       body: JSON.stringify(body),
     }),
   listConnectedHospitals: () =>

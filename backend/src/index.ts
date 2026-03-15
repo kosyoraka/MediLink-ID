@@ -157,9 +157,17 @@ const isDev = process.env.NODE_ENV !== "production";
 
 async function ensureDocumentsSchema() {
   const sql = await readFile(path.resolve(__dirname, "../004_documents_domain.sql"), "utf8");
+  const patchSql = `
+    ALTER TABLE document_requests
+    ADD COLUMN IF NOT EXISTS conversation_id UUID;
+
+    ALTER TABLE document_requests
+    ADD COLUMN IF NOT EXISTS staff_id UUID;
+  `;
   for (let attempt = 1; attempt <= 5; attempt += 1) {
     try {
       await pool.query(sql);
+      await pool.query(patchSql);
       return;
     } catch (error) {
       if (attempt === 5) {
@@ -180,6 +188,38 @@ async function ensureHealthSummarySchema() {
     } catch (error) {
       if (attempt === 5) {
         console.error("Health summary schema setup skipped:", error);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+    }
+  }
+}
+
+async function ensureMedicationsSchema() {
+  const sql = await readFile(path.resolve(__dirname, "../006_medications.sql"), "utf8");
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    try {
+      await pool.query(sql);
+      return;
+    } catch (error) {
+      if (attempt === 5) {
+        console.error("Medications schema setup skipped:", error);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+    }
+  }
+}
+
+async function ensureConditionsSchema() {
+  const sql = await readFile(path.resolve(__dirname, "../007_conditions.sql"), "utf8");
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    try {
+      await pool.query(sql);
+      return;
+    } catch (error) {
+      if (attempt === 5) {
+        console.error("Conditions schema setup skipped:", error);
         return;
       }
       await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
@@ -299,6 +339,266 @@ function summarizeHealthSummaryText(items: any[] | null | undefined, type: "alle
     })
     .filter(Boolean)
     .join("\n");
+}
+
+function summarizeMedicationName(row: any) {
+  const name = String(row?.name ?? "").trim();
+  const dosage = String(row?.dosage ?? "").trim();
+  return [name, dosage].filter(Boolean).join(" ").trim();
+}
+
+function mapMedicationRow(row: any) {
+  return {
+    id: String(row.id),
+    patientId: String(row.patient_id),
+    hospitalId: row.hospital_id ? String(row.hospital_id) : null,
+    hospitalName: row.hospital_name || null,
+    staffId: row.staff_id ? String(row.staff_id) : null,
+    sourceType: String(row.source_type),
+    verificationStatus: String(row.verification_status),
+    name: String(row.name),
+    dosage: row.dosage || "",
+    frequency: row.frequency || "",
+    purpose: row.purpose || "",
+    prescriberName:
+      row.prescriber_name || row.staff_full_name || (row.source_type === "patient" ? "Added by patient" : "Provider"),
+    pharmacy: row.pharmacy || "",
+    startDate: row.start_date || null,
+    endDate: row.end_date || null,
+    refillsRemaining:
+      typeof row.refills_remaining === "number" ? row.refills_remaining : row.refills_remaining == null ? null : Number(row.refills_remaining),
+    notes: row.notes || "",
+    remindersEnabled: Boolean(row.reminders_enabled),
+    adherenceStatus: String(row.adherence_status || "not_started"),
+    lastIntakeStatus: row.last_intake_status || null,
+    lastIntakeDate: row.last_intake_date || null,
+    recentIntakeLogs: Array.isArray(row.recent_intake_logs) ? row.recent_intake_logs : [],
+    isActive: Boolean(row.is_active),
+    lastRefillRequestedAt: row.last_refill_requested_at || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+async function fetchMedicationById(medicationId: string) {
+  const result = await pool.query(
+    `
+    SELECT
+      pm.*,
+      h.name AS hospital_name,
+      sa.full_name AS staff_full_name,
+      latest_log.status AS last_intake_status,
+      latest_log.logged_for_date AS last_intake_date,
+      COALESCE(logs.recent_intake_logs, '[]'::json) AS recent_intake_logs
+    FROM patient_medications pm
+    LEFT JOIN hospitals h ON h.id = pm.hospital_id
+    LEFT JOIN staff_accounts sa ON sa.id = pm.staff_id
+    LEFT JOIN LATERAL (
+      SELECT mil.status, mil.logged_for_date
+      FROM medication_intake_logs mil
+      WHERE mil.medication_id = pm.id
+      ORDER BY mil.logged_for_date DESC, mil.created_at DESC
+      LIMIT 1
+    ) latest_log ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT json_agg(
+        json_build_object(
+          'id', mil.id,
+          'loggedForDate', mil.logged_for_date,
+          'status', mil.status,
+          'note', mil.note,
+          'createdAt', mil.created_at
+        )
+        ORDER BY mil.logged_for_date DESC, mil.created_at DESC
+      ) AS recent_intake_logs
+      FROM (
+        SELECT *
+        FROM medication_intake_logs
+        WHERE medication_id = pm.id
+        ORDER BY logged_for_date DESC, created_at DESC
+        LIMIT 7
+      ) mil
+    ) logs ON TRUE
+    WHERE pm.id = $1::uuid
+    LIMIT 1
+    `,
+    [medicationId]
+  );
+
+  return result.rows[0] || null;
+}
+
+async function syncPatientMedicationSummary(patientId: string) {
+  const medsResult = await pool.query(
+    `
+    SELECT name, dosage
+    FROM patient_medications
+    WHERE patient_id = $1::uuid
+      AND is_active = true
+    ORDER BY created_at DESC
+    `,
+    [patientId]
+  );
+
+  const currentMedications = medsResult.rows
+    .map((row) => summarizeMedicationName(row))
+    .filter(Boolean);
+
+  await pool.query(
+    `
+    INSERT INTO patient_health_summaries (
+      patient_id, current_medications, updated_at
+    )
+    VALUES ($1::uuid, $2::jsonb, NOW())
+    ON CONFLICT (patient_id)
+    DO UPDATE SET
+      current_medications = EXCLUDED.current_medications,
+      updated_at = NOW()
+    `,
+    [patientId, JSON.stringify(currentMedications)]
+  );
+
+  await pool.query(
+    `
+    UPDATE patient_profiles
+    SET current_medications = $2
+    WHERE patient_id = $1::uuid
+    `,
+    [patientId, currentMedications.length ? currentMedications.join(", ") : null]
+  );
+}
+
+function mapConditionRow(row: any) {
+  return {
+    id: String(row.id),
+    patientId: String(row.patient_id),
+    hospitalId: row.hospital_id ? String(row.hospital_id) : null,
+    hospitalName: row.hospital_name || null,
+    staffId: row.staff_id ? String(row.staff_id) : null,
+    sourceType: String(row.source_type || "provider"),
+    verificationStatus: String(row.verification_status || "provider_verified"),
+    name: String(row.name || ""),
+    status: String(row.status || ""),
+    diagnosed: String(row.diagnosed || ""),
+    metric: String(row.metric || ""),
+    provider: String(row.provider || row.staff_full_name || ""),
+    notes: String(row.notes || ""),
+    isActive: Boolean(row.is_active),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+async function syncPatientConditionSummary(patientId: string) {
+  const result = await pool.query(
+    `
+    SELECT pc.*, h.name AS hospital_name, sa.full_name AS staff_full_name
+    FROM patient_conditions pc
+    LEFT JOIN hospitals h ON h.id = pc.hospital_id
+    LEFT JOIN staff_accounts sa ON sa.id = pc.staff_id
+    WHERE pc.patient_id = $1::uuid
+      AND pc.is_active = true
+    ORDER BY pc.updated_at DESC, pc.created_at DESC
+    `,
+    [patientId]
+  );
+
+  const conditions = result.rows.map(mapConditionRow);
+  const conditionNames = conditions.map((item) => item.name).filter(Boolean);
+
+  await pool.query(
+    `
+    INSERT INTO patient_health_summaries (patient_id, conditions, updated_at)
+    VALUES ($1::uuid, $2::jsonb, NOW())
+    ON CONFLICT (patient_id)
+    DO UPDATE SET
+      conditions = EXCLUDED.conditions,
+      updated_at = NOW()
+    `,
+    [patientId, JSON.stringify(conditions)]
+  );
+
+  await pool.query(
+    `
+    UPDATE patient_profiles
+    SET medical_conditions = $2
+    WHERE patient_id = $1::uuid
+    `,
+    [patientId, conditionNames.length ? conditionNames.join(", ") : null]
+  );
+
+  return conditions;
+}
+
+async function seedConditionRowsFromSummary(patientId: string) {
+  const existing = await pool.query(
+    `SELECT 1 FROM patient_conditions WHERE patient_id = $1::uuid LIMIT 1`,
+    [patientId]
+  );
+
+  if ((existing.rowCount ?? 0) > 0) return;
+
+  const summary = await pool.query(
+    `
+    SELECT hs.conditions, pp.medical_conditions
+    FROM patient_health_summaries hs
+    LEFT JOIN patient_profiles pp ON pp.patient_id = hs.patient_id
+    WHERE hs.patient_id = $1::uuid
+    LIMIT 1
+    `,
+    [patientId]
+  );
+
+  let conditions = Array.isArray(summary.rows[0]?.conditions) ? summary.rows[0].conditions : [];
+  if (conditions.length === 0) {
+    const profile = await pool.query(
+      `
+      SELECT medical_conditions
+      FROM patient_profiles
+      WHERE patient_id = $1::uuid
+      LIMIT 1
+      `,
+      [patientId]
+    );
+
+    const legacyConditions = String(profile.rows[0]?.medical_conditions || "")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    conditions = legacyConditions.map((name) => ({
+      id: randomUUID(),
+      name,
+      status: "On file",
+      diagnosed: "Date not recorded",
+      metric: "Imported from existing patient profile",
+      provider: "Provider not recorded",
+    }));
+  }
+
+  for (const item of conditions) {
+    const name = String(item?.name || "").trim();
+    if (!name) continue;
+
+    await pool.query(
+      `
+      INSERT INTO patient_conditions (
+        id, patient_id, source_type, verification_status, name, status, diagnosed, metric, provider, notes, is_active
+      )
+      VALUES ($1::uuid, $2::uuid, 'provider', 'provider_verified', $3, $4, $5, $6, $7, $8, true)
+      `,
+      [
+        isUuid(String(item?.id || "")) ? String(item.id) : randomUUID(),
+        patientId,
+        name,
+        item?.status ? String(item.status).trim() : null,
+        item?.diagnosed ? String(item.diagnosed).trim() : null,
+        item?.metric ? String(item.metric).trim() : null,
+        item?.provider ? String(item.provider).trim() : null,
+        item?.notes ? String(item.notes).trim() : null,
+      ]
+    );
+  }
 }
 
 const documentSelectSql = `
@@ -2543,6 +2843,31 @@ app.get("/api/staff/messages/conversations", requireStaffAuth, async (req: any, 
 
         (
           SELECT COUNT(*)
+          FROM medication_change_requests mcr
+          WHERE mcr.conversation_id = c.id
+            AND mcr.status = 'open'
+        )::int AS open_medication_change_count,
+
+        (
+          SELECT mcr.id
+          FROM medication_change_requests mcr
+          WHERE mcr.conversation_id = c.id
+            AND mcr.status = 'open'
+          ORDER BY mcr.created_at DESC
+          LIMIT 1
+        ) AS active_medication_change_request_id,
+
+        (
+          SELECT mcr.medication_id
+          FROM medication_change_requests mcr
+          WHERE mcr.conversation_id = c.id
+            AND mcr.status = 'open'
+          ORDER BY mcr.created_at DESC
+          LIMIT 1
+        ) AS active_medication_change_medication_id,
+
+        (
+          SELECT COUNT(*)
           FROM message_items mi
           WHERE mi.conversation_id = c.id
             AND mi.sender_type = 'patient'
@@ -2678,6 +3003,98 @@ app.post("/api/staff/messages/conversations/:id/read", requireStaffAuth, async (
   } catch (e: any) {
     console.error("STAFF MARK READ ERROR:", e);
     return res.status(500).json({ message: "Server error" });
+  }
+});
+
+app.get("/api/staff/medication-change-requests/summary", requireStaffAuth, async (req: any, res) => {
+  try {
+    const hospitalId = req.staffHospitalId as string;
+
+    const result = await pool.query(
+      `
+      SELECT COUNT(*)::int AS open_count
+      FROM medication_change_requests
+      WHERE hospital_id = $1::uuid
+        AND status = 'open'
+      `,
+      [hospitalId]
+    );
+
+    return res.json({ openCount: Number(result.rows[0]?.open_count || 0) });
+  } catch (e: any) {
+    console.error("GET /api/staff/medication-change-requests/summary error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to load medication change requests" });
+  }
+});
+
+app.post("/api/staff/medication-change-requests/:id/resolve", requireStaffAuth, async (req: any, res) => {
+  try {
+    const hospitalId = req.staffHospitalId as string;
+    const staffId = req.staffId as string;
+    const requestId = String(req.params.id || "");
+
+    if (!isUuid(requestId)) {
+      return res.status(400).json({ message: "Invalid request id" });
+    }
+
+    const staffResult = await pool.query(
+      `
+      SELECT full_name
+      FROM staff_accounts
+      WHERE id = $1::uuid
+      LIMIT 1
+      `,
+      [staffId]
+    );
+
+    const result = await pool.query(
+      `
+      UPDATE medication_change_requests
+      SET status = 'resolved',
+          resolved_at = NOW(),
+          resolved_by_staff_id = $3::uuid,
+          updated_at = NOW()
+      WHERE id = $1::uuid
+        AND hospital_id = $2::uuid
+        AND status = 'open'
+      RETURNING id, conversation_id
+      `,
+      [requestId, hospitalId, staffId]
+    );
+
+    if ((result.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: "Medication change request not found" });
+    }
+
+    const doctorName = String(staffResult.rows[0]?.full_name || "Your provider").trim();
+    const resolutionMessage = `Dr. ${doctorName} has resolved the medication change request.`;
+    const conversationId = String(result.rows[0].conversation_id || "");
+
+    if (conversationId) {
+      await pool.query(
+        `
+        INSERT INTO message_items (conversation_id, sender_type, sender_staff_id, body)
+        VALUES ($1::uuid, 'staff', $2::uuid, $3)
+        `,
+        [conversationId, staffId, resolutionMessage]
+      );
+
+      await pool.query(
+        `
+        UPDATE message_conversations
+        SET last_message_preview = $2,
+            last_message_at = NOW(),
+            updated_at = NOW()
+        WHERE id = $1::uuid
+        `,
+        [conversationId, resolutionMessage.slice(0, 200)]
+      );
+    }
+
+    return res.json({ ok: true });
+  } catch (e: any) {
+    console.error("POST /api/staff/medication-change-requests/:id/resolve error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to resolve medication change request" });
   }
 });
 
@@ -3583,18 +4000,70 @@ app.post("/api/patient/record-requests", requirePatientAuth, async (req: any, re
       return res.status(403).json({ message: "You are not actively connected to this hospital" });
     }
 
+    const staffResult = await pool.query(
+      `
+      SELECT id
+      FROM staff_accounts
+      WHERE hospital_id = $1::uuid
+      ORDER BY created_at ASC
+      LIMIT 1
+      `,
+      [hospitalId]
+    );
+
+    if ((staffResult.rowCount ?? 0) === 0) {
+      return res.status(400).json({ message: "No provider contact is available for this hospital" });
+    }
+
+    const staffId = String(staffResult.rows[0].id);
+    const conversationResult = await pool.query(
+      `
+      INSERT INTO message_conversations (patient_id, provider_id, staff_id, created_at, updated_at)
+      VALUES ($1::uuid, $2::uuid, $3::uuid, NOW(), NOW())
+      ON CONFLICT (patient_id, provider_id, staff_id)
+      DO UPDATE SET updated_at = NOW()
+      RETURNING id
+      `,
+      [patientId, hospitalId, staffId]
+    );
+
+    const conversationId = String(conversationResult.rows[0].id);
+    const requestSummary = `Medical record request for ${normalizedCategory}${subtype ? ` • ${String(subtype).trim()}` : ""}`;
+    const requestMessage = message ? `${requestSummary}: ${String(message).trim()}` : requestSummary;
+
+    await pool.query(
+      `
+      INSERT INTO message_items (conversation_id, sender_type, sender_patient_id, body)
+      VALUES ($1::uuid, 'patient', $2::uuid, $3)
+      `,
+      [conversationId, patientId, requestMessage]
+    );
+
+    await pool.query(
+      `
+      UPDATE message_conversations
+      SET last_message_preview = $2,
+          last_message_at = NOW(),
+          updated_at = NOW()
+      WHERE id = $1::uuid
+      `,
+      [conversationId, requestMessage.slice(0, 200)]
+    );
+
     const requestId = randomUUID();
     await pool.query(
       `
       INSERT INTO document_requests (
-        id, patient_id, hospital_id, category, subtype, message, status
+        id, patient_id, hospital_id, staff_id, conversation_id, category, subtype, message, status
       )
-      VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, 'pending')
+      VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6, $7, $8, 'pending')
       `,
       [
         requestId,
         patientId,
         hospitalId,
+        staffId,
+        conversationId,
         normalizedCategory,
         subtype ? String(subtype).trim() : null,
         message ? String(message).trim() : null,
@@ -3618,10 +4087,641 @@ app.post("/api/patient/record-requests", requirePatientAuth, async (req: any, re
   }
 });
 
+app.get("/api/patient/conditions", requirePatientAuth, async (req: any, res) => {
+  const patientId = req.patientId;
+  try {
+    await seedConditionRowsFromSummary(patientId);
+    const conditions = await syncPatientConditionSummary(patientId);
+    return res.json({ conditions });
+  } catch (e: any) {
+    console.error("GET /api/patient/conditions error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to load conditions" });
+  }
+});
+
+app.post("/api/patient/conditions", requirePatientAuth, async (req: any, res) => {
+  const patientId = req.patientId;
+  const { name, status, diagnosed, metric, notes } = req.body ?? {};
+
+  if (!String(name || "").trim()) {
+    return res.status(400).json({ message: "Condition name is required" });
+  }
+
+  try {
+    const created = await pool.query(
+      `
+      INSERT INTO patient_conditions (
+        id, patient_id, source_type, verification_status, name, status, diagnosed, metric, provider, notes, is_active
+      )
+      VALUES ($1::uuid, $2::uuid, 'patient', 'patient_noted', $3, $4, $5, $6, 'Patient noted', $7, true)
+      RETURNING *
+      `,
+      [
+        randomUUID(),
+        patientId,
+        String(name).trim(),
+        status ? String(status).trim() : null,
+        diagnosed ? String(diagnosed).trim() : null,
+        metric ? String(metric).trim() : null,
+        notes ? String(notes).trim() : null,
+      ]
+    );
+
+    await syncPatientConditionSummary(patientId);
+    return res.status(201).json({ condition: mapConditionRow(created.rows[0]) });
+  } catch (e: any) {
+    console.error("POST /api/patient/conditions error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to add health concern" });
+  }
+});
+
+app.patch("/api/patient/conditions/:id", requirePatientAuth, async (req: any, res) => {
+  const patientId = req.patientId;
+  const conditionId = String(req.params.id || "");
+  const { name, status, diagnosed, metric, notes, isActive } = req.body ?? {};
+
+  if (!isUuid(conditionId)) {
+    return res.status(400).json({ message: "Invalid condition id" });
+  }
+
+  try {
+    const updated = await pool.query(
+      `
+      UPDATE patient_conditions
+      SET
+        name = COALESCE($3, name),
+        status = COALESCE($4, status),
+        diagnosed = COALESCE($5, diagnosed),
+        metric = COALESCE($6, metric),
+        notes = COALESCE($7, notes),
+        is_active = COALESCE($8, is_active),
+        updated_at = NOW()
+      WHERE id = $1::uuid
+        AND patient_id = $2::uuid
+        AND source_type = 'patient'
+      RETURNING *
+      `,
+      [
+        conditionId,
+        patientId,
+        name == null ? null : String(name).trim(),
+        status == null ? null : String(status).trim(),
+        diagnosed == null ? null : String(diagnosed).trim(),
+        metric == null ? null : String(metric).trim(),
+        notes == null ? null : String(notes).trim(),
+        typeof isActive === "boolean" ? isActive : null,
+      ]
+    );
+
+    if ((updated.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: "Health concern not found" });
+    }
+
+    await syncPatientConditionSummary(patientId);
+    return res.json({ condition: mapConditionRow(updated.rows[0]) });
+  } catch (e: any) {
+    console.error("PATCH /api/patient/conditions/:id error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to update health concern" });
+  }
+});
+
+app.post("/api/patient/conditions/:id/request-change", requirePatientAuth, async (req: any, res) => {
+  const patientId = req.patientId;
+  const conditionId = String(req.params.id || "");
+  const message = String(req.body?.message || "").trim();
+
+  if (!isUuid(conditionId)) {
+    return res.status(400).json({ message: "Invalid condition id" });
+  }
+  if (!message) {
+    return res.status(400).json({ message: "Please include the change request details" });
+  }
+
+  try {
+    const conditionResult = await pool.query(
+      `
+      SELECT id, source_type, name, hospital_id, staff_id
+      FROM patient_conditions
+      WHERE id = $1::uuid
+        AND patient_id = $2::uuid
+        AND is_active = true
+      LIMIT 1
+      `,
+      [conditionId, patientId]
+    );
+
+    if ((conditionResult.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: "Condition not found" });
+    }
+
+    const condition = conditionResult.rows[0];
+    if (String(condition.source_type || "") !== "provider") {
+      return res.status(400).json({ message: "Change requests are only available for provider-managed conditions" });
+    }
+    if (!condition.hospital_id) {
+      return res.status(400).json({ message: "No provider is linked to this condition yet" });
+    }
+
+    const ok = await ensureActiveConnection(patientId, String(condition.hospital_id));
+    if (!ok) return res.status(403).json({ message: "You are not actively connected to this provider" });
+
+    let staffId = condition.staff_id ? String(condition.staff_id) : "";
+    if (!staffId) {
+      const fallbackStaff = await pool.query(
+        `SELECT id FROM staff_accounts WHERE hospital_id = $1::uuid ORDER BY created_at ASC LIMIT 1`,
+        [condition.hospital_id]
+      );
+      if ((fallbackStaff.rowCount ?? 0) === 0) {
+        return res.status(400).json({ message: "No provider contact is available for this condition" });
+      }
+      staffId = String(fallbackStaff.rows[0].id);
+    }
+
+    const conversationResult = await pool.query(
+      `
+      INSERT INTO message_conversations (patient_id, provider_id, staff_id, created_at, updated_at)
+      VALUES ($1::uuid, $2::uuid, $3::uuid, NOW(), NOW())
+      ON CONFLICT (patient_id, provider_id, staff_id)
+      DO UPDATE SET updated_at = NOW()
+      RETURNING id
+      `,
+      [patientId, condition.hospital_id, staffId]
+    );
+
+    const conversationId = String(conversationResult.rows[0].id);
+    const body = `Condition change request for ${String(condition.name || "condition").trim()}: ${message}`;
+
+    await pool.query(
+      `INSERT INTO message_items (conversation_id, sender_type, sender_patient_id, body) VALUES ($1::uuid, 'patient', $2::uuid, $3)`,
+      [conversationId, patientId, body]
+    );
+
+    await pool.query(
+      `
+      UPDATE message_conversations
+      SET last_message_preview = $2,
+          last_message_at = NOW(),
+          updated_at = NOW()
+      WHERE id = $1::uuid
+      `,
+      [conversationId, body.slice(0, 200)]
+    );
+
+    return res.status(201).json({ ok: true, conversationId });
+  } catch (e: any) {
+    console.error("POST /api/patient/conditions/:id/request-change error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to request condition change" });
+  }
+});
+
+app.get("/api/patient/medications", requirePatientAuth, async (req: any, res) => {
+  const patientId = req.patientId;
+
+  try {
+    await syncPatientMedicationSummary(patientId);
+
+    const result = await pool.query(
+      `
+      SELECT
+        pm.*,
+        h.name AS hospital_name,
+        sa.full_name AS staff_full_name,
+        latest_log.status AS last_intake_status,
+        latest_log.logged_for_date AS last_intake_date,
+        COALESCE(logs.recent_intake_logs, '[]'::json) AS recent_intake_logs
+      FROM patient_medications pm
+      LEFT JOIN hospitals h ON h.id = pm.hospital_id
+      LEFT JOIN staff_accounts sa ON sa.id = pm.staff_id
+      LEFT JOIN LATERAL (
+        SELECT mil.status, mil.logged_for_date
+        FROM medication_intake_logs mil
+        WHERE mil.medication_id = pm.id
+        ORDER BY mil.logged_for_date DESC, mil.created_at DESC
+        LIMIT 1
+      ) latest_log ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT json_agg(
+          json_build_object(
+            'id', mil.id,
+            'loggedForDate', mil.logged_for_date,
+            'status', mil.status,
+            'note', mil.note,
+            'createdAt', mil.created_at
+          )
+          ORDER BY mil.logged_for_date DESC, mil.created_at DESC
+        ) AS recent_intake_logs
+        FROM (
+          SELECT *
+          FROM medication_intake_logs
+          WHERE medication_id = pm.id
+          ORDER BY logged_for_date DESC, created_at DESC
+          LIMIT 7
+        ) mil
+      ) logs ON TRUE
+      WHERE pm.patient_id = $1::uuid
+      ORDER BY pm.is_active DESC, COALESCE(pm.start_date, DATE(pm.created_at)) DESC, pm.created_at DESC
+      `,
+      [patientId]
+    );
+
+    return res.json({ medications: result.rows.map(mapMedicationRow) });
+  } catch (e: any) {
+    console.error("GET /api/patient/medications error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to fetch medications" });
+  }
+});
+
+app.post("/api/patient/medications", requirePatientAuth, async (req: any, res) => {
+  const patientId = req.patientId;
+  const { name, dosage, frequency, purpose, pharmacy, startDate, notes } = req.body ?? {};
+
+  if (!String(name || "").trim()) {
+    return res.status(400).json({ message: "Medication name is required" });
+  }
+  if (startDate && Number.isNaN(Date.parse(String(startDate)))) {
+    return res.status(400).json({ message: "Invalid startDate" });
+  }
+
+  try {
+    const insert = await pool.query(
+      `
+      INSERT INTO patient_medications (
+        id, patient_id, source_type, verification_status, name, dosage, frequency, purpose, pharmacy, start_date, notes
+      )
+      VALUES ($1::uuid, $2::uuid, 'patient', 'patient_added', $3, $4, $5, $6, $7, $8, $9)
+      RETURNING *
+      `,
+      [
+        randomUUID(),
+        patientId,
+        String(name).trim(),
+        dosage ? String(dosage).trim() : null,
+        frequency ? String(frequency).trim() : null,
+        purpose ? String(purpose).trim() : null,
+        pharmacy ? String(pharmacy).trim() : null,
+        startDate || null,
+        notes ? String(notes).trim() : null,
+      ]
+    );
+
+    await syncPatientMedicationSummary(patientId);
+    return res.status(201).json({ medication: mapMedicationRow({ ...insert.rows[0], hospital_name: null }) });
+  } catch (e: any) {
+    console.error("POST /api/patient/medications error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to add medication" });
+  }
+});
+
+app.patch("/api/patient/medications/:id", requirePatientAuth, async (req: any, res) => {
+  const patientId = req.patientId;
+  const medicationId = String(req.params.id || "");
+  const { remindersEnabled, adherenceStatus, isActive, name, dosage, frequency, purpose, pharmacy, startDate, notes } = req.body ?? {};
+
+  if (!isUuid(medicationId)) {
+    return res.status(400).json({ message: "Invalid medication id" });
+  }
+
+  const allowedAdherence = new Set(["not_started", "on_track", "missed_doses", "stopped"]);
+  if (adherenceStatus != null && !allowedAdherence.has(String(adherenceStatus))) {
+    return res.status(400).json({ message: "Invalid adherenceStatus" });
+  }
+  if (startDate && Number.isNaN(Date.parse(String(startDate)))) {
+    return res.status(400).json({ message: "Invalid startDate" });
+  }
+
+  try {
+    const existing = await pool.query(
+      `
+      SELECT source_type
+      FROM patient_medications
+      WHERE id = $1::uuid
+        AND patient_id = $2::uuid
+      LIMIT 1
+      `,
+      [medicationId, patientId]
+    );
+
+    if ((existing.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: "Medication not found" });
+    }
+
+    if (
+      String(existing.rows[0].source_type || "patient") !== "patient" &&
+      [name, dosage, frequency, purpose, pharmacy, startDate, notes].some((value) => value != null)
+    ) {
+      return res.status(403).json({ message: "Only personal medications can be edited here" });
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE patient_medications
+      SET
+        name = CASE WHEN source_type = 'patient' THEN COALESCE($3, name) ELSE name END,
+        dosage = CASE WHEN source_type = 'patient' THEN COALESCE($4, dosage) ELSE dosage END,
+        frequency = CASE WHEN source_type = 'patient' THEN COALESCE($5, frequency) ELSE frequency END,
+        purpose = CASE WHEN source_type = 'patient' THEN COALESCE($6, purpose) ELSE purpose END,
+        pharmacy = CASE WHEN source_type = 'patient' THEN COALESCE($7, pharmacy) ELSE pharmacy END,
+        start_date = CASE WHEN source_type = 'patient' THEN COALESCE($8, start_date) ELSE start_date END,
+        notes = CASE WHEN source_type = 'patient' THEN COALESCE($9, notes) ELSE notes END,
+        reminders_enabled = COALESCE($10, reminders_enabled),
+        adherence_status = COALESCE($11, adherence_status),
+        is_active = COALESCE($12, is_active),
+        updated_at = NOW()
+      WHERE id = $1::uuid
+        AND patient_id = $2::uuid
+      RETURNING *
+      `,
+      [
+        medicationId,
+        patientId,
+        name == null ? null : String(name).trim(),
+        dosage == null ? null : String(dosage).trim(),
+        frequency == null ? null : String(frequency).trim(),
+        purpose == null ? null : String(purpose).trim(),
+        pharmacy == null ? null : String(pharmacy).trim(),
+        startDate || null,
+        notes == null ? null : String(notes).trim(),
+        typeof remindersEnabled === "boolean" ? remindersEnabled : null,
+        adherenceStatus ? String(adherenceStatus) : null,
+        typeof isActive === "boolean" ? isActive : null,
+      ]
+    );
+
+    if ((result.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: "Medication not found" });
+    }
+
+    await syncPatientMedicationSummary(patientId);
+    const fresh = await fetchMedicationById(medicationId);
+    return res.json({ medication: mapMedicationRow(fresh || result.rows[0]) });
+  } catch (e: any) {
+    console.error("PATCH /api/patient/medications/:id error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to update medication" });
+  }
+});
+
+app.post("/api/patient/medications/:id/intake-logs", requirePatientAuth, async (req: any, res) => {
+  const patientId = req.patientId;
+  const medicationId = String(req.params.id || "");
+  const { status, loggedForDate, note } = req.body ?? {};
+
+  if (!isUuid(medicationId)) {
+    return res.status(400).json({ message: "Invalid medication id" });
+  }
+
+  const normalizedStatus = String(status || "").trim().toLowerCase();
+  if (!["taken", "missed", "skipped"].includes(normalizedStatus)) {
+    return res.status(400).json({ message: "Invalid intake status" });
+  }
+
+  const intakeDate = loggedForDate ? String(loggedForDate) : new Date().toISOString().slice(0, 10);
+  if (Number.isNaN(Date.parse(intakeDate))) {
+    return res.status(400).json({ message: "Invalid loggedForDate" });
+  }
+
+  try {
+    const medResult = await pool.query(
+      `
+      SELECT *
+      FROM patient_medications
+      WHERE id = $1::uuid
+        AND patient_id = $2::uuid
+      LIMIT 1
+      `,
+      [medicationId, patientId]
+    );
+
+    if ((medResult.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: "Medication not found" });
+    }
+
+    const logResult = await pool.query(
+      `
+      INSERT INTO medication_intake_logs (
+        id, medication_id, patient_id, logged_for_date, status, note
+      )
+      VALUES ($1::uuid, $2::uuid, $3::uuid, $4::date, $5, $6)
+      RETURNING id, medication_id, patient_id, logged_for_date, status, note, created_at
+      `,
+      [
+        randomUUID(),
+        medicationId,
+        patientId,
+        intakeDate,
+        normalizedStatus,
+        note ? String(note).trim() : null,
+      ]
+    );
+
+    const mappedMedication = await pool.query(
+      `
+      SELECT
+        pm.*,
+        h.name AS hospital_name,
+        sa.full_name AS staff_full_name,
+        latest_log.status AS last_intake_status,
+        latest_log.logged_for_date AS last_intake_date,
+        COALESCE(logs.recent_intake_logs, '[]'::json) AS recent_intake_logs
+      FROM patient_medications pm
+      LEFT JOIN hospitals h ON h.id = pm.hospital_id
+      LEFT JOIN staff_accounts sa ON sa.id = pm.staff_id
+      LEFT JOIN LATERAL (
+        SELECT mil.status, mil.logged_for_date
+        FROM medication_intake_logs mil
+        WHERE mil.medication_id = pm.id
+        ORDER BY mil.logged_for_date DESC, mil.created_at DESC
+        LIMIT 1
+      ) latest_log ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT json_agg(
+          json_build_object(
+            'id', mil.id,
+            'loggedForDate', mil.logged_for_date,
+            'status', mil.status,
+            'note', mil.note,
+            'createdAt', mil.created_at
+          )
+          ORDER BY mil.logged_for_date DESC, mil.created_at DESC
+        ) AS recent_intake_logs
+        FROM (
+          SELECT *
+          FROM medication_intake_logs
+          WHERE medication_id = pm.id
+          ORDER BY logged_for_date DESC, created_at DESC
+          LIMIT 7
+        ) mil
+      ) logs ON TRUE
+      WHERE pm.id = $1::uuid
+      LIMIT 1
+      `,
+      [medicationId]
+    );
+
+    return res.status(201).json({
+      log: {
+        id: String(logResult.rows[0].id),
+        loggedForDate: logResult.rows[0].logged_for_date,
+        status: logResult.rows[0].status,
+        note: logResult.rows[0].note || "",
+        createdAt: logResult.rows[0].created_at,
+      },
+      medication: mapMedicationRow(mappedMedication.rows[0]),
+    });
+  } catch (e: any) {
+    console.error("POST /api/patient/medications/:id/intake-logs error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to log medication intake" });
+  }
+});
+
+app.post("/api/patient/medications/:id/refill-request", requirePatientAuth, async (req: any, res) => {
+  const patientId = req.patientId;
+  const medicationId = String(req.params.id || "");
+
+  if (!isUuid(medicationId)) {
+    return res.status(400).json({ message: "Invalid medication id" });
+  }
+
+  try {
+    const result = await pool.query(
+      `
+      UPDATE patient_medications
+      SET last_refill_requested_at = NOW(), updated_at = NOW()
+      WHERE id = $1::uuid
+        AND patient_id = $2::uuid
+      RETURNING *
+      `,
+      [medicationId, patientId]
+    );
+
+    if ((result.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: "Medication not found" });
+    }
+
+    const fresh = await fetchMedicationById(medicationId);
+    return res.json({ ok: true, medication: mapMedicationRow(fresh || result.rows[0]) });
+  } catch (e: any) {
+    console.error("POST /api/patient/medications/:id/refill-request error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to request refill" });
+  }
+});
+
+app.post("/api/patient/medications/:id/request-change", requirePatientAuth, async (req: any, res) => {
+  const patientId = req.patientId;
+  const medicationId = String(req.params.id || "");
+  const message = String(req.body?.message || "").trim();
+
+  if (!isUuid(medicationId)) {
+    return res.status(400).json({ message: "Invalid medication id" });
+  }
+  if (!message) {
+    return res.status(400).json({ message: "Please include the change request details" });
+  }
+
+  try {
+    const medicationResult = await pool.query(
+      `
+      SELECT pm.id, pm.source_type, pm.name, pm.hospital_id, pm.staff_id
+      FROM patient_medications pm
+      WHERE pm.id = $1::uuid
+        AND pm.patient_id = $2::uuid
+      LIMIT 1
+      `,
+      [medicationId, patientId]
+    );
+
+    if ((medicationResult.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: "Medication not found" });
+    }
+
+    const medication = medicationResult.rows[0];
+    if (String(medication.source_type || "") !== "provider") {
+      return res.status(400).json({ message: "Change requests are only available for provider-prescribed medications" });
+    }
+    if (!medication.hospital_id) {
+      return res.status(400).json({ message: "No provider is linked to this medication yet" });
+    }
+
+    const ok = await ensureActiveConnection(patientId, String(medication.hospital_id));
+    if (!ok) {
+      return res.status(403).json({ message: "You are not actively connected to this provider" });
+    }
+
+    let staffId = medication.staff_id ? String(medication.staff_id) : "";
+    if (!staffId) {
+      const fallbackStaff = await pool.query(
+        `
+        SELECT id
+        FROM staff_accounts
+        WHERE hospital_id = $1::uuid
+        ORDER BY created_at ASC
+        LIMIT 1
+        `,
+        [medication.hospital_id]
+      );
+
+      if ((fallbackStaff.rowCount ?? 0) === 0) {
+        return res.status(400).json({ message: "No provider contact is available for this medication" });
+      }
+      staffId = String(fallbackStaff.rows[0].id);
+    }
+
+    const conversationResult = await pool.query(
+      `
+      INSERT INTO message_conversations (patient_id, provider_id, staff_id, created_at, updated_at)
+      VALUES ($1::uuid, $2::uuid, $3::uuid, NOW(), NOW())
+      ON CONFLICT (patient_id, provider_id, staff_id)
+      DO UPDATE SET updated_at = NOW()
+      RETURNING id
+      `,
+      [patientId, medication.hospital_id, staffId]
+    );
+
+    const conversationId = String(conversationResult.rows[0].id);
+    const body = `Medication change request for ${String(medication.name || "medication").trim()}: ${message}`;
+
+    await pool.query(
+      `
+      INSERT INTO message_items (conversation_id, sender_type, sender_patient_id, body)
+      VALUES ($1::uuid, 'patient', $2::uuid, $3)
+      `,
+      [conversationId, patientId, body]
+    );
+
+    await pool.query(
+      `
+      INSERT INTO medication_change_requests (
+        id, medication_id, patient_id, hospital_id, staff_id, conversation_id, requested_by_patient_id, message, status
+      )
+      VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6::uuid, $3::uuid, $7, 'open')
+      `,
+      [randomUUID(), medicationId, patientId, medication.hospital_id, staffId, conversationId, message]
+    );
+
+    await pool.query(
+      `
+      UPDATE message_conversations
+      SET last_message_preview = $2,
+          last_message_at = NOW(),
+          updated_at = NOW()
+      WHERE id = $1::uuid
+      `,
+      [conversationId, body.slice(0, 200)]
+    );
+
+    return res.status(201).json({ ok: true, conversationId });
+  } catch (e: any) {
+    console.error("POST /api/patient/medications/:id/request-change error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to request medication change" });
+  }
+});
+
 app.get("/api/patient/health-summary", requirePatientAuth, async (req: any, res) => {
   const patientId = req.patientId;
 
   try {
+    await seedConditionRowsFromSummary(patientId);
+    await syncPatientConditionSummary(patientId);
+    await syncPatientMedicationSummary(patientId);
     const result = await pool.query(
       `
       SELECT patient_id, vitals, conditions, allergies, blood_type, current_medications, emergency_contacts, advance_directives, immunizations, family_history, updated_at
@@ -3660,7 +4760,6 @@ app.put("/api/patient/health-summary", requirePatientAuth, async (req: any, res)
   const patientId = req.patientId;
   const {
     vitals = [],
-    conditions = [],
     allergies = [],
     bloodType = null,
     currentMedications = [],
@@ -3672,7 +4771,6 @@ app.put("/api/patient/health-summary", requirePatientAuth, async (req: any, res)
 
   if (
     !Array.isArray(vitals) ||
-    !Array.isArray(conditions) ||
     !Array.isArray(allergies) ||
     !Array.isArray(currentMedications) ||
     !Array.isArray(emergencyContacts) ||
@@ -3685,6 +4783,8 @@ app.put("/api/patient/health-summary", requirePatientAuth, async (req: any, res)
   }
 
   try {
+    await seedConditionRowsFromSummary(patientId);
+    const syncedConditions = await syncPatientConditionSummary(patientId);
     const result = await pool.query(
       `
       INSERT INTO patient_health_summaries (
@@ -3709,7 +4809,7 @@ app.put("/api/patient/health-summary", requirePatientAuth, async (req: any, res)
       [
         patientId,
         JSON.stringify(vitals),
-        JSON.stringify(conditions),
+        JSON.stringify(syncedConditions),
         JSON.stringify(allergies),
         bloodType ? String(bloodType).trim() : null,
         JSON.stringify(currentMedications),
@@ -3727,6 +4827,489 @@ app.put("/api/patient/health-summary", requirePatientAuth, async (req: any, res)
   }
 });
 
+app.get("/api/staff/patients/:id/medications", requireStaffAuth, async (req: any, res) => {
+  const staffHospitalId = req.staffHospitalId;
+  const patientId = String(req.params.id || "");
+
+  if (!isUuid(patientId)) {
+    return res.status(400).json({ message: "Invalid patient id" });
+  }
+
+  try {
+    const relation = await pool.query(
+      `
+      SELECT 1
+      WHERE EXISTS (
+        SELECT 1
+        FROM patient_hospital_connections phc
+        WHERE phc.patient_id = $1::uuid
+          AND phc.hospital_id = $2::uuid
+          AND phc.disconnected_at IS NULL
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM patient_provider_connections ppc
+        WHERE ppc.patient_id = $1::uuid
+          AND ppc.provider_id = $2::uuid
+          AND ppc.disconnected_at IS NULL
+      )
+      LIMIT 1
+      `,
+      [patientId, staffHospitalId]
+    );
+
+    if ((relation.rowCount ?? 0) === 0) {
+      return res.status(403).json({ message: "This patient is not linked to your hospital" });
+    }
+
+    await syncPatientMedicationSummary(patientId);
+
+    const result = await pool.query(
+      `
+      SELECT
+        pm.*,
+        h.name AS hospital_name,
+        sa.full_name AS staff_full_name,
+        latest_log.status AS last_intake_status,
+        latest_log.logged_for_date AS last_intake_date,
+        COALESCE(logs.recent_intake_logs, '[]'::json) AS recent_intake_logs
+      FROM patient_medications pm
+      LEFT JOIN hospitals h ON h.id = pm.hospital_id
+      LEFT JOIN staff_accounts sa ON sa.id = pm.staff_id
+      LEFT JOIN LATERAL (
+        SELECT mil.status, mil.logged_for_date
+        FROM medication_intake_logs mil
+        WHERE mil.medication_id = pm.id
+        ORDER BY mil.logged_for_date DESC, mil.created_at DESC
+        LIMIT 1
+      ) latest_log ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT json_agg(
+          json_build_object(
+            'id', mil.id,
+            'loggedForDate', mil.logged_for_date,
+            'status', mil.status,
+            'note', mil.note,
+            'createdAt', mil.created_at
+          )
+          ORDER BY mil.logged_for_date DESC, mil.created_at DESC
+        ) AS recent_intake_logs
+        FROM (
+          SELECT *
+          FROM medication_intake_logs
+          WHERE medication_id = pm.id
+          ORDER BY logged_for_date DESC, created_at DESC
+          LIMIT 7
+        ) mil
+      ) logs ON TRUE
+      WHERE pm.patient_id = $1::uuid
+      ORDER BY pm.is_active DESC, COALESCE(pm.start_date, DATE(pm.created_at)) DESC, pm.created_at DESC
+      `,
+      [patientId]
+    );
+
+    return res.json({ medications: result.rows.map(mapMedicationRow) });
+  } catch (e: any) {
+    console.error("GET /api/staff/patients/:id/medications error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to fetch patient medications" });
+  }
+});
+
+app.get("/api/staff/patients/:id/conditions", requireStaffAuth, async (req: any, res) => {
+  const hospitalId = req.staffHospitalId;
+  const patientId = String(req.params.id || "");
+
+  if (!isUuid(patientId)) {
+    return res.status(400).json({ message: "Invalid patient id" });
+  }
+
+  try {
+    await seedConditionRowsFromSummary(patientId);
+    const relation = await pool.query(
+      `
+      SELECT 1
+      WHERE EXISTS (
+        SELECT 1 FROM patient_hospital_connections phc
+        WHERE phc.patient_id = $1::uuid
+          AND phc.hospital_id = $2::uuid
+          AND phc.disconnected_at IS NULL
+      )
+      OR EXISTS (
+        SELECT 1 FROM patient_provider_connections ppc
+        WHERE ppc.patient_id = $1::uuid
+          AND ppc.provider_id = $2::uuid
+          AND ppc.disconnected_at IS NULL
+      )
+      LIMIT 1
+      `,
+      [patientId, hospitalId]
+    );
+
+    if ((relation.rowCount ?? 0) === 0) {
+      return res.status(403).json({ message: "This patient is not linked to your hospital" });
+    }
+
+    const result = await pool.query(
+      `
+      SELECT pc.*, h.name AS hospital_name, sa.full_name AS staff_full_name
+      FROM patient_conditions pc
+      LEFT JOIN hospitals h ON h.id = pc.hospital_id
+      LEFT JOIN staff_accounts sa ON sa.id = pc.staff_id
+      WHERE pc.patient_id = $1::uuid
+        AND pc.is_active = true
+      ORDER BY pc.updated_at DESC, pc.created_at DESC
+      `,
+      [patientId]
+    );
+
+    return res.json({ conditions: result.rows.map(mapConditionRow) });
+  } catch (e: any) {
+    console.error("GET /api/staff/patients/:id/conditions error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to load conditions" });
+  }
+});
+
+app.post("/api/staff/patients/:id/conditions", requireStaffAuth, async (req: any, res) => {
+  const hospitalId = req.staffHospitalId;
+  const staffId = req.staffId;
+  const patientId = String(req.params.id || "");
+  const { name, status, diagnosed, metric, notes } = req.body ?? {};
+
+  if (!isUuid(patientId)) {
+    return res.status(400).json({ message: "Invalid patient id" });
+  }
+  if (!String(name || "").trim()) {
+    return res.status(400).json({ message: "Condition name is required" });
+  }
+
+  try {
+    const relation = await pool.query(
+      `
+      SELECT sa.full_name
+      FROM staff_accounts sa
+      WHERE sa.id = $3::uuid
+        AND (
+          EXISTS (
+            SELECT 1 FROM patient_hospital_connections phc
+            WHERE phc.patient_id = $1::uuid
+              AND phc.hospital_id = $2::uuid
+              AND phc.disconnected_at IS NULL
+          )
+          OR EXISTS (
+            SELECT 1 FROM patient_provider_connections ppc
+            WHERE ppc.patient_id = $1::uuid
+              AND ppc.provider_id = $2::uuid
+              AND ppc.disconnected_at IS NULL
+          )
+        )
+      LIMIT 1
+      `,
+      [patientId, hospitalId, staffId]
+    );
+
+    if ((relation.rowCount ?? 0) === 0) {
+      return res.status(403).json({ message: "This patient is not linked to your hospital" });
+    }
+
+    const created = await pool.query(
+      `
+      INSERT INTO patient_conditions (
+        id, patient_id, hospital_id, staff_id, source_type, verification_status, name, status, diagnosed, metric, provider, notes, is_active
+      )
+      VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, 'provider', 'provider_verified', $5, $6, $7, $8, $9, $10, true)
+      RETURNING *
+      `,
+      [
+        randomUUID(),
+        patientId,
+        hospitalId,
+        staffId,
+        String(name).trim(),
+        status ? String(status).trim() : null,
+        diagnosed ? String(diagnosed).trim() : null,
+        metric ? String(metric).trim() : null,
+        relation.rows[0].full_name || null,
+        notes ? String(notes).trim() : null,
+      ]
+    );
+
+    await syncPatientConditionSummary(patientId);
+    return res.status(201).json({ condition: mapConditionRow({ ...created.rows[0], staff_full_name: relation.rows[0].full_name }) });
+  } catch (e: any) {
+    console.error("POST /api/staff/patients/:id/conditions error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to add condition" });
+  }
+});
+
+app.patch("/api/staff/patients/:patientId/conditions/:conditionId", requireStaffAuth, async (req: any, res) => {
+  const hospitalId = req.staffHospitalId;
+  const staffId = req.staffId;
+  const patientId = String(req.params.patientId || "");
+  const conditionId = String(req.params.conditionId || "");
+  const { name, status, diagnosed, metric, notes, isActive } = req.body ?? {};
+
+  if (!isUuid(patientId) || !isUuid(conditionId)) {
+    return res.status(400).json({ message: "Invalid patient or condition id" });
+  }
+
+  try {
+    const relation = await pool.query(
+      `
+      SELECT sa.full_name
+      FROM staff_accounts sa
+      WHERE sa.id = $3::uuid
+        AND (
+          EXISTS (
+            SELECT 1 FROM patient_hospital_connections phc
+            WHERE phc.patient_id = $1::uuid
+              AND phc.hospital_id = $2::uuid
+              AND phc.disconnected_at IS NULL
+          )
+          OR EXISTS (
+            SELECT 1 FROM patient_provider_connections ppc
+            WHERE ppc.patient_id = $1::uuid
+              AND ppc.provider_id = $2::uuid
+              AND ppc.disconnected_at IS NULL
+          )
+        )
+      LIMIT 1
+      `,
+      [patientId, hospitalId, staffId]
+    );
+
+    if ((relation.rowCount ?? 0) === 0) {
+      return res.status(403).json({ message: "This patient is not linked to your hospital" });
+    }
+
+    const updated = await pool.query(
+      `
+      UPDATE patient_conditions
+      SET
+        hospital_id = COALESCE(hospital_id, $3::uuid),
+        staff_id = $4::uuid,
+        source_type = 'provider',
+        verification_status = 'provider_verified',
+        provider = COALESCE($5, provider),
+        name = COALESCE($6, name),
+        status = COALESCE($7, status),
+        diagnosed = COALESCE($8, diagnosed),
+        metric = COALESCE($9, metric),
+        notes = COALESCE($10, notes),
+        is_active = COALESCE($11, is_active),
+        updated_at = NOW()
+      WHERE id = $1::uuid
+        AND patient_id = $2::uuid
+      RETURNING *
+      `,
+      [
+        conditionId,
+        patientId,
+        hospitalId,
+        staffId,
+        relation.rows[0].full_name || null,
+        name == null ? null : String(name).trim(),
+        status == null ? null : String(status).trim(),
+        diagnosed == null ? null : String(diagnosed).trim(),
+        metric == null ? null : String(metric).trim(),
+        notes == null ? null : String(notes).trim(),
+        typeof isActive === "boolean" ? isActive : null,
+      ]
+    );
+
+    if ((updated.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: "Condition not found" });
+    }
+
+    await syncPatientConditionSummary(patientId);
+    return res.json({ condition: mapConditionRow({ ...updated.rows[0], staff_full_name: relation.rows[0].full_name }) });
+  } catch (e: any) {
+    console.error("PATCH /api/staff/patients/:patientId/conditions/:conditionId error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to update condition" });
+  }
+});
+
+app.post("/api/staff/patients/:id/medications", requireStaffAuth, async (req: any, res) => {
+  const staffId = req.staffId;
+  const staffHospitalId = req.staffHospitalId;
+  const patientId = String(req.params.id || "");
+  const { name, dosage, frequency, purpose, pharmacy, startDate, endDate, refillsRemaining, notes, isActive = true } = req.body ?? {};
+
+  if (!isUuid(patientId)) {
+    return res.status(400).json({ message: "Invalid patient id" });
+  }
+  if (!String(name || "").trim()) {
+    return res.status(400).json({ message: "Medication name is required" });
+  }
+  if (startDate && Number.isNaN(Date.parse(String(startDate)))) {
+    return res.status(400).json({ message: "Invalid startDate" });
+  }
+  if (endDate && Number.isNaN(Date.parse(String(endDate)))) {
+    return res.status(400).json({ message: "Invalid endDate" });
+  }
+
+  try {
+    const relation = await pool.query(
+      `
+      SELECT sa.full_name
+      FROM staff_accounts sa
+      WHERE sa.id = $3::uuid
+        AND (
+          EXISTS (
+            SELECT 1
+            FROM patient_hospital_connections phc
+            WHERE phc.patient_id = $1::uuid
+              AND phc.hospital_id = $2::uuid
+              AND phc.disconnected_at IS NULL
+          )
+          OR EXISTS (
+            SELECT 1
+            FROM patient_provider_connections ppc
+            WHERE ppc.patient_id = $1::uuid
+              AND ppc.provider_id = $2::uuid
+              AND ppc.disconnected_at IS NULL
+          )
+        )
+      LIMIT 1
+      `,
+      [patientId, staffHospitalId, staffId]
+    );
+
+    if ((relation.rowCount ?? 0) === 0) {
+      return res.status(403).json({ message: "This patient is not linked to your hospital" });
+    }
+
+    const insert = await pool.query(
+      `
+      INSERT INTO patient_medications (
+        id, patient_id, hospital_id, staff_id, source_type, verification_status,
+        name, dosage, frequency, purpose, prescriber_name, pharmacy, start_date, end_date, refills_remaining, notes, is_active
+      )
+      VALUES (
+        $1::uuid, $2::uuid, $3::uuid, $4::uuid, 'provider', 'provider_prescribed',
+        $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+      )
+      RETURNING *
+      `,
+      [
+        randomUUID(),
+        patientId,
+        staffHospitalId,
+        staffId,
+        String(name).trim(),
+        dosage ? String(dosage).trim() : null,
+        frequency ? String(frequency).trim() : null,
+        purpose ? String(purpose).trim() : null,
+        relation.rows[0].full_name || null,
+        pharmacy ? String(pharmacy).trim() : null,
+        startDate || null,
+        endDate || null,
+        refillsRemaining == null || refillsRemaining === "" ? null : Number(refillsRemaining),
+        notes ? String(notes).trim() : null,
+        typeof isActive === "boolean" ? isActive : true,
+      ]
+    );
+
+    await syncPatientMedicationSummary(patientId);
+    const fresh = await fetchMedicationById(String(insert.rows[0].id));
+    return res.status(201).json({ medication: mapMedicationRow(fresh || { ...insert.rows[0], staff_full_name: relation.rows[0].full_name }) });
+  } catch (e: any) {
+    console.error("POST /api/staff/patients/:id/medications error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to add medication" });
+  }
+});
+
+app.patch("/api/staff/patients/:patientId/medications/:medicationId", requireStaffAuth, async (req: any, res) => {
+  const staffHospitalId = req.staffHospitalId;
+  const patientId = String(req.params.patientId || "");
+  const medicationId = String(req.params.medicationId || "");
+  const { name, dosage, frequency, purpose, pharmacy, startDate, endDate, refillsRemaining, notes, isActive } = req.body ?? {};
+
+  if (!isUuid(patientId) || !isUuid(medicationId)) {
+    return res.status(400).json({ message: "Invalid patient or medication id" });
+  }
+  if (startDate && Number.isNaN(Date.parse(String(startDate)))) {
+    return res.status(400).json({ message: "Invalid startDate" });
+  }
+  if (endDate && Number.isNaN(Date.parse(String(endDate)))) {
+    return res.status(400).json({ message: "Invalid endDate" });
+  }
+
+  try {
+    const relation = await pool.query(
+      `
+      SELECT 1
+      WHERE EXISTS (
+        SELECT 1
+        FROM patient_hospital_connections phc
+        WHERE phc.patient_id = $1::uuid
+          AND phc.hospital_id = $2::uuid
+          AND phc.disconnected_at IS NULL
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM patient_provider_connections ppc
+        WHERE ppc.patient_id = $1::uuid
+          AND ppc.provider_id = $2::uuid
+          AND ppc.disconnected_at IS NULL
+      )
+      LIMIT 1
+      `,
+      [patientId, staffHospitalId]
+    );
+
+    if ((relation.rowCount ?? 0) === 0) {
+      return res.status(403).json({ message: "This patient is not linked to your hospital" });
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE patient_medications
+      SET
+        name = COALESCE($3, name),
+        dosage = COALESCE($4, dosage),
+        frequency = COALESCE($5, frequency),
+        purpose = COALESCE($6, purpose),
+        pharmacy = COALESCE($7, pharmacy),
+        start_date = COALESCE($8, start_date),
+        end_date = COALESCE($9, end_date),
+        refills_remaining = COALESCE($10, refills_remaining),
+        notes = COALESCE($11, notes),
+        is_active = COALESCE($12, is_active),
+        updated_at = NOW()
+      WHERE id = $1::uuid
+        AND patient_id = $2::uuid
+        AND source_type = 'provider'
+      RETURNING *
+      `,
+      [
+        medicationId,
+        patientId,
+        name == null ? null : String(name).trim(),
+        dosage == null ? null : String(dosage).trim(),
+        frequency == null ? null : String(frequency).trim(),
+        purpose == null ? null : String(purpose).trim(),
+        pharmacy == null ? null : String(pharmacy).trim(),
+        startDate || null,
+        endDate || null,
+        refillsRemaining == null || refillsRemaining === "" ? null : Number(refillsRemaining),
+        notes == null ? null : String(notes).trim(),
+        typeof isActive === "boolean" ? isActive : null,
+      ]
+    );
+
+    if ((result.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: "Medication not found" });
+    }
+
+    await syncPatientMedicationSummary(patientId);
+    const fresh = await fetchMedicationById(medicationId);
+    return res.json({ medication: mapMedicationRow(fresh || result.rows[0]) });
+  } catch (e: any) {
+    console.error("PATCH /api/staff/patients/:patientId/medications/:medicationId error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to update medication" });
+  }
+});
+
 app.get("/api/staff/patients/:id/health-summary", requireStaffAuth, async (req: any, res) => {
   const staffHospitalId = req.staffHospitalId;
   const patientId = String(req.params.id || "");
@@ -3736,6 +5319,9 @@ app.get("/api/staff/patients/:id/health-summary", requireStaffAuth, async (req: 
   }
 
   try {
+    await seedConditionRowsFromSummary(patientId);
+    await syncPatientConditionSummary(patientId);
+    await syncPatientMedicationSummary(patientId);
     const relation = await pool.query(
       `
       SELECT 1
@@ -3991,7 +5577,7 @@ app.post("/api/staff/documents/upload", requireStaffAuth, async (req: any, res) 
     );
 
     if (requestId) {
-      await pool.query(
+      const requestUpdate = await pool.query(
         `
         UPDATE document_requests
         SET status = 'fulfilled',
@@ -4000,9 +5586,45 @@ app.post("/api/staff/documents/upload", requireStaffAuth, async (req: any, res) 
             updated_at = NOW()
         WHERE id = $1::uuid
           AND hospital_id = $3::uuid
+        RETURNING conversation_id
         `,
         [requestId, documentId, hospitalId]
       );
+
+      const conversationId = String(requestUpdate.rows[0]?.conversation_id || "");
+      if (conversationId) {
+        const staffNameResult = await pool.query(
+          `
+          SELECT full_name
+          FROM staff_accounts
+          WHERE id = $1::uuid
+          LIMIT 1
+          `,
+          [staffId]
+        );
+
+        const providerName = String(staffNameResult.rows[0]?.full_name || "Your provider").trim();
+        const fulfillmentMessage = `Dr. ${providerName} has fulfilled the medical record request.`;
+
+        await pool.query(
+          `
+          INSERT INTO message_items (conversation_id, sender_type, sender_staff_id, body)
+          VALUES ($1::uuid, 'staff', $2::uuid, $3)
+          `,
+          [conversationId, staffId, fulfillmentMessage]
+        );
+
+        await pool.query(
+          `
+          UPDATE message_conversations
+          SET last_message_preview = $2,
+              last_message_at = NOW(),
+              updated_at = NOW()
+          WHERE id = $1::uuid
+          `,
+          [conversationId, fulfillmentMessage.slice(0, 200)]
+        );
+      }
     }
 
     const fresh = await pool.query(
@@ -4135,6 +5757,8 @@ const port = Number(process.env.PORT || 4000);
 async function bootstrap() {
   await ensureDocumentsSchema();
   await ensureHealthSummarySchema();
+  await ensureMedicationsSchema();
+  await ensureConditionsSchema();
   app.listen(port, "0.0.0.0", () => {
     console.log(`Backend running on http://0.0.0.0:${port}`);
   });

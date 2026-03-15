@@ -56,14 +56,45 @@ type ProfileResponse = {
 
 type VitalType = 'bloodPressure' | 'heartRate' | 'weight' | 'bloodSugar' | null;
 type EditorType =
-  | 'conditions'
   | 'allergies'
   | 'immunizations'
   | 'familyHistory'
-  | 'medications'
+  | 'bloodType'
   | 'emergencyContacts'
   | 'advanceDirectives'
   | null;
+
+const immunizationOptions = [
+  'COVID-19',
+  'Flu Shot',
+  'Tetanus',
+  'Hepatitis B',
+  'HPV',
+  'MMR',
+  'Polio',
+  'Varicella',
+  'Pneumococcal',
+  'Shingles',
+  'Other',
+] as const;
+
+const immunizationStatusOptions = [
+  'Up to date',
+  'Due Soon',
+  'Scheduled',
+  'Overdue',
+  'Completed',
+] as const;
+
+const conditionStatusOptions = [
+  'Active',
+  'Managed',
+  'Well Controlled',
+  'Monitoring',
+  'Stable',
+  'Resolved',
+  'Inactive',
+] as const;
 
 const parseList = (value: unknown): string[] => {
   if (!value) return [];
@@ -99,6 +130,11 @@ const formatDateTime = (value?: string | null) => {
     hour: 'numeric',
     minute: '2-digit',
   });
+};
+
+const formatConditionDate = (value?: string | null) => {
+  if (!value) return 'Not recorded';
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? formatDate(value) : value;
 };
 
 const latestProfileDate = (profile: ProfileResponse | null, summary: HealthSummaryPayload | null) =>
@@ -223,27 +259,45 @@ const severityColor = (severity: HealthSummaryAllergy['severity']) => {
   return 'bg-green-100 text-green-700';
 };
 
-const emptyCondition = (): HealthSummaryCondition => ({ id: createId(), name: '', status: '', diagnosed: '', metric: '', provider: '' });
+const emptyCondition = (): HealthSummaryCondition => ({
+  id: createId(),
+  name: '',
+  status: '',
+  diagnosed: '',
+  metric: '',
+  provider: '',
+  notes: '',
+  sourceType: 'patient',
+  verificationStatus: 'patient_noted',
+  isActive: true,
+});
 const emptyAllergy = (): HealthSummaryAllergy => ({ id: createId(), name: '', severity: 'MODERATE', reaction: '' });
-const emptyImmunization = (): HealthSummaryImmunization => ({ id: createId(), name: '', detail: '', status: '' });
+const emptyImmunization = (): HealthSummaryImmunization => ({ id: createId(), name: '', detail: '', dose: '', date: '', status: 'Up to date' });
 const emptyFamilyHistory = (): HealthSummaryFamilyHistory => ({ id: createId(), relation: '', condition: '' });
 const emptyEmergencyContact = (): HealthSummaryEmergencyContact => ({ id: createId(), name: '', relationship: '', phone: '' });
+const initials = (firstName?: string | null, lastName?: string | null) =>
+  `${firstName?.trim()?.[0] || ''}${lastName?.trim()?.[0] || ''}`.toUpperCase() || 'ML';
 
 export default function HealthSummary({ onBack, onOpenMedications }: HealthSummaryProps) {
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
   const [appointments, setAppointments] = useState<PatientAppointment[]>([]);
   const [summary, setSummary] = useState<HealthSummaryPayload | null>(null);
+  const [conditions, setConditions] = useState<HealthSummaryCondition[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [vitalsOpen, setVitalsOpen] = useState(false);
   const [selectedVital, setSelectedVital] = useState<VitalType>(null);
   const [editorType, setEditorType] = useState<EditorType>(null);
+  const [conditionEditorOpen, setConditionEditorOpen] = useState(false);
+  const [editingCondition, setEditingCondition] = useState<HealthSummaryCondition | null>(null);
+  const [conditionRequestOpen, setConditionRequestOpen] = useState(false);
+  const [requestingCondition, setRequestingCondition] = useState<HealthSummaryCondition | null>(null);
+  const [conditionRequestMessage, setConditionRequestMessage] = useState('');
   const [vitalForm, setVitalForm] = useState({ systolic: '120', diastolic: '80', heartRate: '72', weight: '165', bloodSugar: '95' });
   const [conditionForm, setConditionForm] = useState<HealthSummaryCondition>(emptyCondition());
   const [allergyForm, setAllergyForm] = useState<HealthSummaryAllergy>(emptyAllergy());
   const [immunizationForm, setImmunizationForm] = useState<HealthSummaryImmunization>(emptyImmunization());
   const [familyHistoryForm, setFamilyHistoryForm] = useState<HealthSummaryFamilyHistory>(emptyFamilyHistory());
-  const [medicationInput, setMedicationInput] = useState('');
   const [bloodTypeInput, setBloodTypeInput] = useState('');
   const [emergencyContactForm, setEmergencyContactForm] = useState<HealthSummaryEmergencyContact>(emptyEmergencyContact());
   const [advanceDirectiveForm, setAdvanceDirectiveForm] = useState({ dnrStatus: '', livingWill: '' });
@@ -259,15 +313,17 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
 
     (async () => {
       try {
-        const [profileRes, appointmentsRes, summaryRes] = await Promise.all([
+        const [profileRes, appointmentsRes, summaryRes, conditionsRes] = await Promise.all([
           fetch(`${API_BASE}/api/patients/${patientId}/profile`).then((res) => (res.ok ? res.json() : null)),
           api.listMyAppointments('all').catch(() => ({ appointments: [] as PatientAppointment[] })),
           api.getMyHealthSummary().catch(() => ({ summary: emptySummary() })),
+          api.listMyConditions().catch(() => ({ conditions: [] as HealthSummaryCondition[] })),
         ]);
 
         if (cancelled) return;
         setProfile(profileRes);
         setAppointments(appointmentsRes.appointments || []);
+        setConditions(conditionsRes.conditions || []);
 
         const needsSeeding =
           !summaryRes.summary ||
@@ -286,7 +342,7 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
           try {
             const saved = await api.updateMyHealthSummary({
               vitals: seeded.vitals,
-              conditions: seeded.conditions,
+              conditions: [],
               allergies: seeded.allergies,
               bloodType: seeded.bloodType,
               currentMedications: seeded.currentMedications,
@@ -320,7 +376,7 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
     try {
       const saved = await api.updateMyHealthSummary({
         vitals: next.vitals,
-        conditions: next.conditions,
+        conditions: [],
         allergies: next.allergies,
         bloodType: next.bloodType,
         currentMedications: next.currentMedications,
@@ -345,6 +401,16 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
       .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
     return pastAppointments[0]?.startTime || null;
   }, [appointments]);
+
+  const patientName = useMemo(() => {
+    const full = [profile?.first_name, profile?.last_name].filter(Boolean).join(' ').trim();
+    return full || 'MediLink Patient';
+  }, [profile?.first_name, profile?.last_name]);
+
+  const patientSnapshot = [
+    { label: 'Date of Birth', value: formatDate(profile?.dob) },
+    { label: 'Health Card', value: profile?.health_card || '—' },
+  ];
 
   const sortedVitals = useMemo(
     () => (summary?.vitals || []).slice().sort((a, b) => new Date(b.recordedAt).getTime() - new Date(a.recordedAt).getTime()),
@@ -411,12 +477,10 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
 
   const openEditor = (type: EditorType) => {
     setEditorType(type);
-    if (type === 'conditions') setConditionForm(emptyCondition());
     if (type === 'allergies') setAllergyForm(emptyAllergy());
     if (type === 'immunizations') setImmunizationForm(emptyImmunization());
     if (type === 'familyHistory') setFamilyHistoryForm(emptyFamilyHistory());
-    if (type === 'medications') {
-      setMedicationInput('');
+    if (type === 'bloodType') {
       setBloodTypeInput(summary?.bloodType || '');
     }
     if (type === 'emergencyContacts') setEmergencyContactForm(emptyEmergencyContact());
@@ -448,11 +512,102 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
     setVitalsOpen(false);
   };
 
+  const openConditionEditor = (condition?: HealthSummaryCondition) => {
+    setEditingCondition(condition || null);
+    setConditionForm(
+      condition
+        ? {
+            ...emptyCondition(),
+            ...condition,
+            diagnosed: /^\d{4}-\d{2}-\d{2}$/.test(condition.diagnosed || '') ? condition.diagnosed : '',
+          }
+        : emptyCondition()
+    );
+    setConditionEditorOpen(true);
+  };
+
+  const submitConditionEditor = async () => {
+    if (!conditionForm.name.trim()) return;
+    setSaving(true);
+    try {
+      if (editingCondition?.id) {
+        const res = await api.updateMyCondition(editingCondition.id, {
+          name: conditionForm.name.trim(),
+          status: conditionForm.status.trim(),
+          diagnosed: conditionForm.diagnosed.trim(),
+          metric: conditionForm.metric.trim(),
+          notes: (conditionForm.notes || '').trim(),
+          isActive: true,
+        });
+        setConditions((current) => current.map((item) => (item.id === editingCondition.id ? res.condition : item)));
+      } else {
+        const res = await api.createMyCondition({
+          name: conditionForm.name.trim(),
+          status: conditionForm.status.trim(),
+          diagnosed: conditionForm.diagnosed.trim(),
+          metric: conditionForm.metric.trim(),
+          notes: (conditionForm.notes || '').trim(),
+        });
+        setConditions((current) => [res.condition, ...current]);
+      }
+      try {
+        const refreshed = await api.getMyHealthSummary();
+        setSummary(refreshed.summary);
+      } catch {
+        // ignore summary refresh failures
+      }
+      setConditionEditorOpen(false);
+      setEditingCondition(null);
+    } catch (error) {
+      console.error('Failed to save condition:', error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const archiveCondition = async (conditionId: string) => {
+    setSaving(true);
+    try {
+      await api.updateMyCondition(conditionId, { isActive: false });
+      setConditions((current) => current.filter((item) => item.id !== conditionId));
+      try {
+        const refreshed = await api.getMyHealthSummary();
+        setSummary(refreshed.summary);
+      } catch {
+        // ignore summary refresh failures
+      }
+    } catch (error) {
+      console.error('Failed to archive condition:', error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openConditionRequest = (condition: HealthSummaryCondition) => {
+    setRequestingCondition(condition);
+    setConditionRequestMessage('');
+    setConditionRequestOpen(true);
+  };
+
+  const submitConditionRequest = async () => {
+    if (!requestingCondition?.id || !conditionRequestMessage.trim()) return;
+    setSaving(true);
+    try {
+      await api.requestConditionChange(requestingCondition.id, {
+        message: conditionRequestMessage.trim(),
+      });
+      setConditionRequestOpen(false);
+      setRequestingCondition(null);
+      setConditionRequestMessage('');
+    } catch (error) {
+      console.error('Failed to request condition change:', error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const submitEditor = async () => {
     if (!summary || !editorType) return;
-    if (editorType === 'conditions' && conditionForm.name.trim()) {
-      await saveSummary({ ...summary, conditions: [...summary.conditions, { ...conditionForm, id: createId() }] });
-    }
     if (editorType === 'allergies' && allergyForm.name.trim()) {
       await saveSummary({ ...summary, allergies: [...summary.allergies, { ...allergyForm, id: createId() }] });
     }
@@ -462,14 +617,10 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
     if (editorType === 'familyHistory' && familyHistoryForm.condition.trim()) {
       await saveSummary({ ...summary, familyHistory: [...summary.familyHistory, { ...familyHistoryForm, id: createId() }] });
     }
-    if (editorType === 'medications') {
-      const nextMeds = medicationInput.trim()
-        ? [...summary.currentMedications, medicationInput.trim()]
-        : summary.currentMedications;
+    if (editorType === 'bloodType') {
       await saveSummary({
         ...summary,
         bloodType: bloodTypeInput.trim() || null,
-        currentMedications: nextMeds,
       });
     }
     if (editorType === 'emergencyContacts' && emergencyContactForm.name.trim() && emergencyContactForm.phone.trim()) {
@@ -492,16 +643,14 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
 
   const removeItem = async (type: Exclude<EditorType, null>, id: string) => {
     if (!summary) return;
-    if (type === 'conditions') await saveSummary({ ...summary, conditions: summary.conditions.filter((item) => item.id !== id) });
     if (type === 'allergies') await saveSummary({ ...summary, allergies: summary.allergies.filter((item) => item.id !== id) });
     if (type === 'immunizations') await saveSummary({ ...summary, immunizations: summary.immunizations.filter((item) => item.id !== id) });
     if (type === 'familyHistory') await saveSummary({ ...summary, familyHistory: summary.familyHistory.filter((item) => item.id !== id) });
-    if (type === 'medications') await saveSummary({ ...summary, currentMedications: summary.currentMedications.filter((item) => item !== id) });
     if (type === 'emergencyContacts') await saveSummary({ ...summary, emergencyContacts: summary.emergencyContacts.filter((item) => item.id !== id) });
   };
 
   const shareSummary = async () => {
-    const text = `Health Summary\nLast checkup: ${formatDate(lastCheckup)}\nActive meds: ${medications.length}\nAllergies: ${summary?.allergies.length ?? 0}\nBlood type: ${summary?.bloodType || '—'}`;
+    const text = `Health Summary\nLast checkup: ${formatDate(lastCheckup)}\nActive meds: ${medications.length}\nConditions: ${conditions.length}\nAllergies: ${summary?.allergies.length ?? 0}\nBlood type: ${summary?.bloodType || '—'}`;
     if (navigator.share) {
       try {
         await navigator.share({ title: 'MediLink Health Summary', text });
@@ -543,6 +692,30 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
       </div>
 
       <div className="p-6 -mt-4 space-y-6 pb-10">
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <div className="flex items-start gap-4">
+            <div className="w-14 h-14 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center font-semibold">
+              {initials(profile?.first_name, profile?.last_name)}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-gray-900">{patientName}</h2>
+                  <p className="text-sm text-gray-500">Official health summary record</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3 mt-4 md:grid-cols-4">
+                {patientSnapshot.map((item) => (
+                  <div key={item.label} className="rounded-xl bg-gray-50 p-3">
+                    <p className="text-xs uppercase tracking-wide text-gray-500">{item.label}</p>
+                    <p className="text-sm text-gray-900 mt-1 break-words">{item.value}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-gray-900">Quick Stats</h3>
@@ -598,26 +771,70 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <div className="flex items-center justify-between gap-3 mb-4">
             <h3 className="text-gray-900">Medical Conditions</h3>
-            <Button variant="outline" size="sm" onClick={() => openEditor('conditions')} className="gap-2">
+            <Button variant="outline" size="sm" onClick={() => openConditionEditor()} className="gap-2">
               <Edit3 className="w-4 h-4" />
-              Add or Edit
+              Add Health Concern
             </Button>
           </div>
           <div className="space-y-3">
-            {(summary?.conditions || []).map((condition) => (
-              <div key={condition.id} className="p-4 bg-blue-50 rounded-lg">
+            {conditions.map((condition) => (
+              <div
+                key={condition.id}
+                className={`p-4 rounded-lg ${condition.sourceType === 'provider' ? 'bg-blue-50' : 'bg-amber-50'}`}
+              >
                 <div className="flex items-start justify-between mb-2 gap-3">
-                  <h4 className="text-gray-900">{condition.name}</h4>
-                  <Badge className="bg-green-100 text-green-700 border-0">{condition.status}</Badge>
+                  <div className="space-y-2">
+                    <h4 className="text-gray-900">{condition.name}</h4>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {condition.status ? (
+                        <Badge className="bg-green-100 text-green-700 border-0">{condition.status}</Badge>
+                      ) : null}
+                      <Badge
+                        className={`border-0 ${
+                          condition.sourceType === 'provider'
+                            ? 'bg-teal-100 text-teal-700'
+                            : 'bg-amber-100 text-amber-700'
+                        }`}
+                      >
+                        {condition.sourceType === 'provider' ? 'Provider verified' : 'Patient noted'}
+                      </Badge>
+                    </div>
+                  </div>
                 </div>
                 <div className="space-y-1 text-sm text-gray-600">
-                  <p>Diagnosed: {condition.diagnosed || 'Not recorded'}</p>
+                  <p>Diagnosed: {formatConditionDate(condition.diagnosed)}</p>
                   <p>{condition.metric || 'No care metrics recorded yet'}</p>
                   <p>Provider: {condition.provider || 'Provider not recorded'}</p>
+                  {condition.hospitalName ? <p>Hospital: {condition.hospitalName}</p> : null}
+                  {condition.notes ? <p>{condition.notes}</p> : null}
                 </div>
-                <button type="button" onClick={() => removeItem('conditions', condition.id)} className="mt-3 text-xs text-red-600">Remove</button>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {condition.sourceType === 'provider' ? (
+                    <Button type="button" variant="outline" size="sm" onClick={() => openConditionRequest(condition)}>
+                      Request Change
+                    </Button>
+                  ) : (
+                    <>
+                      <Button type="button" variant="outline" size="sm" onClick={() => openConditionEditor(condition)}>
+                        Edit Concern
+                      </Button>
+                      <button
+                        type="button"
+                        onClick={() => archiveCondition(condition.id)}
+                        className="text-xs text-red-600"
+                      >
+                        Remove Concern
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             ))}
+            {conditions.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-gray-300 p-4">
+                <p className="text-sm text-gray-600">No conditions or health concerns are on file yet.</p>
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -651,34 +868,43 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
 
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <div className="flex items-center justify-between gap-3 mb-4">
-            <h3 className="text-gray-900">Blood Type & Medications</h3>
-            <Button variant="outline" size="sm" onClick={() => openEditor('medications')} className="gap-2">
+            <h3 className="text-gray-900">Blood Type</h3>
+            <Button variant="outline" size="sm" onClick={() => openEditor('bloodType')} className="gap-2">
               <Edit3 className="w-4 h-4" />
-              Add or Edit
+              Update
             </Button>
           </div>
-          <div className="grid gap-4 sm:grid-cols-[180px,1fr]">
-            <div className="rounded-xl bg-teal-50 p-4">
-              <p className="text-sm text-gray-600 mb-1">Blood Type</p>
-              <p className="text-2xl text-gray-900">{summary?.bloodType || '—'}</p>
+          <div className="rounded-xl bg-teal-50 p-4">
+            <p className="text-sm text-gray-600 mb-1">Current blood type on file</p>
+            <p className="text-3xl text-gray-900">{summary?.bloodType || '—'}</p>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <div>
+              <h3 className="text-gray-900">Current Medications</h3>
+              <p className="text-sm text-gray-500 mt-1">Review your active medications here and manage them in the Medications tab.</p>
             </div>
-            <div className="rounded-xl bg-gray-50 p-4">
-              <p className="text-sm text-gray-600 mb-3">Current Medications</p>
-              {medications.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {medications.map((medication) => (
-                    <div key={medication} className="inline-flex items-center gap-2 rounded-full bg-white border border-gray-200 px-3 py-1">
-                      <span className="text-sm text-gray-800">{medication}</span>
-                      <button type="button" onClick={() => removeItem('medications', medication)} className="text-xs text-red-600">
-                        Remove
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-gray-500">No active medications listed.</p>
-              )}
-            </div>
+            {onOpenMedications ? (
+              <Button variant="outline" size="sm" onClick={onOpenMedications} className="gap-2">
+                <ChevronRight className="w-4 h-4" />
+                Open Medications
+              </Button>
+            ) : null}
+          </div>
+          <div className="rounded-xl bg-gray-50 p-4">
+            {medications.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {medications.map((medication) => (
+                  <div key={medication} className="inline-flex items-center rounded-full bg-white border border-gray-200 px-3 py-1">
+                    <span className="text-sm text-gray-800">{medication}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500">No active medications listed.</p>
+            )}
           </div>
         </div>
 
@@ -749,7 +975,10 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-gray-900">{item.name}</p>
-                    <p className="text-sm text-gray-600 mt-1">{item.detail}</p>
+                    <div className="mt-1 space-y-1 text-sm text-gray-600">
+                      <p> Dose: {item.dose || 'Not recorded'}</p>
+                      <p> Date taken: {item.date ? formatDate(item.date) : 'Not recorded'}</p>
+                    </div>
                   </div>
                   <Badge variant="secondary">{item.status}</Badge>
                 </div>
@@ -835,6 +1064,60 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
         </div>
       )}
 
+      {conditionEditorOpen && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-gray-900">{editingCondition ? 'Edit Health Concern' : 'Add Health Concern'}</h3>
+              <button type="button" onClick={() => setConditionEditorOpen(false)} className="text-sm text-gray-500">Close</button>
+            </div>
+            <p className="text-sm text-gray-500">
+              Personal health concerns stay clearly marked as patient-noted until a provider reviews them.
+            </p>
+            <div className="space-y-3">
+              <input className="w-full rounded-lg border border-gray-200 px-3 py-2" placeholder="Condition name" value={conditionForm.name} onChange={(e) => setConditionForm({ ...conditionForm, name: e.target.value })} />
+              <select className="w-full rounded-lg border border-gray-200 px-3 py-2" value={conditionForm.status} onChange={(e) => setConditionForm({ ...conditionForm, status: e.target.value })}>
+                <option value="">Select status</option>
+                {conditionStatusOptions.map((option) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
+              <input type="date" className="w-full rounded-lg border border-gray-200 px-3 py-2" value={conditionForm.diagnosed || ''} onChange={(e) => setConditionForm({ ...conditionForm, diagnosed: e.target.value })} />
+              <input className="w-full rounded-lg border border-gray-200 px-3 py-2" placeholder="Metric or care note" value={conditionForm.metric} onChange={(e) => setConditionForm({ ...conditionForm, metric: e.target.value })} />
+              <textarea className="w-full rounded-lg border border-gray-200 px-3 py-2 min-h-[96px]" placeholder="Notes for your provider" value={conditionForm.notes || ''} onChange={(e) => setConditionForm({ ...conditionForm, notes: e.target.value })} />
+            </div>
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => setConditionEditorOpen(false)}>Cancel</Button>
+              <Button className="flex-1" onClick={submitConditionEditor}>Save</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {conditionRequestOpen && requestingCondition && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-gray-900">Request Condition Change</h3>
+              <button type="button" onClick={() => setConditionRequestOpen(false)} className="text-sm text-gray-500">Close</button>
+            </div>
+            <p className="text-sm text-gray-500">
+              Your provider manages official diagnoses. Send a quick note and they can review and update {requestingCondition.name}.
+            </p>
+            <textarea
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 min-h-[120px]"
+              placeholder="What should be changed?"
+              value={conditionRequestMessage}
+              onChange={(e) => setConditionRequestMessage(e.target.value)}
+            />
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => setConditionRequestOpen(false)}>Cancel</Button>
+              <Button className="flex-1" onClick={submitConditionRequest}>Send Request</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {editorType && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-5 space-y-4">
@@ -842,8 +1125,8 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
               <h3 className="text-gray-900 capitalize">
                 {editorType === 'familyHistory'
                   ? 'Add family history'
-                  : editorType === 'medications'
-                  ? 'Update blood type and medications'
+                  : editorType === 'bloodType'
+                  ? 'Update blood type'
                   : editorType === 'emergencyContacts'
                   ? 'Add emergency contact'
                   : editorType === 'advanceDirectives'
@@ -852,16 +1135,6 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
               </h3>
               <button type="button" onClick={() => setEditorType(null)} className="text-sm text-gray-500">Close</button>
             </div>
-
-            {editorType === 'conditions' && (
-              <div className="space-y-3">
-                <input className="w-full rounded-lg border border-gray-200 px-3 py-2" placeholder="Condition name" value={conditionForm.name} onChange={(e) => setConditionForm({ ...conditionForm, name: e.target.value })} />
-                <input className="w-full rounded-lg border border-gray-200 px-3 py-2" placeholder="Status" value={conditionForm.status} onChange={(e) => setConditionForm({ ...conditionForm, status: e.target.value })} />
-                <input className="w-full rounded-lg border border-gray-200 px-3 py-2" placeholder="Diagnosed" value={conditionForm.diagnosed} onChange={(e) => setConditionForm({ ...conditionForm, diagnosed: e.target.value })} />
-                <input className="w-full rounded-lg border border-gray-200 px-3 py-2" placeholder="Metric or care note" value={conditionForm.metric} onChange={(e) => setConditionForm({ ...conditionForm, metric: e.target.value })} />
-                <input className="w-full rounded-lg border border-gray-200 px-3 py-2" placeholder="Provider" value={conditionForm.provider} onChange={(e) => setConditionForm({ ...conditionForm, provider: e.target.value })} />
-              </div>
-            )}
 
             {editorType === 'allergies' && (
               <div className="space-y-3">
@@ -877,9 +1150,54 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
 
             {editorType === 'immunizations' && (
               <div className="space-y-3">
-                <input className="w-full rounded-lg border border-gray-200 px-3 py-2" placeholder="Immunization" value={immunizationForm.name} onChange={(e) => setImmunizationForm({ ...immunizationForm, name: e.target.value })} />
-                <input className="w-full rounded-lg border border-gray-200 px-3 py-2" placeholder="Dose or date" value={immunizationForm.detail} onChange={(e) => setImmunizationForm({ ...immunizationForm, detail: e.target.value })} />
-                <input className="w-full rounded-lg border border-gray-200 px-3 py-2" placeholder="Status" value={immunizationForm.status} onChange={(e) => setImmunizationForm({ ...immunizationForm, status: e.target.value })} />
+                <select
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2"
+                  value={immunizationOptions.includes(immunizationForm.name as any) ? immunizationForm.name : 'Other'}
+                  onChange={(e) =>
+                    setImmunizationForm({
+                      ...immunizationForm,
+                      name: e.target.value === 'Other' ? '' : e.target.value,
+                    })
+                  }
+                >
+                  <option value="">Select immunization</option>
+                  {immunizationOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+                {(!immunizationOptions.includes(immunizationForm.name as any) || immunizationForm.name === '') && (
+                  <input
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2"
+                    placeholder="Enter immunization name"
+                    value={immunizationForm.name}
+                    onChange={(e) => setImmunizationForm({ ...immunizationForm, name: e.target.value })}
+                  />
+                )}
+                <input
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2"
+                  placeholder="Dose"
+                  value={immunizationForm.dose || ''}
+                  onChange={(e) => setImmunizationForm({ ...immunizationForm, dose: e.target.value, detail: [e.target.value, immunizationForm.date].filter(Boolean).join(' • ') })}
+                />
+                <input
+                  type="date"
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2"
+                  value={immunizationForm.date || ''}
+                  onChange={(e) => setImmunizationForm({ ...immunizationForm, date: e.target.value, detail: [immunizationForm.dose, e.target.value].filter(Boolean).join(' • ') })}
+                />
+                <select
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2"
+                  value={immunizationForm.status}
+                  onChange={(e) => setImmunizationForm({ ...immunizationForm, status: e.target.value })}
+                >
+                  {immunizationStatusOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
               </div>
             )}
 
@@ -890,11 +1208,20 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
               </div>
             )}
 
-            {editorType === 'medications' && (
+            {editorType === 'bloodType' && (
               <div className="space-y-3">
-                <input className="w-full rounded-lg border border-gray-200 px-3 py-2" placeholder="Blood type (e.g. O+)" value={bloodTypeInput} onChange={(e) => setBloodTypeInput(e.target.value)} />
-                <input className="w-full rounded-lg border border-gray-200 px-3 py-2" placeholder="Add a medication" value={medicationInput} onChange={(e) => setMedicationInput(e.target.value)} />
-                <p className="text-xs text-gray-500">Leave the medication field empty if you only want to update blood type.</p>
+                <select className="w-full rounded-lg border border-gray-200 px-3 py-2" value={bloodTypeInput} onChange={(e) => setBloodTypeInput(e.target.value)}>
+                  <option value="">Select blood type</option>
+                  <option value="A+">A+</option>
+                  <option value="A-">A-</option>
+                  <option value="B+">B+</option>
+                  <option value="B-">B-</option>
+                  <option value="AB+">AB+</option>
+                  <option value="AB-">AB-</option>
+                  <option value="O+">O+</option>
+                  <option value="O-">O-</option>
+                </select>
+                <p className="text-xs text-gray-500">Choose the blood type that should appear across your health summary and emergency record.</p>
               </div>
             )}
 
