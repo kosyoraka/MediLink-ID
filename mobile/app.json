@@ -1,0 +1,19 @@
+{
+  "expo": {
+    "name": "MediLink ID",
+    "slug": "medilink-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.medilink.patient"
+    },
+    "android": {
+      "package": "com.medilink.patient"
+    }
+  }
+}
