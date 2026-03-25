@@ -37,7 +37,7 @@ export default function EmergencyPublic({ token }: { token: string }) {
   useEffect(() => {
   (async () => {
     try {
-      const res = await fetch(`/api/emergency/by-token/${token}`);
+      const res = await fetch(`${API_BASE}/api/emergency/by-token/${token}`);
       const json = await res.json();
       if (!res.ok) throw new Error(json?.message || "Failed to load emergency profile");
       setData(json);

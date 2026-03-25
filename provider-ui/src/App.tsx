@@ -12,6 +12,7 @@ import { Documents } from "./pages/Documents";
 import { Settings } from "./pages/Settings";
 import { conversations } from "./lib/mockData";
 import { Patient } from "./lib/types";
+import { apiFetch } from "./lib/api";
 
 type Page =
   | "dashboard"
@@ -29,25 +30,52 @@ function App() {
   const [authPage, setAuthPage] = useState<AuthPage>("login");
   const [currentPage, setCurrentPage] = useState<Page>("dashboard");
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [patientDetailsContext, setPatientDetailsContext] = useState<{ medicationId?: string; medicationChangeRequestId?: string } | null>(null);
 
   // Calculate unread messages count
   const unreadCount = conversations.reduce((sum, conv) => sum + conv.unreadCount, 0);
 
   // ✅ Auto-auth if staff exists (localStorage remember-me OR sessionStorage)
   useEffect(() => {
+    let cancelled = false;
+
     try {
       const staffRaw =
         localStorage.getItem("medilink_staff") ||
         sessionStorage.getItem("medilink_staff_session");
+      const token =
+        localStorage.getItem("medilink_token") ||
+        sessionStorage.getItem("medilink_token");
 
-      if (staffRaw) {
-        setIsAuthenticated(true);
-        setAuthPage("login");
-        setCurrentPage("dashboard");
-      }
+      if (!staffRaw || !token) return;
+
+      apiFetch("/api/staff/me")
+        .then(() => {
+          if (cancelled) return;
+          setIsAuthenticated(true);
+          setAuthPage("login");
+          setCurrentPage("dashboard");
+        })
+        .catch(() => {
+          if (cancelled) return;
+          try {
+            localStorage.removeItem("medilink_token");
+            localStorage.removeItem("medilink_staff");
+            sessionStorage.removeItem("medilink_token");
+            sessionStorage.removeItem("medilink_staff_session");
+          } catch {
+            // ignore
+          }
+          setIsAuthenticated(false);
+          setAuthPage("login");
+        });
     } catch {
       // ignore
     }
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleLogin = () => {
@@ -78,12 +106,22 @@ function App() {
 
   const handleNavigate = (page: string, data?: any) => {
     if (page === "patient-details" && data) {
-      setSelectedPatient(data);
+      if (data?.patient) {
+        setSelectedPatient(data.patient);
+        setPatientDetailsContext({
+          medicationId: data.medicationId,
+          medicationChangeRequestId: data.medicationChangeRequestId,
+        });
+      } else {
+        setSelectedPatient(data);
+        setPatientDetailsContext(null);
+      }
       setCurrentPage("patient-details");
       return;
     }
 
     setSelectedPatient(null);
+    setPatientDetailsContext(null);
     setCurrentPage(page as Page);
   };
 
@@ -128,12 +166,12 @@ function App() {
         {currentPage === "patients" && <Patients onNavigate={handleNavigate} />}
 
         {currentPage === "patient-details" && selectedPatient && (
-          <PatientDetails patient={selectedPatient} onNavigate={handleNavigate} />
+          <PatientDetails patient={selectedPatient} onNavigate={handleNavigate} medicationContext={patientDetailsContext} />
         )}
 
         {currentPage === "appointments" && <Appointments onNavigate={handleNavigate} />}
 
-        {currentPage === "messages" && <Messages />}
+        {currentPage === "messages" && <Messages onNavigate={handleNavigate} />}
 
         {currentPage === "documents" && <Documents />}
 

@@ -2,53 +2,16 @@
 
 ## Project Summary
 
-MediLink is a smart patient portal and medical ID platform that centralizes healthcare information across providers. It enables patients to manage medical records, appointments, medications, and emergency health profiles in one secure system, while also supporting instant emergency access via QR/NFC-style workflows.
+MediLink is a patient portal and provider portal backed by a shared Express/Postgres API. The current working stack on this branch uses Supabase Postgres as the shared database and runs locally through Docker Compose.
 
 The platform includes:
 
 - A patient-facing portal
 - A provider-facing portal
 - A shared backend API
-- A shared PostgreSQL database hosted on Google Cloud SQL
+- A shared Supabase PostgreSQL database
 
-All services run locally using Docker Compose, while all developers connect to the same Cloud SQL database via Cloud SQL Proxy to ensure consistent data across the team.
-
----
-
-## Problem Statement
-
-### Fragmented Medical Records
-
-Patients are forced to manage healthcare information across multiple disconnected systems such as family doctors, specialists, and walk-in clinics.
-
-**Our Solution:**  
-A centralized patient portal that aggregates records, appointments, and health data in one secure place.
-
----
-
-### Emergency Access to Health Information
-
-In emergency situations, critical health information (allergies, chronic conditions, medications) is often unavailable or delayed.
-
-**Our Solution:**  
-Instant access to emergency profiles through QR/NFC-style access, enabling faster and safer care delivery.
-
----
-
-## Key Features
-
-- Centralized patient health records
-- Emergency health profile with controlled sharing
-- Patient and provider portals
-- Secure authentication
-- AI-powered symptom guidance (non-diagnostic)
-- Prisma-managed PostgreSQL database
-- Dockerized local development
-- Shared Cloud SQL database (single source of truth)
-
----
-
-## Technology Stack
+## Stack
 
 ### Frontend
 - React
@@ -60,279 +23,172 @@ Instant access to emergency profiles through QR/NFC-style access, enabling faste
 - Node.js
 - Express
 - TypeScript
-- Prisma ORM
-- PostgreSQL (Cloud SQL)
+- Prisma
+- PostgreSQL
 
 ### Infrastructure
+- Supabase
 - Docker
 - Docker Compose
-- Google Cloud SQL
-- Cloud SQL Proxy
 - pgAdmin
 - GitHub
 
----
+## Current Status
 
-## Getting Started (Local Development with Cloud SQL)
+This branch is on the Supabase path now.
 
-### ⚠️ Important
+- Docker/local backend config no longer depends on the Cloud SQL proxy
+- Supabase is the active database target for local development
+- The latest GCP dataset has been migrated into Supabase
+- Google sign-in is wired locally when `GOOGLE_CLIENT_ID` is provided
+- Patient onboarding now checks saved backend data instead of relying only on local browser flags
 
-MediLink no longer uses a local PostgreSQL container for development.
+## Prerequisites
 
-All developers connect to the shared Google Cloud SQL database using Cloud SQL Proxy.
-
----
-
-## 1. Prerequisites
-
-Before starting, install:
+Install:
 
 - Docker Desktop
 - Git
-- Google Cloud SDK (gcloud)
-- Cloud SQL Proxy
-- Node.js v18+ (optional, Docker recommended)
+- Node.js 18+ if you want to run commands outside Docker
 
----
+## Environment Setup
 
-## 2. Clone the Repository
-```bash
-git clone <REPO_URL>
-cd backend
-```
+The backend uses [`backend/.env.docker`](/Users/kennie/Downloads/MedilinkTest/MedilinkidPatientPrototype/backend/.env.docker) for Docker-based local runs.
 
----
+Start from the tracked template:
 
-## 3. Authenticate with Google Cloud
+[`backend/.env.supabase.example`](/Users/kennie/Downloads/MedilinkTest/MedilinkidPatientPrototype/backend/.env.supabase.example)
 
-Ask Kennie/Kosy to add you to the GCP project.
+Required values:
 
-Then run:
-```bash
-gcloud auth login
-gcloud config set project medilink-dev-486803
-```
-
----
-
-## 4. Start Cloud SQL Proxy (Required)
-
-In a separate terminal:
-```bash
-./cloud-sql-proxy \
-  --port 5433 \
-  medilink-dev-486803:northamerica-northeast2:medilink-dev-db
-```
-
-This exposes the shared database at:
-```
-localhost:5433
-```
-
-Leave this running while you develop.
-
----
-
-## 5. Create Environment File
-
-Inside `backend/`, create `.env.docker`:
 ```env
-DATABASE_URL="postgresql://medilink_app:medilinkapp@host.docker.internal:5433/medilink?schema=public"
-SHADOW_DATABASE_URL="postgresql://medilink_app:medilinkapp@host.docker.internal:5433/medilink_shadow?schema=public"
-
 PORT=4000
 NODE_ENV=development
-OPENAI_API_KEY=YOUR_OPENAI_API_KEY
+JWT_SECRET=change_me
+
+DATABASE_URL="postgresql://postgres.<project-ref>:<password>@<pooler-host>:5432/postgres"
+SHADOW_DATABASE_URL="postgresql://postgres:<password>@db.<project-ref>.supabase.co:5432/postgres"
+DATABASE_SSL_REJECT_UNAUTHORIZED=false
+
+FRONTEND_BASE_URL="http://localhost:5173"
+ALLOWED_ORIGINS="http://localhost:5173,http://localhost:5174"
+
+OPENAI_API_KEY=""
+GOOGLE_CLIENT_ID=""
 ```
 
 Notes:
 
-- `.env.docker` is intentionally not committed
-- Ask Kennie for DB credentials if needed
-- Never commit secrets
+- `DATABASE_URL` should use the Supabase pooler connection string
+- `SHADOW_DATABASE_URL` should use the direct database connection
+- `DATABASE_SSL_REJECT_UNAUTHORIZED=false` is currently used for local Docker connectivity to Supabase
+- `GOOGLE_CLIENT_ID` is required if you want Google sign-in locally
+- Do not commit real secrets
 
----
+## Supabase Setup
 
-## 6. Run the Application Stack
+If the project is not already prepared, run the SQL in:
+
+[`backend/supabase_setup.sql`](/Users/kennie/Downloads/MedilinkTest/MedilinkidPatientPrototype/backend/supabase_setup.sql)
+
+This enables `pgcrypto`, which the schema expects.
+
+## Running The System
+
+From:
+
+[`backend`](/Users/kennie/Downloads/MedilinkTest/MedilinkidPatientPrototype/backend)
+
+run:
+
 ```bash
 docker compose up -d --build
 ```
 
 This starts:
 
-- Backend API
-- Patient UI
-- Provider UI
-- pgAdmin
+- API on `http://localhost:4000`
+- Patient app on `http://localhost:5173`
+- Provider app on `http://localhost:5174`
+- pgAdmin on `http://localhost:5050`
 
-(No local database container is started)
+Useful commands:
 
----
+```bash
+docker compose ps
+docker compose logs -f api
+docker compose down
+```
 
-## 7. Access the Running Services
+## Local URLs
 
-- **Patient Portal:** http://localhost:5173
-- **Provider Portal:** http://localhost:5174
-- **Backend API:** http://localhost:4000/health
-- **pgAdmin:** http://localhost:5050
+- Patient portal: `http://localhost:5173`
+- Provider portal: `http://localhost:5174`
+- Backend API: `http://localhost:4000`
+- pgAdmin: `http://localhost:5050`
 
----
+## Database Migration Utilities
 
-## 8. Prisma Migrations (IMPORTANT)
+The backend includes migration/report scripts in [`backend/package.json`](/Users/kennie/Downloads/MedilinkTest/MedilinkidPatientPrototype/backend/package.json):
 
-Migrations are already applied on Cloud SQL.
+```bash
+npm run gcp:report
+npm run gcp:migrate
+```
 
-Run only to verify:
+What they do:
+
+- `gcp:report` compares the live GCP source database against Supabase
+- `gcp:migrate` copies the live GCP dataset into Supabase
+
+These scripts were used to bring over the newer data set, including:
+
+- patients and profiles
+- emergency data
+- appointments
+- messaging
+- provider connections
+- documents
+- health summaries
+- medications and conditions
+
+Use them only if you intentionally need to compare or re-run migration work.
+
+## Prisma Guidance
+
+Be careful with Prisma commands against the shared Supabase database.
+
+Safe verification command:
+
 ```bash
 docker compose exec api npx prisma migrate status
 ```
 
-🚫 **Do NOT run:**
+Do not run these casually against the shared database:
 
 - `prisma migrate dev`
 - `prisma migrate reset`
 - `prisma db push`
 
-Unless explicitly instructed.
+## pgAdmin
 
----
+pgAdmin runs locally at `http://localhost:5050`.
 
-## 9. pgAdmin Setup (Optional)
-
-Login:
+Default login:
 
 - Email: `admin@medilink.com`
 - Password: `admin`
 
-Create a server:
+To connect pgAdmin to Supabase, use the direct host from your Supabase project:
 
-- Host: `host.docker.internal`
-- Port: `5433`
-- Database: `medilink`
-- Username: `medilink_app`
-- Password: (ask Kennie)
+- Host: `db.<project-ref>.supabase.co`
+- Port: `5432`
+- Database: `postgres`
+- Username: `postgres`
+- Password: your Supabase database password
 
-You should see live production-like data (e.g., 24 hospitals).
+## Important Notes
 
----
-
-## Database Rules (Read Carefully)
-
-- Cloud SQL is the single source of truth
-- All developers see the same data
-- Prisma migrations are controlled
-- Never drop schemas or reset the DB
-- No local Postgres containers
-
----
-
-## Current Project Status
-
-MediLink is in active MVP development.
-
-Current functionality:
-
-- Authentication (patients & staff)
-- Patient profiles
-- Emergency health profiles
-- Appointment management
-- Provider portal (simulated)
-- AI-powered symptom guidance foundation
-
----
-
-## Team
-
-- Oloruntimilehin (Timi) Olajonlu
-- Kennie Oraka
-- Kosy Oraka
-- Elysprit (Elyse) Dhaliwal
-- Andrew Tissi
-- Amira Mohamed
-
----
-
-## Development Rules (Non-Negotiable)
-
-- Cloud SQL is the database
-- Cloud SQL Proxy is required
-- Do not commit `.env` files
-- Do not reset the database
-- One person manages migrations
-- If unsure → ask before running DB commands
-
-
-## Troubleshooting
-
-### Docker Container Already in Use
-
-**Problem:** You get an error like `error: response container being used by another container` when trying to start your containers.
-
-**Solution:** Docker won't let you start a container if one with the same name is already running (or stuck in a stopped state).
-
-**Steps:**
-
-1. **Stop and clean up existing containers**
-   ```bash
-   docker compose down --remove-orphans
-   ```
-
-2. **Check what container is blocking you** (optional, but helpful for debugging)
-   ```bash
-   docker ps -a --filter "name=medilink_provider_web"
-   ```
-
-3. **Force-remove the container**
-   ```bash
-   docker rm -f medilink_provider_web
-   ```
-
-   If that container name doesn't exist, use the ID from the error message instead:
-   ```bash
-   docker rm -f f0d17db952d3516f1c1e6d19a0208cc381f032f45530997194d63910701f8b4d
-   ```
-
-4. **Restart your containers**
-   ```bash
-   docker compose up -d --build
-   ```
-
-**Why this happens:** Sometimes containers get stuck or don't clean up properly, leaving a "ghost" container that prevents you from starting a new one with the same name. The `--remove-orphans` flag helps, but occasionally you need to manually force-remove the offending container.
-
-## Important: Cloud SQL Proxy
-
-**One rule:** Cloud SQL Proxy must be running anytime you run the stack. If the proxy isn't running, you'll see connection errors.
-
-Make sure it's started before you bring up your containers.
-
-### Database Connection Errors (P1001)
-
-**Problem:** You see `P1001` or "can't reach database" errors.
-
-**Solution:**
-
-1. **Check if Cloud SQL Proxy is running**
-   ```bash
-   lsof -i :5433
-   ```
-   If nothing shows up, start the proxy.
-
-2. **Restart the stack**
-   ```bash
-   docker compose down --remove-orphans
-   docker compose up -d --build
-   ```
-
-### Docker Container Already in Use
-
-**Problem:** You get an error like `error: response container being used by another container` when trying to start your containers.
-
-**Solution:** Docker won't let you start a container if one with the same name is already running (or stuck in a stopped state).
-
-```bash
-docker compose down --remove-orphans
-docker rm -f medilink_provider_web 2>/dev/null || true
-docker compose up -d --build
-```
-
-This cleans up any stuck containers and brings everything back up. The `2>/dev/null || true` part just means "don't error out if the container doesn't exist."
+- You do not need the GCP Cloud SQL proxy command for normal app usage on this branch
+- You only need the old GCP connection if you plan to inspect or re-migrate from the old source database
+- Supabase is the current shared source of truth for this branch

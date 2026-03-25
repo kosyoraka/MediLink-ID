@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Search, Filter, UserPlus, Eye, Link2 } from "lucide-react";
+import { Search, Filter, UserPlus, Eye } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,7 +16,6 @@ interface PatientsProps {
 
 /**
  * Rows coming back from:
- *  - GET /api/patients                 (all patients)
  *  - GET /api/staff/patients/connected (patients connected/disconnected to this hospital)
  */
 type PatientListRow = {
@@ -48,9 +47,6 @@ const toPatientIdLabel = (uuid: string) => {
 };
 
 export function Patients({ onNavigate }: PatientsProps) {
-  // All vs Connected view
-  const [view, setView] = useState<"all" | "connected">("all");
-
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState<"all" | "active" | "inactive" | "recent">("all");
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -70,12 +66,7 @@ export function Patients({ onNavigate }: PatientsProps) {
     let alive = true;
     setLoading(true);
 
-    const endpoint =
-      view === "all"
-        ? "/api/patients"
-        : "/api/staff/patients/connected";
-
-    apiFetch<PatientListRow[]>(endpoint)
+    apiFetch<PatientListRow[]>("/api/staff/patients/connected")
       .then((rows) => {
         if (!alive) return;
 
@@ -84,14 +75,9 @@ export function Patients({ onNavigate }: PatientsProps) {
             `${r.first_name ?? ""} ${r.last_name ?? ""}`.trim() || "Unnamed Patient";
 
           const status: "Active" | "Inactive" =
-            view === "connected"
-              ? (r.connection_status ?? (r.disconnected_at ? "Inactive" : "Active"))
-              : "Active";
+            r.connection_status ?? (r.disconnected_at ? "Inactive" : "Active");
 
-          const lastVisit =
-            view === "connected" && r.connected_at
-              ? r.connected_at
-              : new Date().toISOString();
+          const lastVisit = r.connected_at ?? new Date().toISOString();
 
           return {
             id: r.patient_id,
@@ -136,7 +122,7 @@ export function Patients({ onNavigate }: PatientsProps) {
     return () => {
       alive = false;
     };
-  }, [view]);
+  }, []);
 
   const filteredPatients = useMemo(() => {
     return patients.filter((patient) => {
@@ -147,11 +133,9 @@ export function Patients({ onNavigate }: PatientsProps) {
       const matchesFilter =
         filterStatus === "all" ||
         (filterStatus === "recent" &&
-        new Date(patient.lastVisit) > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)) ||
-        (view === "connected" &&
-        ((filterStatus === "active" && patient.status === "Active") ||
-        (filterStatus === "inactive" && patient.status === "Inactive")));
-
+          new Date(patient.lastVisit) > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)) ||
+        (filterStatus === "active" && patient.status === "Active") ||
+        (filterStatus === "inactive" && patient.status === "Inactive");
 
       return matchesSearch && matchesFilter;
     });
@@ -163,34 +147,12 @@ export function Patients({ onNavigate }: PatientsProps) {
         <div>
           <h1 className="text-2xl lg:text-3xl font-bold text-gray-900">Patients</h1>
           <p className="text-gray-600 mt-1">
-            {view === "connected"
-              ? "Patients connected (or previously connected) to your hospital"
-              : "Manage patient records and information"}
+            Patients connected or previously connected to your hospital
           </p>
         </div>
         <Button className="gap-2" onClick={() => setIsAddModalOpen(true)}>
           <UserPlus className="w-4 h-4" />
           Add New Patient
-        </Button>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex items-center gap-2">
-        <Button
-          type="button"
-          variant={view === "all" ? "default" : "outline"}
-          onClick={() => setView("all")}
-        >
-          All Patients
-        </Button>
-        <Button
-          type="button"
-          variant={view === "connected" ? "default" : "outline"}
-          onClick={() => setView("connected")}
-          className="gap-2"
-        >
-          <Link2 className="w-4 h-4" />
-          Connected
         </Button>
       </div>
 
@@ -221,11 +183,9 @@ export function Patients({ onNavigate }: PatientsProps) {
             </div>
           </div>
 
-          {view === "connected" && (
-            <p className="text-xs text-gray-500 mt-3">
-              Active = patient is currently connected. Inactive = patient disconnected your hospital.
-            </p>
-          )}
+          <p className="text-xs text-gray-500 mt-3">
+            Active = patient is currently connected. Inactive = patient disconnected your hospital.
+          </p>
         </CardContent>
       </Card>
 
@@ -252,12 +212,9 @@ export function Patients({ onNavigate }: PatientsProps) {
                       <h3 className="font-semibold text-gray-900">{patient.name}</h3>
                       <p className="text-sm text-gray-600">{patient.patientId}</p>
                     </div>
-                    {view === "connected" && (
                     <Badge variant={patient.status === "Active" ? "success" : "secondary"}>
-                    {patient.status}
+                      {patient.status}
                     </Badge>
-                    )}
-
                   </div>
 
                   <div className="mt-4 space-y-2 text-sm">
@@ -272,9 +229,7 @@ export function Patients({ onNavigate }: PatientsProps) {
                       </span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-600">
-                        {view === "connected" ? "Connected:" : "Last Visit:"}
-                      </span>
+                      <span className="text-gray-600">Connected:</span>
                       <span className="font-medium text-gray-900">
                         {patient.lastVisit ? formatDate(patient.lastVisit) : "—"}
                       </span>

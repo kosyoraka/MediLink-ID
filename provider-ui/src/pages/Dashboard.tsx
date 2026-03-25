@@ -8,13 +8,15 @@ import {
   Upload,
   CalendarCheck,
   Clock,
+  ClipboardList,
+  Activity,
+  ChevronRight,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { recentActivities } from "@/lib/mockData";
 import { getRelativeTime } from "@/lib/utils";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, type ProviderDocument, type ProviderDocumentRequest } from "@/lib/api";
 
 interface DashboardProps {
   onNavigate: (page: string, data?: any) => void;
@@ -51,6 +53,23 @@ function isTodayISO(iso: string) {
   );
 }
 
+function formatTime(iso: string) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+function initials(name: string) {
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase())
+    .join("");
+}
+
+
+
 type PatientListRow = {
   patient_id: string;
 };
@@ -58,6 +77,7 @@ type PatientListRow = {
 type StaffConversationRow = {
   id: string;
   unread_count: number;
+  open_medication_change_count?: number;
 };
 
 type StaffConversationsResponse = {
@@ -67,18 +87,25 @@ type StaffConversationsResponse = {
 // ✅ minimal shape we need for counting "today"
 type StaffAppointmentRow = {
   id: string;
-  startTime: string; // ISO string
-  status: string;    // Scheduled | Confirmed | Completed | Cancelled
+  startTime: string; 
+  status: string;
+  patientName?: string | null;
+  patientPhoto?: string | null;
+  type?: string | null;
 };
+
 
 export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
   const staff = getStoredStaff();
 
   const [patientCount, setPatientCount] = useState<number | null>(null);
   const [unreadMessages, setUnreadMessages] = useState<number>(0);
+  const [medicationChangeRequests, setMedicationChangeRequests] = useState<number>(0);
 
   // ✅ NEW: real appointments from DB (for Today's Appointments count)
   const [appointments, setAppointments] = useState<StaffAppointmentRow[]>([]);
+  const [documents, setDocuments] = useState<ProviderDocument[]>([]);
+  const [requests, setRequests] = useState<ProviderDocumentRequest[]>([]);
 
   // Patients count (existing)
   useEffect(() => {
@@ -86,12 +113,37 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
 
     (async () => {
       try {
-        const rows = await apiFetch<PatientListRow[]>("/api/patients");
+        const rows = await apiFetch<PatientListRow[]>("/api/staff/patients/connected");
         if (!alive) return;
         setPatientCount(rows.length);
       } catch {
         if (!alive) return;
         setPatientCount(null);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      try {
+        const [documentData, requestData] = await Promise.all([
+          apiFetch<{ documents: ProviderDocument[] }>("/api/staff/documents"),
+          apiFetch<{ requests: ProviderDocumentRequest[] }>("/api/staff/document-requests?status=pending"),
+        ]);
+
+        if (!alive) return;
+        setDocuments(documentData.documents || []);
+        setRequests(requestData.requests || []);
+      } catch {
+        if (!alive) return;
+        setDocuments([]);
+        setRequests([]);
       }
     })();
 
@@ -116,11 +168,17 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
           (sum, c) => sum + (Number(c.unread_count) || 0),
           0
         );
+        const medicationChangeTotal = (data.conversations || []).reduce(
+          (sum, c) => sum + (Number(c.open_medication_change_count) || 0),
+          0
+        );
 
         setUnreadMessages(total);
+        setMedicationChangeRequests(medicationChangeTotal);
       } catch {
         if (!alive) return;
         setUnreadMessages(0);
+        setMedicationChangeRequests(0);
       }
     })();
 
@@ -151,12 +209,16 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
           : [];
 
         setAppointments(
-          rows.map((r: any) => ({
-            id: String(r.id),
-            startTime: String(r.startTime ?? r.start_time),
-            status: String(r.status),
-          }))
-        );
+  rows.map((r: any) => ({
+    id: String(r.id),
+    startTime: String(r.startTime ?? r.start_time),
+    status: String(r.status),
+    patientName: String(r.patientName ?? r.patient_name ?? "Patient"),
+    patientPhoto: (r.patientPhoto ?? r.patient_photo ?? null) as string | null,
+    type: String(r.type ?? r.appointmentType ?? "Appointment"),
+  }))
+);
+
       } catch {
         if (!alive) return;
         setAppointments([]);
@@ -178,7 +240,29 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
     );
   }, [appointments]);
 
-  const recentDocuments = 12; // Mock count
+  const recentDocuments = useMemo(() => {
+    const cutoff = Date.now() - 4 * 60 * 60 * 1000;
+    return documents.filter((doc) => {
+      const ts = new Date(doc.uploadDate).getTime();
+      return !Number.isNaN(ts) && ts >= cutoff;
+    }).length;
+  }, [documents]);
+
+  const upcomingToday = useMemo(
+    () =>
+      todayAppointments.filter((appointment) => {
+        const ts = new Date(appointment.startTime).getTime();
+        return !Number.isNaN(ts) && ts >= Date.now();
+      }).length,
+    [todayAppointments]
+  );
+
+  const pendingAppointments = useMemo(
+    () => todayAppointments.filter((appointment) => appointment.status === "Pending").length,
+    [todayAppointments]
+  );
+
+  const recentDocumentItems = useMemo(() => documents.slice(0, 3), [documents]);
 
   const firstName =
     staff?.name?.trim()?.split(/\s+/)?.[0] || staff?.name || "there";
@@ -196,18 +280,6 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
       default:
         return "secondary";
     }
-  };
-
-  const getActivityIcon = (iconName: string) => {
-    const icons: Record<string, any> = {
-      "calendar-check": CalendarCheck,
-      "file-text": FileText,
-      "user-plus": UserPlus,
-      "message-square": MessageSquare,
-      calendar: Calendar,
-    };
-    const Icon = icons[iconName] || Calendar;
-    return <Icon className="w-4 h-4" />;
   };
 
   return (
@@ -285,6 +357,7 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
               <div>
                 <p className="text-sm text-gray-600">Recent Documents</p>
                 <p className="text-3xl font-bold text-gray-900 mt-1">{recentDocuments}</p>
+                <p className="text-xs text-gray-500 mt-1">Uploaded in the last 4 hours</p>
               </div>
               <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
                 <FileText className="w-6 h-6 text-orange-600" />
@@ -306,6 +379,17 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                    <p className="text-xs text-gray-500">Upcoming today</p>
+                    <p className="mt-1 text-xl font-semibold text-gray-900">{upcomingToday}</p>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                    <p className="text-xs text-gray-500">Pending confirmations</p>
+                    <p className="mt-1 text-xl font-semibold text-gray-900">{pendingAppointments}</p>
+                  </div>
+                </div>
+
                 {todayAppointments.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
                     <Calendar className="w-12 h-12 mx-auto mb-3 opacity-50" />
@@ -318,20 +402,54 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
                       className="flex items-center gap-4 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
                       onClick={() => onNavigate("appointments")}
                     >
-                      <img
-                        src={appointment.patientPhoto}
-                        alt={appointment.patientName}
-                        className="w-12 h-12 rounded-full object-cover"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-gray-900">{appointment.patientName}</p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <Clock className="w-3 h-3 text-gray-500" />
-                          <p className="text-sm text-gray-600">{appointment.time}</p>
-                          <span className="text-gray-400">•</span>
-                          <p className="text-sm text-gray-600">{appointment.type}</p>
-                        </div>
-                      </div>
+                      {(() => {
+  // pull whatever fields exist (supports multiple backend shapes)
+  const patientName =
+    (appointment as any).patientName ??
+    (appointment as any).patient_name ??
+    (appointment as any).patient_full_name ??
+    "Patient";
+
+  const patientPhoto =
+    (appointment as any).patientPhoto ??
+    (appointment as any).patient_photo ??
+    (appointment as any).patient_avatar ??
+    null;
+
+  const apptType =
+    (appointment as any).type ??
+    (appointment as any).appointmentType ??
+    (appointment as any).reason ??
+    "Appointment";
+
+  const timeText = formatTime(appointment.startTime);
+
+  return (
+    <>
+      {patientPhoto ? (
+        <img
+          src={patientPhoto}
+          alt={patientName}
+          className="w-12 h-12 rounded-full object-cover"
+        />
+      ) : (
+        <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center text-gray-700 font-semibold">
+          {initials(patientName) || "?"}
+        </div>
+      )}
+
+      <div className="flex-1 min-w-0">
+        <p className="font-medium text-gray-900 truncate">{patientName}</p>
+        <div className="flex items-center gap-2 mt-1">
+          <Clock className="w-3 h-3 text-gray-500" />
+          <p className="text-sm text-gray-600">{timeText}</p>
+          <span className="text-gray-400">•</span>
+          <p className="text-sm text-gray-600 truncate">{apptType}</p>
+        </div>
+      </div>
+    </>
+  );
+})()}
                       <Badge variant={getStatusColor(appointment.status)}>
                         {appointment.status}
                       </Badge>
@@ -347,44 +465,125 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
         <div>
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle>Recent Activity</CardTitle>
+              <CardTitle>Recent Documents</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {recentActivities.map((activity) => (
-                  <div key={activity.id} className="flex gap-3">
-                    <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0 text-blue-600">
-                      {getActivityIcon(activity.icon)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-900">{activity.description}</p>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {getRelativeTime(activity.timestamp)}
-                      </p>
-                    </div>
-                  </div>
-                ))}
+                {recentDocumentItems.length === 0 ? (
+                  <div className="text-sm text-gray-500">No recent document activity yet.</div>
+                ) : (
+                  recentDocumentItems.map((doc) => (
+                    <button
+                      key={doc.id}
+                      className="flex w-full items-start gap-3 rounded-lg border border-gray-200 p-3 text-left hover:bg-gray-50"
+                      onClick={() => onNavigate("documents")}
+                    >
+                      <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0 text-orange-600">
+                        <FileText className="w-4 h-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-gray-900 line-clamp-1">{doc.title}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {doc.patientName} • {getRelativeTime(doc.uploadDate)}
+                        </p>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
+                    </button>
+                  ))
+                )}
               </div>
             </CardContent>
           </Card>
 
           <Card className="mt-4">
             <CardHeader className="pb-3">
-              <CardTitle>Quick Actions</CardTitle>
+              <CardTitle>Work Queue</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2">
-              <Button
-                className="w-full justify-start gap-2"
-                variant="outline"
-                onClick={onAddPatientClick}
-              >
-                <UserPlus className="w-4 h-4" />
-                Add New Patient
-              </Button>
-              <Button className="w-full justify-start gap-2" variant="outline">
-                <Upload className="w-4 h-4" />
-                Upload Document
-              </Button>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-gray-600">
+                Start with the items that need action now, then move into quick tasks.
+              </p>
+
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  className="w-full rounded-xl border border-gray-200 p-3 text-left transition-colors hover:bg-gray-50"
+                  onClick={() => onNavigate("documents")}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <div className="mt-0.5 rounded-full bg-blue-100 p-2 text-blue-600">
+                        <ClipboardList className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">Record Requests</p>
+                        <p className="text-xs text-gray-500">Review and fulfill patient document requests</p>
+                      </div>
+                    </div>
+                    <Badge variant="outline">{requests.length}</Badge>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  className="w-full rounded-xl border border-gray-200 p-3 text-left transition-colors hover:bg-gray-50"
+                  onClick={() => onNavigate("messages")}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <div className="mt-0.5 rounded-full bg-green-100 p-2 text-green-600">
+                        <Activity className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">Unread Messages</p>
+                        <p className="text-xs text-gray-500">Catch up on patient conversations</p>
+                      </div>
+                    </div>
+                    <Badge variant="outline">{unreadMessages}</Badge>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  className="w-full rounded-xl border border-gray-200 p-3 text-left transition-colors hover:bg-gray-50"
+                  onClick={() => onNavigate("messages")}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <div className="mt-0.5 rounded-full bg-amber-100 p-2 text-amber-600">
+                        <MessageSquare className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">Medication Changes</p>
+                        <p className="text-xs text-gray-500">Open medication change requests waiting on review</p>
+                      </div>
+                    </div>
+                    <Badge variant="outline">{medicationChangeRequests}</Badge>
+                  </div>
+                </button>
+              </div>
+
+              <div className="pt-2">
+                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Quick Actions</p>
+              </div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <Button
+                  className="justify-start gap-2"
+                  variant="outline"
+                  onClick={onAddPatientClick}
+                >
+                  <UserPlus className="w-4 h-4" />
+                  Add Patient
+                </Button>
+                <Button
+                  className="justify-start gap-2"
+                  variant="outline"
+                  onClick={() => onNavigate("documents")}
+                >
+                  <Upload className="w-4 h-4" />
+                  Open Documents
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>

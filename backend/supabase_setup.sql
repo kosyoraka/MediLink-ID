@@ -1,5 +1,2 @@
--- Enable extensions required by the schema (run this first)
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-
--- Add other extension enables here if needed, for example:
--- CREATE EXTENSION IF NOT EXISTS citext;
+-- Required for gen_random_uuid() used throughout the current schema.
+create extension if not exists pgcrypto;

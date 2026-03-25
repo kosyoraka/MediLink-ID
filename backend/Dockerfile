@@ -2,9 +2,6 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# netcat for "wait for db"
-RUN apk add --no-cache netcat-openbsd
-
 COPY package*.json ./
 RUN npm ci
 

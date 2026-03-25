@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Activity, Eye, EyeOff } from "lucide-react";
+import { GoogleLogin, type CredentialResponse } from "@react-oauth/google";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/toast";
@@ -35,6 +36,7 @@ function readLastEmail(): string {
 }
 
 export function LoginPage({ onLogin, onSignUpClick }: LoginPageProps) {
+  const hasGoogleClientId = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
@@ -45,6 +47,20 @@ export function LoginPage({ onLogin, onSignUpClick }: LoginPageProps) {
     const last = readLastEmail();
     if (last) setEmail(last);
   }, []);
+
+  const storeAuth = (token: string, staff: StaffDTO) => {
+    if (rememberMe) {
+      localStorage.setItem("medilink_token", token);
+      sessionStorage.removeItem("medilink_token");
+      localStorage.setItem("medilink_staff", JSON.stringify(staff));
+      sessionStorage.removeItem("medilink_staff_session");
+    } else {
+      sessionStorage.setItem("medilink_token", token);
+      localStorage.removeItem("medilink_token");
+      sessionStorage.setItem("medilink_staff_session", JSON.stringify(staff));
+      localStorage.removeItem("medilink_staff");
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -67,14 +83,6 @@ export function LoginPage({ onLogin, onSignUpClick }: LoginPageProps) {
       });
 
       // 1) Store token first (so /api/staff/me has auth)
-      if (rememberMe) {
-        localStorage.setItem("medilink_token", data.token);
-        sessionStorage.removeItem("medilink_token");
-      } else {
-        sessionStorage.setItem("medilink_token", data.token);
-        localStorage.removeItem("medilink_token");
-      }
-
       // 2) Try to fetch the latest staff profile (fixes "blank provider info" issues)
       // If it fails, fallback to the staff object from signin.
       let staffToStore: StaffDTO = data.staff;
@@ -88,13 +96,7 @@ export function LoginPage({ onLogin, onSignUpClick }: LoginPageProps) {
       }
 
       // 3) Store staff profile in same place the UI already reads
-      if (rememberMe) {
-        localStorage.setItem("medilink_staff", JSON.stringify(staffToStore));
-        sessionStorage.removeItem("medilink_staff_session");
-      } else {
-        sessionStorage.setItem("medilink_staff_session", JSON.stringify(staffToStore));
-        localStorage.removeItem("medilink_staff");
-      }
+      storeAuth(data.token, staffToStore);
 
       toast.success("Login successful! Welcome back.");
       onLogin();
@@ -102,6 +104,30 @@ export function LoginPage({ onLogin, onSignUpClick }: LoginPageProps) {
       toast.error(err?.message || "Invalid credentials. Please try again.");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleGoogleSuccess = async (credentialResponse: CredentialResponse) => {
+    const credential = credentialResponse.credential;
+    if (!credential) {
+      toast.error("Google did not return a credential");
+      return;
+    }
+
+    try {
+      const data = await apiFetch<{
+        token: string;
+        staff: StaffDTO;
+      }>("/api/staff/auth/google", {
+        method: "POST",
+        body: JSON.stringify({ credential }),
+      });
+
+      storeAuth(data.token, data.staff);
+      toast.success("Google login successful");
+      onLogin();
+    } catch (err: any) {
+      toast.error(err?.message || "Unable to sign in with Google");
     }
   };
 
@@ -180,6 +206,20 @@ export function LoginPage({ onLogin, onSignUpClick }: LoginPageProps) {
               {isLoading ? "Signing in..." : "Sign In"}
             </Button>
           </form>
+
+          {hasGoogleClientId ? (
+            <div className="my-4 flex justify-center">
+              <GoogleLogin
+                onSuccess={handleGoogleSuccess}
+                onError={() => toast.error("Google sign-in was cancelled or failed")}
+                useOneTap={false}
+                text="signin_with"
+                shape="pill"
+                theme="outline"
+                size="large"
+              />
+            </div>
+          ) : null}
 
           <div className="mt-6 text-center">
             <p className="text-sm text-gray-600">

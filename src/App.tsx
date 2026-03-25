@@ -20,12 +20,14 @@ import HealthSummary from './components/HealthSummary';
 import CareJourneys from './components/CareJourneys';
 import Recommendations from './components/Recommendations';
 import DocumentCenter from './components/DocumentCenter';
+import NutritionFitness from './components/NutritionFitness';
 import SymptomChecker from './components/SymptomChecker';
 import MedicalHistory from './components/MedicalHistory';
 import CommunicationPreferences from './components/CommunicationPreferences';
 import ManageProviders from './components/ManageProviders';
 import EmergencyPublic from './components/EmergencyPublic';
 import PersonalInformationPage from './components/PersonalInformationPage';
+import Notifications from './components/Notifications';
 import { API_BASE } from "@/config/api";
 console.log("API_BASE =", API_BASE);
 
@@ -52,10 +54,12 @@ type Screen =
   | 'care-journeys'
   | 'recommendations'
   | 'documents'
+  | 'nutrition-fitness'
   | 'symptom-checker'
   | 'medical-history'
   | 'communication-preferences'
-  | 'manage-providers';
+  | 'manage-providers'
+  | 'notifications';
 
 type NavItem = 'home' | 'records' | 'appointments' | 'messages' | 'more';
 
@@ -67,6 +71,10 @@ export default function App() {
   const [userName, setUserName] = useState('');
   const [userHealthCard, setUserHealthCard] = useState('');
   const [userDOB, setUserDOB] = useState('');
+  const [profilePrefill, setProfilePrefill] = useState<{ firstName: string; lastName: string }>({
+    firstName: '',
+    lastName: '',
+  });
 
   // Keep Authorization UI in the app, but we won't route to it from provider connect actions
   const [selectedProvider, setSelectedProvider] = useState(''); // (kept for Authorization screen)
@@ -78,6 +86,105 @@ export default function App() {
   const [connectedProviders, setConnectedProviders] = useState<string[]>([]);
 
   const [emergencyToken, setEmergencyToken] = useState('');
+
+  const syncOnboardingState = async (
+    email: string,
+    options?: { firstName?: string; lastName?: string }
+  ) => {
+    const patientId = localStorage.getItem("patientId");
+    const token = localStorage.getItem("patient_token");
+
+    setUserEmail(email);
+
+    if (!patientId) {
+      setProfilePrefill({
+        firstName: options?.firstName || "",
+        lastName: options?.lastName || "",
+      });
+      handleNavigation("profile-setup");
+      return;
+    }
+
+    try {
+      const authHeaders = token
+        ? { Authorization: `Bearer ${token}` }
+        : undefined;
+
+      const [profileRes, emergencyRes, providersRes] = await Promise.all([
+        fetch(`${API_BASE}/api/patients/${patientId}/profile`),
+        fetch(`${API_BASE}/api/patients/${patientId}/emergency-profile`),
+        fetch(`${API_BASE}/api/patient/connected-providers`, {
+          headers: authHeaders,
+        }),
+      ]);
+
+      const profile = profileRes.ok ? await profileRes.json() : null;
+      const emergency = emergencyRes.ok ? await emergencyRes.json() : null;
+      const providersData = providersRes.ok ? await providersRes.json() : null;
+
+      const profileComplete = Boolean(
+        profile?.first_name &&
+          profile?.last_name &&
+          profile?.dob &&
+          profile?.health_card &&
+          profile?.phone_number
+      );
+      const emergencyComplete = Boolean(emergency?.updated_at);
+      const connectedProviderIds = Array.isArray(providersData?.providers)
+        ? providersData.providers.map((provider: { id: string }) => provider.id)
+        : [];
+
+      setConnectedProviders(connectedProviderIds);
+
+      if (profile?.first_name || profile?.last_name) {
+        setProfilePrefill({
+          firstName: profile?.first_name || options?.firstName || "",
+          lastName: profile?.last_name || options?.lastName || "",
+        });
+      } else {
+        setProfilePrefill({
+          firstName: options?.firstName || "",
+          lastName: options?.lastName || "",
+        });
+      }
+
+      if (profileComplete) {
+        setUserName(
+          [profile.first_name, profile.last_name].filter(Boolean).join(" ").trim()
+        );
+        setUserHealthCard(profile.health_card || "");
+        setUserDOB(profile.dob || "");
+        localStorage.setItem("profileComplete", "true");
+      } else {
+        localStorage.removeItem("profileComplete");
+      }
+
+      if (emergencyComplete) {
+        localStorage.setItem("emergencyComplete", "true");
+      } else {
+        localStorage.removeItem("emergencyComplete");
+      }
+
+      if (!profileComplete) {
+        handleNavigation("profile-setup");
+        return;
+      }
+
+      if (!emergencyComplete) {
+        handleNavigation("emergency-setup");
+        return;
+      }
+
+      completeOnboarding();
+    } catch (error) {
+      console.error("Failed to sync onboarding state:", error);
+      setProfilePrefill({
+        firstName: options?.firstName || "",
+        lastName: options?.lastName || "",
+      });
+      handleNavigation("profile-setup");
+    }
+  };
 
   const handleNavigation = (screen: Screen, navItem?: NavItem) => {
     setCurrentScreen(screen);
@@ -108,10 +215,12 @@ export default function App() {
       'care-journeys',
       'recommendations',
       'documents',
+      'nutrition-fitness',
       'symptom-checker',
       'medical-history',
       'communication-preferences',
       'manage-providers',
+      'notifications',
     ].includes(currentScreen);
 
   useEffect(() => {
@@ -137,31 +246,20 @@ export default function App() {
         return (
           <SignIn
             onSignIn={(userData) => {
-              setUserEmail(userData.email);
-
-              if (userData.name) {
-                setUserName(userData.name);
-                setUserHealthCard(userData.healthCard);
-                setUserDOB(userData.dob);
-              }
-
-              // If you ever start returning connected provider IDs on signin, this will still work
-              if ((userData as any).connectedProviders) {
-                setConnectedProviders((userData as any).connectedProviders);
-              }
-
-              completeOnboarding();
+              void syncOnboardingState(userData.email);
             }}
             onBack={() => handleNavigation('welcome')}
+            onGoToSignUp={() => handleNavigation('signup')}
           />
         );
 
       case 'signup':
         return (
           <SignUp
-            onSignUp={(email) => {
-              setUserEmail(email);
-              handleNavigation('profile-setup');
+            onBack={() => handleNavigation('welcome')}
+            onGoToSignIn={() => handleNavigation('signin')}
+            onSignUp={(email, prefill) => {
+              void syncOnboardingState(email, prefill);
             }}
           />
         );
@@ -172,10 +270,13 @@ export default function App() {
       case 'profile-setup':
         return (
           <ProfileSetup
+            initialFirstName={profilePrefill.firstName}
+            initialLastName={profilePrefill.lastName}
             onNext={(firstName, lastName, healthCard, dob) => {
               setUserName(`${firstName} ${lastName}`);
               setUserHealthCard(healthCard);
               setUserDOB(dob);
+              setProfilePrefill({ firstName: '', lastName: '' });
               handleNavigation('connect-providers');
             }}
             onBack={() => handleNavigation('signup')}
@@ -274,7 +375,12 @@ export default function App() {
         return <HealthTasks onBack={() => handleNavigation('dashboard', 'home')} />;
 
       case 'health-summary':
-        return <HealthSummary onBack={() => handleNavigation('dashboard', 'home')} />;
+        return (
+          <HealthSummary
+            onBack={() => handleNavigation('dashboard', 'home')}
+            onOpenMedications={() => handleNavigation('medications', 'home')}
+          />
+        );
 
       case 'care-journeys':
         return <CareJourneys onBack={() => handleNavigation('dashboard', 'home')} />;
@@ -284,6 +390,9 @@ export default function App() {
 
       case 'documents':
         return <DocumentCenter onBack={() => handleNavigation('dashboard', 'home')} />;
+
+      case 'nutrition-fitness':
+        return <NutritionFitness onBack={() => handleNavigation('dashboard', 'home')} />;
 
       case 'symptom-checker':
         return <SymptomChecker onBack={() => handleNavigation('dashboard', 'home')} />;
@@ -297,6 +406,9 @@ export default function App() {
       case 'manage-providers':
         // DB-backed ManageProviders only needs onBack
         return <ManageProviders onBack={() => handleNavigation('more', 'more')} />;
+
+      case 'notifications':
+        return <Notifications onBack={() => handleNavigation('dashboard', 'home')} />;
 
       default:
         return <Dashboard onNavigate={handleNavigation} />;

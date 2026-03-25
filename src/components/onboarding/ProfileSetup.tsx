@@ -1,23 +1,70 @@
 import { ArrowLeft } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { API_BASE } from "@/config/api";
 
 interface ProfileSetupProps {
+  initialFirstName?: string;
+  initialLastName?: string;
   onNext: (firstName: string, lastName: string, healthCard: string, dob: string) => void;
   onBack: () => void;
 }
 
-export default function ProfileSetup({ onNext, onBack }: ProfileSetupProps) {
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
+export default function ProfileSetup({
+  initialFirstName = '',
+  initialLastName = '',
+  onNext,
+  onBack,
+}: ProfileSetupProps) {
+  const [firstName, setFirstName] = useState(initialFirstName);
+  const [lastName, setLastName] = useState(initialLastName);
   const [dob, setDob] = useState('');
   const [healthCard, setHealthCard] = useState('');
   const [phone, setPhone] = useState('');
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setFirstName(initialFirstName);
+  }, [initialFirstName]);
+
+  useEffect(() => {
+    setLastName(initialLastName);
+  }, [initialLastName]);
+
+  useEffect(() => {
+    const patientId = localStorage.getItem("patientId");
+    if (!patientId) return;
+
+    const loadExistingProfile = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/patients/${patientId}/profile`, {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+        });
+
+        if (!res.ok) return;
+
+        const data = await res.json().catch(() => null);
+        if (!data) return;
+
+        setFirstName((current) => current || data.first_name || "");
+        setLastName((current) => current || data.last_name || "");
+        setDob((current) => current || (data.dob ? String(data.dob).slice(0, 10) : ""));
+        setHealthCard((current) =>
+          current || (data.health_card ? formatHealthCard(String(data.health_card)) : "")
+        );
+        setPhone((current) => current || data.phone_number || "");
+      } catch (err) {
+        console.error("Could not prefill existing profile:", err);
+      }
+    };
+
+    void loadExistingProfile();
+  }, []);
 
   // Format health card number as XXXX-XXX-XXX
   const formatHealthCard = (value: string) => {
