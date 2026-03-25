@@ -879,8 +879,10 @@ app.post("/api/staff/me/change-password", requireStaffAuth, async (req: any, res
 
 //Healthcheck
 
+let startupStatus: "starting" | "ready" | "degraded" = "starting";
+
 app.get("/api/health", (_req, res) => {
-  res.json({ ok: true });
+  res.json({ ok: true, status: startupStatus });
 });
 //app.get("/health", (_req, res) => res.status(200).send("ok"));
 
@@ -5782,20 +5784,29 @@ app.get("/api/patient/connected-providers", requireAuth, async (req, res) => {
 
 const port = Number(process.env.PORT || 4000);
 
-async function bootstrap() {
+async function initializeSchemas() {
   await ensureDocumentsSchema();
   await ensureHealthSummarySchema();
   await ensureMedicationsSchema();
   await ensureConditionsSchema();
+}
+
+function startServer() {
   app.listen(port, "0.0.0.0", () => {
     console.log(`Backend running on http://0.0.0.0:${port}`);
   });
 }
 
-bootstrap().catch((error) => {
-  console.error("Backend bootstrap failed:", error);
-  process.exit(1);
-});
+startServer();
+
+initializeSchemas()
+  .then(() => {
+    startupStatus = "ready";
+  })
+  .catch((error) => {
+    startupStatus = "degraded";
+    console.error("Backend schema bootstrap failed:", error);
+  });
 
 // const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 
