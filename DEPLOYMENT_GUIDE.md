@@ -25,7 +25,7 @@ Create a new Render Web Service from this repo and branch.
 Render settings:
 
 - Root directory: `backend`
-- Build command: `npm ci && npm run build`
+- Build command: `npm ci --include=dev && npm run build`
 - Start command: `npm start`
 - Health check path: `/api/health`
 
