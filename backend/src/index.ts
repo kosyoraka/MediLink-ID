@@ -150,6 +150,31 @@ async function ensureActiveConnection(patientId: string, providerId: string) {
   return (r.rowCount ?? 0) > 0;
 }
 
+async function ensurePatientHospitalConnection(patientId: string, hospitalId: string) {
+  const existing = await pool.query(
+    `
+    SELECT 1
+    FROM patient_hospital_connections
+    WHERE patient_id = $1::uuid
+      AND hospital_id = $2::uuid
+    LIMIT 1
+    `,
+    [patientId, hospitalId]
+  );
+
+  if ((existing.rowCount ?? 0) > 0) {
+    return;
+  }
+
+  await pool.query(
+    `
+    INSERT INTO patient_hospital_connections (id, patient_id, hospital_id, connected_at)
+    VALUES ($1, $2::uuid, $3::uuid, NOW())
+    `,
+    [randomUUID(), patientId, hospitalId]
+  );
+}
+
 
 
 const isDev = process.env.NODE_ENV !== "production";
@@ -1033,14 +1058,7 @@ if (hospitalId) {
     return res.status(400).json({ message: "Invalid hospitalId" });
   }
 
-  await pool.query(
-    `
-    INSERT INTO patient_hospital_connections (id, patient_id, hospital_id, connected_at)
-    VALUES (gen_random_uuid(), $1::uuid, $2::uuid, NOW())
-    ON CONFLICT (patient_id, hospital_id) DO NOTHING
-    `,
-    [id, hospitalId]
-  );
+  await ensurePatientHospitalConnection(id, hospitalId);
 }
 
 
@@ -1270,14 +1288,7 @@ app.post("/api/auth/google", async (req, res) => {
           return res.status(400).json({ message: "Invalid hospitalId" });
         }
 
-        await pool.query(
-          `
-          INSERT INTO patient_hospital_connections (id, patient_id, hospital_id, connected_at)
-          VALUES (gen_random_uuid(), $1::uuid, $2::uuid, NOW())
-          ON CONFLICT (patient_id, hospital_id) DO NOTHING
-          `,
-          [patientId, hospitalId]
-        );
+        await ensurePatientHospitalConnection(patientId, hospitalId);
       }
     }
 
@@ -2503,16 +2514,7 @@ app.post("/api/patients/me/providers", requirePatient, async (req: any, res) => 
     );
 
     // 2) ALSO create hospital-level connection (so booking/staff list works)
-    // If your patient_hospital_connections has a unique constraint on (patient_id, hospital_id),
-    // ON CONFLICT will work. If not, I give you a fallback below.
-    await pool.query(
-      `
-      INSERT INTO patient_hospital_connections (id, patient_id, hospital_id, connected_at)
-      VALUES ($1, $2::uuid, $3::uuid, NOW())
-      ON CONFLICT (patient_id, hospital_id) DO NOTHING
-      `,
-      [randomUUID(), patientId, providerId]
-    );
+    await ensurePatientHospitalConnection(patientId, providerId);
 
     return res.json({ ok: true });
   } catch (e: any) {

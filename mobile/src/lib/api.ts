@@ -1,6 +1,8 @@
 import { getItem, multiSet } from './storage';
 
-export const API_BASE = (process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:4000').replace(/\/$/, '');
+export const API_BASE = (
+  process.env.EXPO_PUBLIC_API_BASE_URL || 'https://api.medilinkid.com'
+).replace(/\/$/, '');
 
 type RequestOptions = RequestInit & {
   auth?: boolean;
@@ -27,6 +29,19 @@ export type ProfileResponse = {
 export type EmergencyLinkResponse = {
   token: string;
   url: string;
+};
+
+export type HospitalOption = {
+  id: string;
+  name: string;
+  city: string;
+};
+
+export type Provider = {
+  id: string;
+  name: string;
+  type: string;
+  connected_at?: string;
 };
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -78,11 +93,21 @@ export const api = {
     return data;
   },
 
-  signUp: async (email: string, password: string, acceptedTerms: boolean) => {
+  signUp: async (
+    email: string,
+    password: string,
+    acceptedTerms: boolean,
+    hospitalId?: string
+  ) => {
     const data = await request<SignUpResponse>('/api/auth/signup', {
       method: 'POST',
       auth: false,
-      body: JSON.stringify({ email, password, acceptedTerms, hospitalId: '' }),
+      body: JSON.stringify({
+        email,
+        password,
+        acceptedTerms,
+        hospitalId: hospitalId || undefined,
+      }),
     });
 
     await multiSet({ patientId: data.id, email: data.email, token: data.token });
@@ -124,4 +149,17 @@ export const api = {
 
     return request<EmergencyLinkResponse>(`/api/patients/${patientId}/emergency-link`);
   },
+
+  getHospitals: async () => request<HospitalOption[]>('/api/hospitals', { auth: false }),
+  listProviders: async () => request<{ providers: Provider[] }>('/api/providers'),
+  listMyProviders: async () => request<{ providers: Provider[] }>('/api/patients/me/providers'),
+  connectProvider: async (providerId: string, source: 'signup' | 'settings') =>
+    request<{ ok: boolean; alreadyConnected?: boolean }>('/api/patients/me/providers', {
+      method: 'POST',
+      body: JSON.stringify({ providerId, source }),
+    }),
+  disconnectProvider: async (providerId: string) =>
+    request<{ ok: boolean; updated?: number }>(`/api/patients/me/providers/${providerId}`, {
+      method: 'DELETE',
+    }),
 };

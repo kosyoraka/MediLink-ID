@@ -1,15 +1,19 @@
-import { useMemo, useState } from 'react';
-import { KeyboardAvoidingView, Platform, StyleSheet, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, KeyboardAvoidingView, Platform, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { BottomNav, type NavItem } from './components/ui/BottomNav';
 import { DashboardScreen } from './screens/DashboardScreen';
+import { ConnectProvidersScreen } from './screens/ConnectProvidersScreen';
+import { ManageProvidersScreen } from './screens/ManageProvidersScreen';
+import { MoreScreen } from './screens/MoreScreen';
 import { PlaceholderScreen } from './screens/PlaceholderScreen';
 import { ProfileSetupScreen } from './screens/ProfileSetupScreen';
 import { SignInScreen } from './screens/SignInScreen';
 import { SignUpScreen } from './screens/SignUpScreen';
 import { WelcomeScreen } from './screens/WelcomeScreen';
-import { clearSession } from './lib/storage';
+import { api } from './lib/api';
+import { clearSession, getItem } from './lib/storage';
 import { colors } from './theme/tokens';
 
 type Screen =
@@ -17,6 +21,7 @@ type Screen =
   | 'signin'
   | 'signup'
   | 'profile-setup'
+  | 'connect-providers'
   | 'dashboard'
   | 'records'
   | 'appointments'
@@ -28,12 +33,18 @@ type Screen =
   | 'health-summary'
   | 'care-journeys'
   | 'recommendations'
-  | 'documents';
+  | 'documents'
+  | 'manage-providers'
+  | 'personal-information'
+  | 'emergency-profile'
+  | 'notifications';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<Screen>('welcome');
   const [activeNav, setActiveNav] = useState<NavItem>('home');
   const [isOnboarded, setIsOnboarded] = useState(false);
+  const [isBootstrapping, setIsBootstrapping] = useState(true);
+  const [connectedProviderIds, setConnectedProviderIds] = useState<string[]>([]);
   const [userEmail, setUserEmail] = useState('');
   const [userName, setUserName] = useState('');
   const [userHealthCard, setUserHealthCard] = useState('');
@@ -75,6 +86,73 @@ export default function App() {
     if (navItem) setActiveNav(navItem);
   };
 
+  const applyProfileState = (profile: {
+    email: string | null;
+    first_name: string | null;
+    last_name: string | null;
+    health_card: string | null;
+    dob: string | null;
+  }) => {
+    setUserEmail(profile.email ?? '');
+    setUserName([profile.first_name, profile.last_name].filter(Boolean).join(' ').trim());
+    setUserHealthCard(profile.health_card ?? '');
+    setUserDob(profile.dob ?? '');
+  };
+
+  const restoreSession = async () => {
+    try {
+      const token = await getItem('token');
+      if (!token) {
+        setCurrentScreen('welcome');
+        setIsOnboarded(false);
+        return;
+      }
+
+      const storedEmail = await getItem('email');
+      if (storedEmail) {
+        setUserEmail(storedEmail);
+      }
+
+      const profile = await api.getProfile();
+      applyProfileState(profile);
+
+      const profileComplete = Boolean(
+        profile.first_name &&
+          profile.last_name &&
+          profile.health_card &&
+          profile.dob
+      );
+
+      setIsOnboarded(profileComplete);
+      setCurrentScreen(profileComplete ? 'dashboard' : 'profile-setup');
+      setActiveNav('home');
+
+      if (profileComplete) {
+        try {
+          const { providers } = await api.listMyProviders();
+          setConnectedProviderIds(providers.map((provider) => provider.id));
+        } catch {
+          setConnectedProviderIds([]);
+        }
+      }
+    } catch {
+      await clearSession();
+      setIsOnboarded(false);
+      setCurrentScreen('welcome');
+      setUserEmail('');
+      setUserName('');
+      setUserHealthCard('');
+      setUserDob('');
+      setConnectedProviderIds([]);
+    } finally {
+      setIsBootstrapping(false);
+    }
+  };
+
+  useEffect(() => {
+    void restoreSession();
+  }, []);
+
   const completeOnboarding = () => {
     setIsOnboarded(true);
     setCurrentScreen('dashboard');
@@ -90,9 +168,18 @@ export default function App() {
     setUserName('');
     setUserHealthCard('');
     setUserDob('');
+    setConnectedProviderIds([]);
   };
 
   const renderScreen = () => {
+    if (isBootstrapping) {
+      return (
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator size="large" color={colors.teal} />
+        </View>
+      );
+    }
+
     switch (currentScreen) {
       case 'welcome':
         return <WelcomeScreen onGetStarted={() => handleNavigation('signup')} onSignIn={() => handleNavigation('signin')} />;
@@ -100,9 +187,34 @@ export default function App() {
         return (
           <SignInScreen
             onBack={() => handleNavigation('welcome')}
-            onSignedIn={({ email }) => {
+            onSignedIn={async ({ email }) => {
               setUserEmail(email);
-              completeOnboarding();
+
+              try {
+                const profile = await api.getProfile();
+                applyProfileState(profile);
+
+                const profileComplete = Boolean(
+                  profile.first_name &&
+                    profile.last_name &&
+                    profile.health_card &&
+                    profile.dob
+                );
+
+                if (profileComplete) {
+                  try {
+                    const { providers } = await api.listMyProviders();
+                    setConnectedProviderIds(providers.map((provider) => provider.id));
+                  } catch {
+                    setConnectedProviderIds([]);
+                  }
+                  completeOnboarding();
+                } else {
+                  handleNavigation('profile-setup');
+                }
+              } catch {
+                handleNavigation('profile-setup');
+              }
             }}
           />
         );
@@ -119,8 +231,21 @@ export default function App() {
               setUserName(`${firstName} ${lastName}`.trim());
               setUserHealthCard(healthCard);
               setUserDob(dob);
-              completeOnboarding();
+              handleNavigation('connect-providers');
             }}
+          />
+        );
+      case 'connect-providers':
+        return (
+          <ConnectProvidersScreen
+            connectedProviderIds={connectedProviderIds}
+            onConnect={(providerId) => {
+              setConnectedProviderIds((current) =>
+                current.includes(providerId) ? current : [...current, providerId]
+              );
+            }}
+            onNext={completeOnboarding}
+            onBack={() => handleNavigation('profile-setup')}
           />
         );
       case 'dashboard':
@@ -132,13 +257,24 @@ export default function App() {
             userHealthCard={userHealthCard}
           />
         );
+      case 'more':
+        return (
+          <MoreScreen
+            onNavigate={(screen) => handleNavigation(screen as Screen, 'more')}
+            onSignOut={handleSignOut}
+            userName={userName}
+            userEmail={userEmail}
+            userHealthCard={userHealthCard}
+          />
+        );
+      case 'manage-providers':
+        return <ManageProvidersScreen onBack={() => handleNavigation('more', 'more')} />;
       default:
         return (
           <PlaceholderScreen
             title={screenTitle}
             description={`This native screen is next in the port queue. The goal is to match the current web app exactly, but screen by screen.`}
             onPrimaryAction={() => handleNavigation('dashboard', 'home')}
-            onSignOut={currentScreen === 'more' ? handleSignOut : undefined}
           />
         );
     }
@@ -179,5 +315,11 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  loadingWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.white,
   },
 });
