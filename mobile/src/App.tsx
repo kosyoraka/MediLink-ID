@@ -6,12 +6,16 @@ import { BottomNav, type NavItem } from './components/ui/BottomNav';
 import { DashboardScreen } from './screens/DashboardScreen';
 import { ConnectProvidersScreen } from './screens/ConnectProvidersScreen';
 import { ManageProvidersScreen } from './screens/ManageProvidersScreen';
+import { AppointmentsScreen } from './screens/AppointmentsScreen';
+import { MessagesScreen } from './screens/MessagesScreen';
 import { MoreScreen } from './screens/MoreScreen';
 import { PlaceholderScreen } from './screens/PlaceholderScreen';
 import { ProfileSetupScreen } from './screens/ProfileSetupScreen';
+import { RecordsScreen } from './screens/RecordsScreen';
 import { SignInScreen } from './screens/SignInScreen';
 import { SignUpScreen } from './screens/SignUpScreen';
 import { WelcomeScreen } from './screens/WelcomeScreen';
+import { WebAppScreen } from './screens/WebAppScreen';
 import { api } from './lib/api';
 import { clearSession, getItem } from './lib/storage';
 import { colors } from './theme/tokens';
@@ -22,17 +26,20 @@ type Screen =
   | 'signup'
   | 'profile-setup'
   | 'connect-providers'
+  | 'web-app'
   | 'dashboard'
   | 'records'
   | 'appointments'
   | 'messages'
   | 'more'
+  | 'medications'
   | 'symptom-checker'
   | 'medical-history'
   | 'health-tasks'
   | 'health-summary'
   | 'care-journeys'
   | 'recommendations'
+  | 'nutrition-fitness'
   | 'documents'
   | 'manage-providers'
   | 'personal-information'
@@ -50,7 +57,30 @@ export default function App() {
   const [userHealthCard, setUserHealthCard] = useState('');
   const [userDob, setUserDob] = useState('');
 
-  const showBottomNav = isOnboarded && ['dashboard', 'records', 'appointments', 'messages', 'more'].includes(currentScreen);
+  const embeddedWebScreens: Screen[] = [
+    'web-app',
+    'dashboard',
+    'records',
+    'appointments',
+    'messages',
+    'more',
+    'medications',
+    'symptom-checker',
+    'medical-history',
+    'health-tasks',
+    'health-summary',
+    'care-journeys',
+    'recommendations',
+    'nutrition-fitness',
+    'documents',
+    'manage-providers',
+    'personal-information',
+    'emergency-profile',
+    'notifications',
+  ];
+  const shouldUseEmbeddedWebApp = isOnboarded && embeddedWebScreens.includes(currentScreen);
+  const showBottomNav = false;
+  const safeAreaEdges = ['top', 'left', 'right'] as const;
 
   const screenTitle = useMemo(() => {
     switch (currentScreen) {
@@ -62,6 +92,8 @@ export default function App() {
         return 'Messages';
       case 'more':
         return 'More';
+      case 'medications':
+        return 'Medications';
       case 'symptom-checker':
         return 'Find Care AI';
       case 'medical-history':
@@ -74,6 +106,8 @@ export default function App() {
         return 'Care Journeys';
       case 'recommendations':
         return 'Recommendations';
+      case 'nutrition-fitness':
+        return 'Nutrition & Fitness';
       case 'documents':
         return 'Documents';
       default:
@@ -124,7 +158,7 @@ export default function App() {
       );
 
       setIsOnboarded(profileComplete);
-      setCurrentScreen(profileComplete ? 'dashboard' : 'profile-setup');
+      setCurrentScreen(profileComplete ? 'web-app' : 'profile-setup');
       setActiveNav('home');
 
       if (profileComplete) {
@@ -155,7 +189,7 @@ export default function App() {
 
   const completeOnboarding = () => {
     setIsOnboarded(true);
-    setCurrentScreen('dashboard');
+    setCurrentScreen('web-app');
     setActiveNav('home');
   };
 
@@ -178,6 +212,10 @@ export default function App() {
           <ActivityIndicator size="large" color={colors.teal} />
         </View>
       );
+    }
+
+    if (shouldUseEmbeddedWebApp) {
+      return <WebAppScreen onSignedOut={handleSignOut} />;
     }
 
     switch (currentScreen) {
@@ -248,6 +286,8 @@ export default function App() {
             onBack={() => handleNavigation('profile-setup')}
           />
         );
+      case 'web-app':
+        return <WebAppScreen onSignedOut={handleSignOut} />;
       case 'dashboard':
         return (
           <DashboardScreen
@@ -257,6 +297,12 @@ export default function App() {
             userHealthCard={userHealthCard}
           />
         );
+      case 'records':
+        return <RecordsScreen onNavigate={(screen) => handleNavigation(screen as Screen)} />;
+      case 'appointments':
+        return <AppointmentsScreen onNavigate={(screen) => handleNavigation(screen as Screen)} />;
+      case 'messages':
+        return <MessagesScreen />;
       case 'more':
         return (
           <MoreScreen
@@ -282,7 +328,7 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+      <SafeAreaView style={styles.safeArea} edges={safeAreaEdges}>
         <StatusBar style="dark" />
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.keyboardWrap}>
           <View style={styles.content}>{renderScreen()}</View>

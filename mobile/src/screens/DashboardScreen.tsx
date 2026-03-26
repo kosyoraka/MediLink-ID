@@ -2,12 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Activity,
-  AlertCircle,
   Bell,
   Calendar,
-  CalendarPlus,
   CheckCircle2,
   ChevronRight,
   Copy,
@@ -19,13 +18,12 @@ import {
   Settings,
   Stethoscope,
   Sun,
-  TrendingUp,
   Upload,
   Wallet,
   X,
 } from 'lucide-react-native';
 import QRCode from 'react-native-qrcode-svg';
-import { api, type ProfileResponse } from '../lib/api';
+import { api, type PatientAppointment, type ProfileResponse } from '../lib/api';
 import { colors, gradients, radii, shadows, spacing, typography } from '../theme/tokens';
 
 type DashboardScreenProps = {
@@ -41,14 +39,10 @@ const todos = [
   { task: 'Review new lab results', due: '3 days ago', urgent: false },
 ];
 
-const activityFeed = [
-  { title: 'New lab results from LifeLabs', time: '2 hours ago', tone: 'blue' },
-  { title: 'Prescription ready for pickup', time: 'Yesterday • Shoppers Drug Mart', tone: 'green' },
-  { title: 'Appointment confirmed', time: 'Nov 15 • Dr. Sarah Johnson', tone: 'purple' },
-] as const;
-
 export function DashboardScreen({ onNavigate, userName = '', userEmail = '', userHealthCard = '' }: DashboardScreenProps) {
+  const insets = useSafeAreaInsets();
   const [profile, setProfile] = useState<ProfileResponse | null>(null);
+  const [appointments, setAppointments] = useState<PatientAppointment[]>([]);
   const [walletOpen, setWalletOpen] = useState(false);
   const [walletLoading, setWalletLoading] = useState(false);
   const [walletError, setWalletError] = useState('');
@@ -62,6 +56,27 @@ export function DashboardScreen({ onNavigate, userName = '', userEmail = '', use
 
   useEffect(() => {
     api.getProfile().then(setProfile).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    api
+      .listMyAppointments('all')
+      .then((data) => {
+        if (!cancelled) {
+          setAppointments(data.appointments || []);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAppointments([]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const displayName = useMemo(() => {
@@ -85,20 +100,50 @@ export function DashboardScreen({ onNavigate, userName = '', userEmail = '', use
     return '****';
   }, [displayHealthCard]);
 
-  const quickActions: Array<{
-    icon: typeof CalendarPlus;
-    label: string;
-    color: string;
-    iconColor: string;
-    screen?: string;
-    action?: 'wallet';
-  }> = [
-    { icon: CalendarPlus, label: 'Schedule', color: colors.blueLight, iconColor: colors.blue },
-    { icon: Upload, label: 'Upload', color: colors.purpleLight, iconColor: colors.purple },
+  const nextAppointment = useMemo(() => {
+    const now = Date.now();
+    return [...appointments]
+      .filter((appointment) => {
+        const ts = new Date(appointment.startTime).getTime();
+        const status = String(appointment.status || '').toLowerCase();
+        return ts >= now && status !== 'cancelled' && status !== 'completed';
+      })
+      .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())[0] || null;
+  }, [appointments]);
+
+  const nextAppointmentStatusLabel = useMemo(() => {
+    if (!nextAppointment) return '';
+    return String(nextAppointment.status || '').toLowerCase().trim() === 'confirmed'
+      ? 'Confirmed'
+      : 'Waiting for confirmation';
+  }, [nextAppointment]);
+
+  const quickActions = [
+    { icon: Calendar, label: 'Appointments', color: colors.blueLight, iconColor: colors.blue, screen: 'appointments' },
+    { icon: Pill, label: 'Medications', color: colors.purpleLight, iconColor: colors.purple, screen: 'medications' },
     { icon: Search, label: 'Find Care AI', color: colors.orangeLight, iconColor: colors.orange, screen: 'symptom-checker' },
     { icon: FileText, label: 'Medical History', color: colors.pinkLight, iconColor: colors.pink, screen: 'medical-history' },
-    { icon: Wallet, label: 'Emergency ID', color: colors.tealLight, iconColor: colors.teal, action: 'wallet' },
+    { icon: Wallet, label: 'Emergency ID', color: colors.tealLight, iconColor: colors.teal, action: 'wallet' as const },
   ];
+
+  const quickLinks = [
+    { label: 'Health Summary', icon: Stethoscope, color: colors.blueLight, iconColor: colors.blue, screen: 'health-summary' },
+    { label: 'Care Journeys', icon: Activity, color: colors.purpleLight, iconColor: colors.purple, screen: 'care-journeys' },
+    { label: 'Recommendations', icon: CheckCircle2, color: colors.greenLight, iconColor: colors.green, screen: 'recommendations' },
+    { label: 'Nutrition & Fitness', icon: Upload, color: colors.orangeLight, iconColor: colors.orange, screen: 'nutrition-fitness' },
+  ];
+
+  const formatAppointmentDate = (iso: string) =>
+    new Date(iso).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+
+  const formatAppointmentTime = (iso: string) =>
+    new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+  const openDirections = async () => {
+    if (!nextAppointment) return;
+    const query = encodeURIComponent(nextAppointment.hospitalName || nextAppointment.providerName || 'Hospital');
+    await Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${query}`);
+  };
 
   const openWallet = async () => {
     setWalletOpen(true);
@@ -132,13 +177,16 @@ export function DashboardScreen({ onNavigate, userName = '', userEmail = '', use
   return (
     <>
       <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-        <LinearGradient colors={gradients.hero} style={styles.hero}>
+        <LinearGradient
+          colors={gradients.hero}
+          style={[styles.hero, { marginTop: -insets.top, paddingTop: spacing.xxl + insets.top }]}
+        >
           <View style={styles.heroRow}>
             <View style={styles.profileRow}>
               <View style={styles.avatar}>
                 <Text style={styles.avatarText}>{initials}</Text>
               </View>
-              <View>
+              <View style={styles.profileCopy}>
                 <Text style={styles.name}>{displayName}</Text>
                 <Text style={styles.healthCard}>Health Card: {maskedHealthCard}</Text>
                 <Text style={styles.heroEmail}>{displayEmail}</Text>
@@ -169,7 +217,7 @@ export function DashboardScreen({ onNavigate, userName = '', userEmail = '', use
                 style={styles.quickAction}
                 onPress={() => {
                   if (action.action === 'wallet') return openWallet();
-                  if (action.screen) return onNavigate(action.screen);
+                  return onNavigate(action.screen);
                 }}
               >
                 <View style={[styles.quickActionIcon, { backgroundColor: action.color }]}>
@@ -181,38 +229,25 @@ export function DashboardScreen({ onNavigate, userName = '', userEmail = '', use
           </ScrollView>
         </LinearGradient>
 
-        <LinearGradient colors={gradients.healthScore} style={styles.scoreCard}>
-          <View style={styles.scoreHeader}>
-            <View style={styles.scoreTextWrap}>
-              <Text style={styles.cardTitle}>Health Score</Text>
-              <Text style={styles.cardSubtitle}>Great job staying on track!</Text>
-            </View>
-            <View style={styles.scoreCircleOuter}>
-              <View style={styles.scoreCircleInner}>
-                <Text style={styles.scoreValue}>87</Text>
-                <Text style={styles.scoreLabel}>/100</Text>
+        <View style={styles.linksGrid}>
+          {quickLinks.map((item) => (
+            <Pressable key={item.label} style={styles.linkTile} onPress={() => onNavigate(item.screen)}>
+              <View style={[styles.tileIcon, { backgroundColor: item.color }]}>
+                <item.icon color={item.iconColor} size={20} />
               </View>
-            </View>
-          </View>
-
-          <View style={styles.metricsGrid}>
-            <View style={styles.metricCard}><Text style={styles.metricTitle}>Checkups</Text><Text style={styles.metricValue}>4/5</Text></View>
-            <View style={styles.metricCard}><Text style={styles.metricTitle}>Overdue</Text><Text style={styles.metricValue}>1</Text></View>
-            <View style={styles.metricCard}><Text style={styles.metricTitle}>Adherence</Text><Text style={styles.metricValue}>95%</Text></View>
-            <View style={styles.metricCard}><Text style={styles.metricTitle}>Upcoming</Text><Text style={styles.metricValue}>2</Text></View>
-          </View>
-
-          <Pressable style={styles.outlineAction}>
-            <TrendingUp color={colors.green} size={16} />
-            <Text style={styles.outlineActionText}>Improve Your Score</Text>
-          </Pressable>
-        </LinearGradient>
+              <Text style={styles.tileLabel}>{item.label}</Text>
+            </Pressable>
+          ))}
+        </View>
 
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
             <Text style={styles.cardTitle}>Your Health To-Dos</Text>
-            <View style={styles.redBadge}><Text style={styles.redBadgeText}>3</Text></View>
+            <View style={styles.redBadge}>
+              <Text style={styles.redBadgeText}>3</Text>
+            </View>
           </View>
+
           <View style={styles.todoList}>
             {todos.map((item) => (
               <Pressable key={item.task} style={styles.todoItem}>
@@ -225,82 +260,67 @@ export function DashboardScreen({ onNavigate, userName = '', userEmail = '', use
               </Pressable>
             ))}
           </View>
+
           <Pressable onPress={() => onNavigate('health-tasks')}>
             <Text style={styles.linkButton}>View All Tasks (7)</Text>
           </Pressable>
         </View>
 
         <View style={styles.priorityCard}>
-          <View style={styles.priorityHeader}>
-            <View style={[styles.priorityIcon, { backgroundColor: colors.blueLight }]}>
-              <Calendar color={colors.blue} size={24} />
-            </View>
-            <View style={styles.priorityCopy}>
-              <Text style={styles.priorityEyebrow}>Next Appointment</Text>
-              <Text style={styles.priorityTitle}>Dr. Sarah Johnson</Text>
-              <Text style={styles.priorityText}>Tomorrow, Nov 19 • 2:30 PM</Text>
-              <Text style={styles.priorityMeta}>Sunnybrook Health Sciences Centre</Text>
-            </View>
-          </View>
-          <View style={styles.inlineActions}>
-            <Pressable style={styles.inlineButton}>
-              <MapPin color={colors.text} size={16} />
-              <Text style={styles.inlineButtonText}>Directions</Text>
-            </Pressable>
-            <Pressable style={[styles.inlineButton, styles.inlineButtonPrimary]}>
-              <Text style={styles.inlineButtonPrimaryText}>View Details</Text>
-            </Pressable>
-          </View>
-        </View>
-
-        <View style={styles.priorityCard}>
-          <View style={styles.sectionHeader}>
-            <View style={styles.recentActivityTitleWrap}>
-              <View style={[styles.priorityIcon, { backgroundColor: colors.greenLight }]}>
-                <Activity color={colors.green} size={24} />
-              </View>
-              <View>
-                <Text style={styles.priorityEyebrow}>Recent Activity</Text>
-                <Text style={styles.priorityTitle}>Updates & Results</Text>
-              </View>
-            </View>
-          </View>
-          <View style={styles.activityList}>
-            {activityFeed.map((item) => (
-              <View key={item.title} style={styles.activityItem}>
-                <View
-                  style={[
-                    styles.activityDot,
-                    item.tone === 'blue' ? { backgroundColor: colors.blue } : item.tone === 'green' ? { backgroundColor: colors.green } : { backgroundColor: colors.purple },
-                  ]}
-                />
-                <View style={styles.activityCopy}>
-                  <Text style={styles.todoTitle}>{item.title}</Text>
-                  <Text style={styles.todoDue}>{item.time}</Text>
+          {nextAppointment ? (
+            <>
+              <View style={styles.priorityHeader}>
+                <View style={[styles.priorityIcon, { backgroundColor: colors.blueLight }]}>
+                  <Calendar color={colors.blue} size={24} />
                 </View>
-                <ChevronRight color={colors.textSoft} size={18} />
+                <View style={styles.priorityCopy}>
+                  <Text style={styles.priorityEyebrow}>Next Appointment</Text>
+                  <Text style={styles.priorityTitle}>{nextAppointment.providerName}</Text>
+                  <Text style={styles.priorityText}>
+                    {formatAppointmentDate(nextAppointment.startTime)} • {formatAppointmentTime(nextAppointment.startTime)}
+                  </Text>
+                  <Text style={styles.priorityMeta}>{nextAppointment.hospitalName || 'Hospital'}</Text>
+                  <View style={styles.statusPill}>
+                    <Text
+                      style={[
+                        styles.statusPillText,
+                        nextAppointmentStatusLabel === 'Confirmed' ? styles.statusConfirmed : styles.statusPending,
+                      ]}
+                    >
+                      {nextAppointmentStatusLabel}
+                    </Text>
+                  </View>
+                </View>
               </View>
-            ))}
-          </View>
-          <Pressable>
-            <Text style={styles.linkButton}>View All Activity</Text>
-          </Pressable>
-        </View>
 
-        <View style={styles.linksGrid}>
-          {[
-            { label: 'Health Summary', icon: Stethoscope, color: colors.blueLight, iconColor: colors.blue, screen: 'health-summary' },
-            { label: 'Care Journeys', icon: Activity, color: colors.purpleLight, iconColor: colors.purple, screen: 'care-journeys' },
-            { label: 'Recommendations', icon: CheckCircle2, color: colors.greenLight, iconColor: colors.green, screen: 'recommendations' },
-            { label: 'Documents', icon: Upload, color: colors.orangeLight, iconColor: colors.orange, screen: 'documents' },
-          ].map((item) => (
-            <Pressable key={item.label} style={styles.linkTile} onPress={() => onNavigate(item.screen)}>
-              <View style={[styles.tileIcon, { backgroundColor: item.color }]}>
-                <item.icon color={item.iconColor} size={20} />
+              <View style={styles.inlineActions}>
+                <Pressable style={styles.inlineButton} onPress={openDirections}>
+                  <MapPin color={colors.text} size={16} />
+                  <Text style={styles.inlineButtonText}>Directions</Text>
+                </Pressable>
+                <Pressable style={[styles.inlineButton, styles.inlineButtonPrimary]} onPress={() => onNavigate('appointments')}>
+                  <Text style={styles.inlineButtonPrimaryText}>View Details</Text>
+                </Pressable>
               </View>
-              <Text style={styles.tileLabel}>{item.label}</Text>
-            </Pressable>
-          ))}
+            </>
+          ) : (
+            <>
+              <View style={styles.priorityHeader}>
+                <View style={[styles.priorityIcon, { backgroundColor: colors.blueLight }]}>
+                  <Calendar color={colors.blue} size={24} />
+                </View>
+                <View style={styles.priorityCopy}>
+                  <Text style={styles.priorityEyebrow}>Next Appointment</Text>
+                  <Text style={styles.priorityTitle}>Nothing scheduled yet</Text>
+                  <Text style={styles.priorityText}>Book your next visit and keep your care plan moving.</Text>
+                </View>
+              </View>
+
+              <Pressable style={[styles.inlineButton, styles.inlineButtonPrimary]} onPress={() => onNavigate('appointments')}>
+                <Text style={styles.inlineButtonPrimaryText}>View Appointments</Text>
+              </Pressable>
+            </>
+          )}
         </View>
       </ScrollView>
 
@@ -310,7 +330,9 @@ export function DashboardScreen({ onNavigate, userName = '', userEmail = '', use
             <View style={styles.modalHeader}>
               <View style={{ flex: 1, gap: spacing.xs }}>
                 <Text style={styles.modalTitle}>Emergency Identification</Text>
-                <Text style={styles.modalSubtitle}>This is your Emergency ID. It will be converted to a real Apple Wallet pass.</Text>
+                <Text style={styles.modalSubtitle}>
+                  This is your Emergency ID. It will be converted to a real Apple Wallet pass.
+                </Text>
               </View>
               <Pressable onPress={() => setWalletOpen(false)} style={styles.modalClose}>
                 <X color={colors.textMuted} size={20} />
@@ -364,9 +386,8 @@ const styles = StyleSheet.create({
   },
   hero: {
     paddingHorizontal: spacing.xxl,
-    paddingTop: spacing.xxl,
     paddingBottom: spacing.xxl,
-    marginBottom: spacing.xl,
+    marginBottom: spacing.md,
   },
   heroRow: {
     flexDirection: 'row',
@@ -377,6 +398,9 @@ const styles = StyleSheet.create({
   profileRow: {
     flexDirection: 'row',
     gap: spacing.md,
+    flex: 1,
+  },
+  profileCopy: {
     flex: 1,
   },
   avatar: {
@@ -460,92 +484,13 @@ const styles = StyleSheet.create({
   quickActionLabel: {
     color: colors.white,
     fontSize: typography.tiny,
-    maxWidth: 72,
+    maxWidth: 78,
     textAlign: 'center',
-  },
-  scoreCard: {
-    marginHorizontal: spacing.xxl,
-    borderRadius: radii.xl,
-    borderWidth: 1,
-    borderColor: '#bbf7d0',
-    padding: spacing.xxl,
-    gap: spacing.lg,
-  },
-  scoreHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  scoreTextWrap: {
-    flex: 1,
-    paddingRight: spacing.lg,
   },
   cardTitle: {
     fontSize: typography.h3,
     fontWeight: '700',
     color: colors.text,
-  },
-  cardSubtitle: {
-    fontSize: typography.small,
-    color: colors.textMuted,
-    marginTop: 4,
-  },
-  scoreCircleOuter: {
-    width: 96,
-    height: 96,
-    borderRadius: radii.pill,
-    borderWidth: 8,
-    borderColor: colors.green,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  scoreCircleInner: {
-    alignItems: 'center',
-  },
-  scoreValue: {
-    fontSize: typography.h2,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  scoreLabel: {
-    fontSize: typography.tiny,
-    color: colors.textMuted,
-  },
-  metricsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.md,
-  },
-  metricCard: {
-    width: '47%',
-    backgroundColor: colors.white,
-    borderRadius: radii.md,
-    padding: spacing.lg,
-  },
-  metricTitle: {
-    fontSize: typography.small,
-    color: colors.textMuted,
-    marginBottom: 4,
-  },
-  metricValue: {
-    fontSize: typography.body,
-    color: colors.text,
-    fontWeight: '700',
-  },
-  outlineAction: {
-    minHeight: 48,
-    borderRadius: radii.md,
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: '#16a34a',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  outlineActionText: {
-    color: colors.green,
-    fontWeight: '600',
   },
   sectionCard: {
     backgroundColor: colors.white,
@@ -664,6 +609,24 @@ const styles = StyleSheet.create({
     fontSize: typography.small,
     color: colors.textMuted,
   },
+  statusPill: {
+    marginTop: spacing.sm,
+    alignSelf: 'flex-start',
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    backgroundColor: colors.surfaceMuted,
+  },
+  statusPillText: {
+    fontSize: typography.tiny,
+    fontWeight: '700',
+  },
+  statusConfirmed: {
+    color: colors.green,
+  },
+  statusPending: {
+    color: colors.yellow,
+  },
   inlineActions: {
     flexDirection: 'row',
     gap: spacing.md,
@@ -692,37 +655,12 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontWeight: '600',
   },
-  recentActivityTitleWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
-  activityList: {
-    gap: spacing.md,
-  },
-  activityItem: {
-    borderRadius: radii.md,
-    padding: spacing.lg,
-    backgroundColor: colors.surfaceMuted,
-    flexDirection: 'row',
-    gap: spacing.md,
-    alignItems: 'flex-start',
-  },
-  activityDot: {
-    width: 8,
-    height: 8,
-    borderRadius: radii.pill,
-    marginTop: 8,
-  },
-  activityCopy: {
-    flex: 1,
-  },
   linksGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: spacing.md,
     marginHorizontal: spacing.xxl,
-    marginTop: spacing.xl,
+    marginTop: spacing.lg,
   },
   linkTile: {
     width: '47%',
@@ -732,6 +670,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     padding: spacing.xl,
     gap: spacing.md,
+    ...shadows.card,
   },
   tileIcon: {
     width: 40,

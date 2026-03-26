@@ -290,7 +290,7 @@ const styles = StyleSheet.create({
   providerIcon: {
     width: 48,
     height: 48,
-    borderRadius: radii.round,
+    borderRadius: radii.pill,
     alignItems: 'center',
     justifyContent: 'center',
   },
