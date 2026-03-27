@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { Calendar as CalendarIcon, MapPin, Plus, Video, ChevronRight } from "lucide-react";
 import { api } from "@/lib/api";
 
@@ -702,83 +703,86 @@ setAppointments(
         )}
       </div>
 
-      {selectedSummary ? (
-        <div
-          className="fixed inset-0 z-50 flex items-end bg-black/40 sm:items-center sm:justify-center sm:p-4"
-          onClick={() => setSelectedSummary(null)}
-        >
-          <div
-            className="max-h-[88vh] w-full overflow-y-auto rounded-t-[28px] bg-white px-4 pb-6 pt-3 shadow-2xl sm:max-w-md sm:rounded-[28px] sm:px-5 sm:pt-4"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-gray-300" />
-
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal-600">
-                  Visit Summary
-                </p>
-                <h2 className="mt-1 text-xl font-semibold text-gray-900">
-                  {selectedSummary.specialty || "Appointment"}
-                </h2>
-                <p className="mt-1 text-sm text-gray-500">{selectedSummary.doctorName}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedSummary(null)}
-                className="rounded-full bg-gray-100 px-3 py-1.5 text-sm font-medium text-gray-600"
-              >
-                Close
-              </button>
-            </div>
-
-            <div className="mx-auto max-w-md space-y-3">
-              <div className="rounded-2xl border border-gray-200 bg-white p-4">
-                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">When</p>
-                <p className="mt-2 text-base font-semibold text-gray-900">
-                  {formatWhen(selectedSummary.startTime).date}
-                </p>
-                <p className="text-sm text-gray-600">{formatWhen(selectedSummary.startTime).time}</p>
-              </div>
-
-              <div className="rounded-2xl border border-gray-200 bg-white p-4">
-                <p className="text-xs font-medium uppercase tracking-wide text-gray-500">Visit Details</p>
-                <div className="mt-3 flex items-center justify-between gap-3">
-                  <p className="text-sm font-medium capitalize text-gray-900">
-                    {String(selectedSummary.type || "in-person").replace("-", " ")}
-                  </p>
-                  <StatusPill status={selectedSummary.status} />
-                </div>
-                <p className="mt-3 text-sm text-gray-600">
-                  {selectedSummary.locationName ||
-                    selectedSummary.hospitalName ||
-                    selectedSummary.providerName ||
-                    (String(selectedSummary.type).toLowerCase() === "virtual"
-                      ? "Virtual appointment"
-                      : "Provider location")}
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-teal-100 bg-teal-50 p-4">
-                <p className="text-xs font-medium uppercase tracking-wide text-teal-700">Summary Notes</p>
-                <p className="mt-2 text-sm leading-6 text-gray-700">
-                  {selectedSummary.notes?.trim()
-                    ? selectedSummary.notes
-                    : "No visit summary has been added yet. This screen still gives you the appointment date, provider, and visit details."}
-                </p>
-              </div>
-            </div>
-
-            <button
-              type="button"
+      {selectedSummary
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[9999] flex items-end justify-center bg-black/40 p-4 sm:items-center"
+              role="dialog"
+              aria-modal="true"
               onClick={() => setSelectedSummary(null)}
-              className="mt-5 w-full rounded-2xl bg-teal-600 px-4 py-3 text-sm font-medium text-white hover:bg-teal-700"
             >
-              Done
-            </button>
-          </div>
-        </div>
-      ) : null}
+              <div
+                className="w-full max-w-md overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="flex items-start justify-between border-b border-gray-100 p-4">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal-600">
+                      Visit Summary
+                    </p>
+                    <h3 className="mt-1 text-gray-900">{selectedSummary.specialty || "Appointment"}</h3>
+                    <p className="text-sm text-gray-500">{selectedSummary.doctorName}</p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedSummary(null)}
+                    className="rounded-lg p-2 text-gray-600 hover:bg-gray-100"
+                    aria-label="Close"
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <div className="space-y-4 p-4">
+                  <div className="rounded-xl border border-gray-200 bg-white p-4">
+                    <p className="text-sm text-gray-600">When</p>
+                    <p className="mt-2 font-medium text-gray-900">{formatWhen(selectedSummary.startTime).date}</p>
+                    <p className="text-sm text-gray-600">{formatWhen(selectedSummary.startTime).time}</p>
+                  </div>
+
+                  <div className="rounded-xl border border-gray-200 bg-white p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm text-gray-600">Visit Details</p>
+                        <p className="mt-2 font-medium capitalize text-gray-900">
+                          {String(selectedSummary.type || "in-person").replace("-", " ")}
+                        </p>
+                        <p className="mt-1 text-sm text-gray-600">
+                          {selectedSummary.locationName ||
+                            selectedSummary.hospitalName ||
+                            selectedSummary.providerName ||
+                            (String(selectedSummary.type).toLowerCase() === "virtual"
+                              ? "Virtual appointment"
+                              : "Provider location")}
+                        </p>
+                      </div>
+                      <StatusPill status={selectedSummary.status} />
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-teal-200 bg-teal-50 p-4">
+                    <p className="text-sm text-teal-900">Summary Notes</p>
+                    <p className="mt-2 text-sm leading-6 text-gray-700">
+                      {selectedSummary.notes?.trim()
+                        ? selectedSummary.notes
+                        : "No visit summary has been added yet. This screen still gives you the appointment date, provider, and visit details."}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedSummary(null)}
+                    className="w-full rounded-xl bg-teal-600 px-4 py-3 text-sm font-medium text-white hover:bg-teal-700"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
     </div>
   );
 }
