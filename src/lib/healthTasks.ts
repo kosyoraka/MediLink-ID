@@ -228,7 +228,7 @@ function buildEmergencyTasks(emergency: PatientEmergencyProfile | null, summary:
       dueAt: null,
       priority: 'urgent',
       estimatedTime: '3 minutes',
-      actionScreen: 'emergency-profile',
+      actionScreen: 'health-summary',
     });
   }
 
@@ -283,6 +283,20 @@ function buildHealthSummaryTasks(summary: HealthSummaryPayload | null): HealthTa
       category: 'preventive',
       title: 'Update immunization record',
       description: 'Add your vaccines so your health summary stays current',
+      dueLabel: 'Any time',
+      dueAt: summary.updatedAt,
+      priority: 'soon',
+      estimatedTime: '4 minutes',
+      actionScreen: 'health-summary',
+    });
+  }
+
+  if (!summary.vitals.length) {
+    tasks.push({
+      id: 'summary-vitals',
+      category: 'preventive',
+      title: 'Update vital signs',
+      description: 'Add blood pressure, heart rate, weight, or blood sugar to keep your summary current',
       dueLabel: 'Any time',
       dueAt: summary.updatedAt,
       priority: 'soon',

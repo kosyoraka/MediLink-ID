@@ -2663,6 +2663,18 @@ app.get("/api/patients/me/messages/conversations", requirePatient, async (req: a
       JOIN hospitals h ON h.id = c.provider_id
       JOIN staff_accounts sa ON sa.id = c.staff_id
       WHERE c.patient_id = $1::uuid
+        AND EXISTS (
+          SELECT 1
+          FROM message_items mi
+          WHERE mi.conversation_id = c.id
+            AND (
+              mi.sender_type = 'staff'
+              OR (
+                mi.sender_type IN ('patient', 'system')
+                AND mi.body NOT ILIKE 'New health concern added: %'
+              )
+            )
+        )
       ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
       `,
       [patientId]
@@ -2899,7 +2911,7 @@ app.get("/api/staff/messages/conversations", requireStaffAuth, async (req: any, 
           SELECT COUNT(*)
           FROM message_items mi
           WHERE mi.conversation_id = c.id
-            AND mi.sender_type = 'patient'
+            AND mi.sender_type IN ('patient', 'system')
             AND (
               mi.body ILIKE 'Condition change request for %'
               OR mi.body ILIKE 'New health concern added: %'
@@ -2947,7 +2959,7 @@ app.get("/api/staff/messages/conversations", requireStaffAuth, async (req: any, 
           SELECT COUNT(*)
           FROM message_items mi
           WHERE mi.conversation_id = c.id
-            AND mi.sender_type = 'patient'
+            AND mi.sender_type IN ('patient', 'system')
             AND mi.created_at > COALESCE(c.staff_last_read_at, '1970-01-01'::timestamptz)
         )::int AS unread_count
       FROM message_conversations c
@@ -4372,7 +4384,7 @@ app.post("/api/patient/conditions", requirePatientAuth, async (req: any, res) =>
       await pool.query(
         `
         INSERT INTO message_items (conversation_id, sender_type, sender_patient_id, body)
-        VALUES ($1::uuid, 'patient', $2::uuid, $3)
+        VALUES ($1::uuid, 'system', $2::uuid, $3)
         `,
         [conversationId, patientId, messageBody]
       );

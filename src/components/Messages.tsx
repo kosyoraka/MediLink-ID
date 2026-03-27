@@ -386,7 +386,7 @@ export default function Messages() {
   // ---------------- UI: THREAD VIEW ----------------
   if (selectedConversationId && selectedConversation) {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col">
+      <div className="h-[calc(100vh-4rem)] bg-gray-50 flex flex-col pb-16">
         <div className="bg-white border-b border-gray-200 p-4">
           <div className="flex items-center gap-3">
             <button onClick={() => setSelectedConversationId(null)} className="text-gray-600">
@@ -412,7 +412,7 @@ export default function Messages() {
           </div>
         )}
 
-        <div className="flex-1 p-4 space-y-4 overflow-y-auto">
+        <div className="min-h-0 flex-1 p-4 space-y-4 overflow-y-auto">
           {loadingMessages ? (
             <div className="text-sm text-gray-500">Loading messages…</div>
           ) : messages.length === 0 ? (
@@ -456,7 +456,7 @@ export default function Messages() {
           )}
         </div>
 
-        <div className="bg-white border-t border-gray-200 p-4">
+        <div className="bg-white border-t border-gray-200 p-4 sticky bottom-0">
           <div className="flex items-center gap-2">
             <Input
               placeholder={
