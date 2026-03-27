@@ -55,19 +55,15 @@ function getTaskStatusMeta(dateValue: string | null, priority: HealthTask['prior
 
 function buildAppointmentTasks(appointments: PatientAppointment[]): HealthTask[] {
   return appointments
-    .filter((appointment) => !['Completed', 'Cancelled'].includes(appointment.status))
+    .filter((appointment) => ['Pending', 'Scheduled'].includes(appointment.status))
     .map((appointment) => {
       const visitMode = String(appointment.visitMode || '').replace('-', ' ');
-      const rawPriority = ['Pending', 'Scheduled'].includes(appointment.status) ? 'urgent' : 'soon';
-      const statusMeta = getTaskStatusMeta(appointment.startTime, rawPriority);
+      const statusMeta = getTaskStatusMeta(appointment.startTime, 'urgent');
 
       return {
         id: `appointment-${appointment.id}`,
         category: 'appointment',
-        title:
-          appointment.status === 'Pending' || appointment.status === 'Scheduled'
-            ? `Confirm ${appointment.appointmentType || 'appointment'}`
-            : `${appointment.appointmentType || 'Appointment'} coming up`,
+        title: `Confirm ${appointment.appointmentType || 'appointment'}`,
         description: `${visitMode || 'Visit'} with ${appointment.providerName || appointment.hospitalName || 'your provider'}`,
         dueLabel: statusMeta.dueLabel,
         dueAt: appointment.startTime,
@@ -121,20 +117,7 @@ function buildMedicationTasks(medications: PatientMedication[]): HealthTask[] {
   medications
     .filter((medication) => medication.isActive)
     .forEach((medication) => {
-      if (medication.latestRefillRequestStatus === 'open') {
-        tasks.push({
-          id: `medication-refill-open-${medication.id}`,
-          category: 'medication',
-          title: 'Refill request awaiting review',
-          description: `${medication.name} refill request has been sent to your provider`,
-          dueLabel: formatDueLabel(medication.latestRefillRequestCreatedAt),
-          dueAt: medication.latestRefillRequestCreatedAt,
-          priority: 'soon',
-          provider: medication.hospitalName || medication.prescriberName || medication.pharmacy || undefined,
-          estimatedTime: '2 minutes',
-          actionScreen: 'medications',
-        });
-      } else if ((medication.refillsRemaining ?? 99) <= 1 && medication.sourceType === 'provider') {
+      if (medication.latestRefillRequestStatus !== 'open' && (medication.refillsRemaining ?? 99) <= 1 && medication.sourceType === 'provider') {
         tasks.push({
           id: `medication-refill-${medication.id}`,
           category: 'medication',
@@ -153,7 +136,7 @@ function buildMedicationTasks(medications: PatientMedication[]): HealthTask[] {
         tasks.push({
           id: `medication-intake-${medication.id}`,
           category: 'followup',
-          title: 'Review medication routine',
+          title: 'Update medication routine',
           description: `${medication.name} shows a recent ${medication.lastIntakeStatus} dose`,
           dueLabel: formatDueLabel(medication.lastIntakeDate),
           dueAt: medication.lastIntakeDate,
