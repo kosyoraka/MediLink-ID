@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Search,
   Plus,
@@ -95,6 +95,7 @@ export default function Messages() {
   const [staffId, setStaffId] = useState<string>("");
   const [newMessageBody, setNewMessageBody] = useState("");
   const [starting, setStarting] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   // read-only (e.g., disconnected)
   const [readOnlyReason, setReadOnlyReason] = useState<string | null>(null);
@@ -174,6 +175,11 @@ export default function Messages() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedConversationId]);
+
+  useEffect(() => {
+    if (!selectedConversationId) return;
+    messagesEndRef.current?.scrollIntoView({ block: "end" });
+  }, [messages, selectedConversationId]);
 
   // When opening new message screen, load providers
   useEffect(() => {
@@ -413,7 +419,7 @@ export default function Messages() {
         )}
 
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-          <div className="space-y-4">
+          <div className="flex min-h-full flex-col justify-end gap-4">
             {loadingMessages ? (
               <div className="text-sm text-gray-500">Loading messages…</div>
             ) : messages.length === 0 ? (
@@ -455,6 +461,7 @@ export default function Messages() {
                 );
               })
             )}
+            <div ref={messagesEndRef} />
           </div>
         </div>
 
