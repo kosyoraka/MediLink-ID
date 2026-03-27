@@ -49,6 +49,9 @@ type StaffAppointmentRow = {
   status: string;
   patientId: string;
   type?: string | null;
+  notes?: string | null;
+  providerName?: string | null;
+  hospitalName?: string | null;
 };
 
 type PatientProfileResponse = {
@@ -254,6 +257,11 @@ const conditionStatusOptions = [
 const formatConditionDate = (value?: string | null) => {
   if (!value) return 'Not recorded';
   return /^\d{4}-\d{2}-\d{2}$/.test(value) ? formatDate(value) : value;
+};
+
+const openAppointmentDirections = (appointment: StaffAppointmentRow) => {
+  const query = encodeURIComponent(appointment.hospitalName || appointment.providerName || 'Hospital');
+  window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank', 'noopener,noreferrer');
 };
 
 type WeightUnit = 'lbs' | 'kg';
@@ -624,6 +632,9 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
             status: String(row.status ?? ''),
             patientId: String(row.patientId ?? row.patient_id ?? ''),
             type: String(row.type ?? row.appointmentType ?? 'Appointment'),
+            notes: row.notes ? String(row.notes) : '',
+            providerName: row.providerName ?? row.provider_name ?? null,
+            hospitalName: row.hospitalName ?? row.hospital_name ?? null,
           }))
           .filter((row: StaffAppointmentRow) => row.patientId === patient.id);
 
@@ -1834,22 +1845,55 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
               {patientAppointments
                 .slice()
                 .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
-                .map((appointment) => (
-                  <Card key={appointment.id}>
-                    <CardContent className="p-5">
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <div className="flex items-center gap-3">
-                            <Calendar className="w-4 h-4 text-blue-600" />
-                            <p className="font-medium text-gray-900">{formatDateTime(appointment.startTime)}</p>
+                .map((appointment) => {
+                  const visitMode = String(appointment.type || '').toLowerCase();
+                  const hasDirections = visitMode === 'in-person';
+
+                  return (
+                    <Card
+                      key={appointment.id}
+                      className={hasDirections ? 'cursor-pointer transition hover:border-blue-200 hover:bg-blue-50/30' : undefined}
+                      onClick={hasDirections ? () => openAppointmentDirections(appointment) : undefined}
+                    >
+                      <CardContent className="p-5">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-3">
+                              <Calendar className="w-4 h-4 text-blue-600" />
+                              <p className="font-medium text-gray-900">{formatDateTime(appointment.startTime)}</p>
+                            </div>
+                            <p className="mt-2 text-sm text-gray-600">{appointment.type || 'Appointment'}</p>
+                            <div className="mt-3 flex items-center gap-2 text-sm text-gray-600">
+                              <MapPin className="h-4 w-4 text-gray-400" />
+                              <span>{appointment.hospitalName || appointment.providerName || 'Provider location'}</span>
+                            </div>
+                            {appointment.notes ? (
+                              <p className="mt-3 text-sm text-gray-500">{appointment.notes}</p>
+                            ) : null}
                           </div>
-                          <p className="mt-2 text-sm text-gray-600">{appointment.type || 'Appointment'}</p>
+                          <div className="flex flex-col items-end gap-3">
+                            <Badge variant="outline">{appointment.status}</Badge>
+                            {hasDirections ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="gap-2"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openAppointmentDirections(appointment);
+                                }}
+                              >
+                                <MapPin className="h-4 w-4" />
+                                Directions
+                              </Button>
+                            ) : null}
+                          </div>
                         </div>
-                        <Badge variant="outline">{appointment.status}</Badge>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
             </div>
           )}
         </div>

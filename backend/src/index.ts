@@ -3613,10 +3613,13 @@ app.get("/api/staff/appointments", requireStaffAuth, async (req: any, res) => {
         a.start_time,
         a.type,
         a.status,
-        a.notes
+        a.notes,
+        a.provider_name,
+        h.name AS hospital_name
       FROM appointments a
       JOIN patients p ON p.id = a.patient_id
       LEFT JOIN patient_profiles pp ON pp.patient_id = p.id
+      LEFT JOIN hospitals h ON h.id = a.hospital_id
       WHERE a.staff_id = $1
       ORDER BY a.start_time ASC
       `,
@@ -3639,7 +3642,9 @@ app.get("/api/staff/appointments", requireStaffAuth, async (req: any, res) => {
       type: row.type,       // mode
       status: row.status,
       notes: row.notes ?? "",
-      appointmentType: row.type_or_specialty_here
+      appointmentType: row.type,
+      providerName: row.provider_name ?? null,
+      hospitalName: row.hospital_name ?? null,
      };
 
     });
