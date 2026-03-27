@@ -77,12 +77,19 @@ function buildAppointmentTasks(appointments: PatientAppointment[]): HealthTask[]
     .map((appointment) => {
       const visitMode = String(appointment.visitMode || '').replace('-', ' ');
       const statusMeta = getTaskStatusMeta(appointment.startTime, 'urgent');
+      const status = String(appointment.status || '').trim().toLowerCase();
+      const appointmentLabel = appointment.appointmentType || 'appointment';
+      const isAwaitingProviderConfirmation = status === 'pending' || status === 'scheduled';
 
       return {
         id: `appointment-${appointment.id}`,
         category: 'appointment',
-        title: `Confirm ${appointment.appointmentType || 'appointment'}`,
-        description: `${visitMode || 'Visit'} with ${appointment.providerName || appointment.hospitalName || 'your provider'}`,
+        title: isAwaitingProviderConfirmation
+          ? `Review ${appointmentLabel}`
+          : `Upcoming ${appointmentLabel}`,
+        description: isAwaitingProviderConfirmation
+          ? `${visitMode || 'Visit'} with ${appointment.providerName || appointment.hospitalName || 'your provider'} is awaiting provider confirmation`
+          : `${visitMode || 'Visit'} with ${appointment.providerName || appointment.hospitalName || 'your provider'}`,
         dueLabel: statusMeta.dueLabel,
         dueAt: appointment.startTime,
         priority: statusMeta.priority,
