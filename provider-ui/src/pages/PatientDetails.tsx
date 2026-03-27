@@ -182,6 +182,50 @@ const intakeStatusLabel = (value: 'taken' | 'missed' | 'skipped' | null) => {
   return 'No intake logged';
 };
 
+const intakeStatusBadge = (value: 'taken' | 'missed' | 'skipped' | null) => {
+  if (value === 'taken') {
+    return {
+      label: 'Taken',
+      className: 'bg-emerald-100 text-emerald-700',
+      cardClassName: 'border-emerald-200 bg-emerald-50/40',
+    };
+  }
+  if (value === 'missed') {
+    return {
+      label: 'Missed dose',
+      className: 'bg-rose-100 text-rose-700',
+      cardClassName: 'border-rose-200 bg-rose-50/40',
+    };
+  }
+  if (value === 'skipped') {
+    return {
+      label: 'Skipped dose',
+      className: 'bg-amber-100 text-amber-800',
+      cardClassName: 'border-amber-200 bg-amber-50/50',
+    };
+  }
+  return {
+    label: 'No intake logged',
+    className: 'bg-gray-100 text-gray-700',
+    cardClassName: 'border-gray-200 bg-gray-50',
+  };
+};
+
+const refillRequestBadge = (value: string | null) => {
+  if (value) {
+    return {
+      label: 'Refill requested',
+      className: 'bg-sky-100 text-sky-700',
+      cardClassName: 'border-sky-200 bg-sky-50/40',
+    };
+  }
+  return {
+    label: 'No refill request',
+    className: 'bg-gray-100 text-gray-700',
+    cardClassName: '',
+  };
+};
+
 const conditionStatusOptions = [
   'Active',
   'Managed',
@@ -695,6 +739,31 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
   const activeMedications = useMemo(
     () => patientMedications.filter((medication) => medication.isActive),
     [patientMedications]
+  );
+  const adherenceAlerts = useMemo(
+    () =>
+      activeMedications
+        .filter(
+          (medication) =>
+            medication.lastIntakeStatus === 'missed' || medication.lastIntakeStatus === 'skipped'
+        )
+        .sort((a, b) => {
+          const aTime = new Date(a.lastIntakeDate || 0).getTime();
+          const bTime = new Date(b.lastIntakeDate || 0).getTime();
+          return bTime - aTime;
+        }),
+    [activeMedications]
+  );
+  const refillAlerts = useMemo(
+    () =>
+      activeMedications
+        .filter((medication) => Boolean(medication.lastRefillRequestedAt))
+        .sort((a, b) => {
+          const aTime = new Date(a.lastRefillRequestedAt || 0).getTime();
+          const bTime = new Date(b.lastRefillRequestedAt || 0).getTime();
+          return bTime - aTime;
+        }),
+    [activeMedications]
   );
   const latestInsuranceDocument = useMemo(
     () =>
@@ -1338,10 +1407,93 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
                     Add Medication
                   </Button>
                 </div>
+                {adherenceAlerts.length ? (
+                  <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+                    <div className="flex items-start gap-3">
+                      <AlertCircle className="mt-0.5 h-5 w-5 text-amber-700" />
+                      <div className="min-w-0">
+                        <p className="font-medium text-amber-900">Adherence alerts need provider review</p>
+                        <p className="mt-1 text-sm text-amber-800">
+                          {adherenceAlerts.length === 1
+                            ? 'One active medication has a missed or skipped patient intake log.'
+                            : `${adherenceAlerts.length} active medications have missed or skipped patient intake logs.`}
+                        </p>
+                        <div className="mt-3 space-y-2">
+                          {adherenceAlerts.slice(0, 3).map((medication) => (
+                            <div
+                              key={medication.id}
+                              className="flex items-start justify-between gap-3 rounded-lg border border-amber-200 bg-white px-3 py-2"
+                            >
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-gray-900">{medication.name}</p>
+                                <p className="text-xs text-gray-600">
+                                  {intakeStatusLabel(medication.lastIntakeStatus)} on {formatDate(medication.lastIntakeDate)}
+                                </p>
+                                {medication.recentIntakeLogs[0]?.note ? (
+                                  <p className="mt-1 text-xs text-gray-500">
+                                    Latest note: {medication.recentIntakeLogs[0].note}
+                                  </p>
+                                ) : null}
+                              </div>
+                              <Badge className={`${intakeStatusBadge(medication.lastIntakeStatus).className} border-0`}>
+                                {intakeStatusBadge(medication.lastIntakeStatus).label}
+                              </Badge>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+                {refillAlerts.length ? (
+                  <div className="mb-4 rounded-xl border border-sky-200 bg-sky-50 p-4">
+                    <div className="flex items-start gap-3">
+                      <RefreshCw className="mt-0.5 h-5 w-5 text-sky-700" />
+                      <div className="min-w-0">
+                        <p className="font-medium text-sky-900">Refill requests are waiting for review</p>
+                        <p className="mt-1 text-sm text-sky-800">
+                          {refillAlerts.length === 1
+                            ? 'One active medication has a patient refill request.'
+                            : `${refillAlerts.length} active medications have patient refill requests.`}
+                        </p>
+                        <div className="mt-3 space-y-2">
+                          {refillAlerts.slice(0, 3).map((medication) => (
+                            <div
+                              key={medication.id}
+                              className="flex items-start justify-between gap-3 rounded-lg border border-sky-200 bg-white px-3 py-2"
+                            >
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-gray-900">{medication.name}</p>
+                                <p className="text-xs text-gray-600">
+                                  Requested on {formatDateTime(medication.lastRefillRequestedAt)}
+                                </p>
+                                <p className="mt-1 text-xs text-gray-500">
+                                  Refills remaining: {medication.refillsRemaining ?? '—'}
+                                </p>
+                              </div>
+                              <Badge className={`${refillRequestBadge(medication.lastRefillRequestedAt).className} border-0`}>
+                                {refillRequestBadge(medication.lastRefillRequestedAt).label}
+                              </Badge>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
                 {activeMedications.length ? (
                   <div className="space-y-3">
                     {activeMedications.map((medication) => (
-                      <div key={medication.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                      <div
+                        key={medication.id}
+                        className={`rounded-xl border p-4 ${
+                          medication.lastIntakeStatus === 'missed' || medication.lastIntakeStatus === 'skipped'
+                            ? intakeStatusBadge(medication.lastIntakeStatus).cardClassName
+                            : medication.lastRefillRequestedAt
+                            ? refillRequestBadge(medication.lastRefillRequestedAt).cardClassName
+                            : intakeStatusBadge(medication.lastIntakeStatus).cardClassName
+                        }`}
+                      >
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <div className="flex items-center gap-2 flex-wrap">
@@ -1349,15 +1501,28 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
                               <Badge className={`${medication.sourceType === 'provider' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'} border-0`}>
                                 {medication.sourceType === 'provider' ? 'Provider-prescribed' : 'Patient-added'}
                               </Badge>
+                              <Badge className={`${intakeStatusBadge(medication.lastIntakeStatus).className} border-0`}>
+                                {intakeStatusBadge(medication.lastIntakeStatus).label}
+                              </Badge>
+                              {medication.lastRefillRequestedAt ? (
+                                <Badge className={`${refillRequestBadge(medication.lastRefillRequestedAt).className} border-0`}>
+                                  {refillRequestBadge(medication.lastRefillRequestedAt).label}
+                                </Badge>
+                              ) : null}
                             </div>
                             <p className="text-sm text-gray-600 mt-1">{[medication.dosage, medication.frequency].filter(Boolean).join(' • ') || 'Details pending'}</p>
                             <p className="text-xs text-gray-500 mt-1">{medication.prescriberName}</p>
                             {medication.hospitalName ? <p className="text-xs text-gray-500 mt-1">{medication.hospitalName}</p> : null}
                             {medication.purpose ? <p className="text-xs text-gray-500 mt-1">Purpose: {medication.purpose}</p> : null}
-                            <p className="text-xs text-gray-500 mt-2">
+                            <p className="text-xs text-gray-600 mt-2">
                               Latest intake: {intakeStatusLabel(medication.lastIntakeStatus)}
                               {medication.lastIntakeDate ? ` on ${formatDate(medication.lastIntakeDate)}` : ''}
                             </p>
+                            {medication.lastRefillRequestedAt ? (
+                              <p className="text-xs text-sky-700 mt-1">
+                                Refill requested on {formatDateTime(medication.lastRefillRequestedAt)}
+                              </p>
+                            ) : null}
                           </div>
                           <div className="flex flex-col gap-2">
                             {medication.sourceType === 'provider' ? (
@@ -1372,12 +1537,16 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
                         </div>
                         {medication.recentIntakeLogs.length > 0 ? (
                           <div className="mt-3 rounded-lg bg-white border border-gray-200 p-3">
-                            <p className="text-xs uppercase tracking-wide text-gray-500 mb-2">Recent Intake Logs</p>
+                            <p className="text-xs uppercase tracking-wide text-gray-500 mb-2">Recent Patient Intake Logs</p>
                             <div className="space-y-2">
                               {medication.recentIntakeLogs.slice(0, 3).map((log) => (
                                 <div key={log.id} className="flex items-start justify-between gap-3 text-xs text-gray-600">
                                   <span>{formatDate(log.loggedForDate)}</span>
-                                  <span className="capitalize">{log.status}</span>
+                                  <span>
+                                    <Badge className={`${intakeStatusBadge(log.status).className} border-0 text-[10px]`}>
+                                      {intakeStatusBadge(log.status).label}
+                                    </Badge>
+                                  </span>
                                   <span className="flex-1 text-right">{log.note || 'No note'}</span>
                                 </div>
                               ))}
