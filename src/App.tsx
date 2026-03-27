@@ -404,7 +404,18 @@ export default function App() {
         return <EmergencyPublic token={emergencyToken} />;
 
       case 'health-tasks':
-        return <HealthTasks onBack={() => handleNavigation('dashboard', 'home')} />;
+        return (
+          <HealthTasks
+            onBack={() => handleNavigation('dashboard', 'home')}
+            onNavigate={(screen) => {
+              if (screen === 'appointments') handleNavigation('appointments', 'appointments');
+              if (screen === 'documents') handleNavigation('documents', 'home');
+              if (screen === 'medications') handleNavigation('medications', 'home');
+              if (screen === 'recommendations') handleNavigation('recommendations', 'home');
+              if (screen === 'manage-providers') handleNavigation('manage-providers', 'more');
+            }}
+          />
+        );
 
       case 'health-summary':
         return (
