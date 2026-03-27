@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { ArrowLeft, AlertCircle, Calendar, MessageCircle, MapPin } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ArrowLeft, AlertCircle, Calendar, History, MessageCircle, MapPin, Search } from "lucide-react";
 import { Button } from "./ui/button";
 import { Textarea } from "./ui/textarea";
 import { Badge } from "./ui/badge";
@@ -7,6 +7,7 @@ import BodyDiagram from "./BodyDiagram";
 
 interface SymptomCheckerProps {
   onBack: () => void;
+  onNavigate?: (screen: "appointments" | "messages") => void;
 }
 
 type Step = "input" | "result";
@@ -29,7 +30,37 @@ type GuidanceResult = {
   disclaimer: string;
 };
 
-export default function SymptomChecker({ onBack }: SymptomCheckerProps) {
+type InquiryRecord = {
+  id: string;
+  createdAt: string;
+  symptoms: string;
+  selectedBody: string[];
+  duration: DurationOption | "";
+  severity: SeverityOption | "";
+  result: GuidanceResult;
+  followUps: Array<{
+    id: string;
+    createdAt: string;
+    message: string;
+    result: GuidanceResult;
+  }>;
+};
+
+const HISTORY_STORAGE_KEY = "medilink_symptom_checker_history";
+
+function loadStoredHistory(): InquiryRecord[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(HISTORY_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export default function SymptomChecker({ onBack, onNavigate }: SymptomCheckerProps) {
   const [step, setStep] = useState<Step>("input");
   const [symptoms, setSymptoms] = useState("");
   const [selectedBody, setSelectedBody] = useState<string[]>([]);
@@ -39,6 +70,11 @@ export default function SymptomChecker({ onBack }: SymptomCheckerProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<GuidanceResult | null>(null);
+  const [history, setHistory] = useState<InquiryRecord[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [activeInquiryId, setActiveInquiryId] = useState<string | null>(null);
+  const [followUpPrompt, setFollowUpPrompt] = useState("");
+  const [followUpLoading, setFollowUpLoading] = useState(false);
 
   const canSubmit =
     symptoms.trim().length > 0 &&
@@ -46,6 +82,20 @@ export default function SymptomChecker({ onBack }: SymptomCheckerProps) {
     !!duration &&
     !!severity &&
     !loading;
+
+  useEffect(() => {
+    setHistory(loadStoredHistory());
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history));
+  }, [history]);
+
+  const activeInquiry = useMemo(
+    () => history.find((item) => item.id === activeInquiryId) || null,
+    [history, activeInquiryId]
+  );
 
   const getUrgencyStyle = (level: GuidanceResult["urgencyLevel"]) => {
     switch (level) {
@@ -99,6 +149,21 @@ export default function SymptomChecker({ onBack }: SymptomCheckerProps) {
       if (!data?.result) throw new Error("Invalid response from AI service");
 
       setResult(data.result);
+      const inquiryId = `${Date.now()}`;
+      setActiveInquiryId(inquiryId);
+      setHistory((current) => [
+        {
+          id: inquiryId,
+          createdAt: new Date().toISOString(),
+          symptoms: symptoms.trim(),
+          selectedBody,
+          duration,
+          severity,
+          result: data.result,
+          followUps: [],
+        },
+        ...current,
+      ]);
       setStep("result");
     } catch (e: any) {
       setError(e?.message || "AI guidance failed");
@@ -107,6 +172,82 @@ export default function SymptomChecker({ onBack }: SymptomCheckerProps) {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function requestFollowUp() {
+    if (!activeInquiry || !followUpPrompt.trim() || followUpLoading) return;
+
+    setFollowUpLoading(true);
+    setError(null);
+
+    try {
+      const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
+      const res = await fetch(`${API_BASE}/api/ai/symptom-guidance`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bodyParts: activeInquiry.selectedBody,
+          symptoms: `${activeInquiry.symptoms}\n\nFollow-up question: ${followUpPrompt.trim()}`,
+          duration: activeInquiry.duration,
+          severity: activeInquiry.severity,
+        }),
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `Request failed (${res.status})`);
+      }
+
+      const data = (await res.json()) as { result: GuidanceResult };
+      if (!data?.result) throw new Error("Invalid response from AI service");
+
+      const followUpEntry = {
+        id: `${Date.now()}-followup`,
+        createdAt: new Date().toISOString(),
+        message: followUpPrompt.trim(),
+        result: data.result,
+      };
+
+      setHistory((current) =>
+        current.map((item) =>
+          item.id === activeInquiry.id
+            ? { ...item, followUps: [...item.followUps, followUpEntry] }
+            : item
+        )
+      );
+      setFollowUpPrompt("");
+    } catch (e: any) {
+      setError(e?.message || "Follow-up guidance failed");
+    } finally {
+      setFollowUpLoading(false);
+    }
+  }
+
+  function openAppointments() {
+    onNavigate?.("appointments");
+  }
+
+  function openMessages() {
+    onNavigate?.("messages");
+  }
+
+  function openWalkInClinicSearch() {
+    window.open(
+      "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent("walk-in clinic near me"),
+      "_blank",
+      "noopener,noreferrer"
+    );
+  }
+
+  function openInquiryHistory(inquiryId?: string) {
+    setActiveInquiryId(inquiryId || history[0]?.id || activeInquiryId || null);
+    setShowHistory(true);
+  }
+
+  function reopenInquiry(inquiry: InquiryRecord) {
+    setActiveInquiryId(inquiry.id);
+    setResult(inquiry.result);
+    setShowHistory(true);
   }
 
   // ----------------------------
@@ -231,20 +372,141 @@ export default function SymptomChecker({ onBack }: SymptomCheckerProps) {
 
           {/* Actions */}
           <div className="space-y-3">
-            <Button className="w-full bg-teal-600 hover:bg-teal-700 text-white h-12" type="button">
+            <Button
+              className="w-full bg-teal-600 hover:bg-teal-700 text-white h-12"
+              type="button"
+              onClick={openAppointments}
+            >
               <Calendar className="w-5 h-5 mr-2" />
               Book Appointment
             </Button>
-            <Button variant="outline" className="w-full h-12" type="button">
+            <Button variant="outline" className="w-full h-12" type="button" onClick={openMessages}>
               <MessageCircle className="w-5 h-5 mr-2" />
               Message Your Provider
             </Button>
-            <Button variant="outline" className="w-full h-12" type="button">
+            <Button variant="outline" className="w-full h-12" type="button" onClick={openWalkInClinicSearch}>
               <MapPin className="w-5 h-5 mr-2" />
               Find Nearest Walk-in Clinic
             </Button>
+            <Button variant="outline" className="w-full h-12" type="button" onClick={() => openInquiryHistory(activeInquiryId || undefined)}>
+              <History className="w-5 h-5 mr-2" />
+              Continue Conversation
+            </Button>
           </div>
         </div>
+
+        {showHistory ? (
+          <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-4">
+            <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white shadow-xl max-h-[85vh] overflow-hidden">
+              <div className="flex items-center justify-between border-b border-gray-100 p-4">
+                <div>
+                  <h3 className="text-gray-900">Additional Inquiries</h3>
+                  <p className="text-xs text-gray-500">Review past guidance and ask follow-up questions.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowHistory(false)}
+                  className="rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-100"
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="grid gap-4 p-4 sm:grid-cols-[180px_minmax(0,1fr)] max-h-[calc(85vh-72px)] overflow-y-auto">
+                <div className="space-y-2">
+                  <p className="text-xs uppercase tracking-wide text-gray-500">Past Inquiries</p>
+                  {history.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-gray-200 p-3 text-sm text-gray-500">
+                      No past inquiries yet.
+                    </div>
+                  ) : (
+                    history.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setActiveInquiryId(item.id)}
+                        className={`w-full rounded-xl border p-3 text-left transition-colors ${
+                          item.id === activeInquiryId
+                            ? "border-teal-200 bg-teal-50"
+                            : "border-gray-200 hover:bg-gray-50"
+                        }`}
+                      >
+                        <p className="text-sm font-medium text-gray-900 line-clamp-2">{item.symptoms}</p>
+                        <p className="mt-1 text-xs text-gray-500">
+                          {new Date(item.createdAt).toLocaleDateString()} • {item.severity}
+                        </p>
+                      </button>
+                    ))
+                  )}
+                </div>
+
+                <div className="space-y-4">
+                  {activeInquiry ? (
+                    <>
+                      <div className="rounded-xl border border-gray-200 p-4">
+                        <p className="text-xs uppercase tracking-wide text-gray-500">Original Inquiry</p>
+                        <p className="mt-2 text-sm text-gray-900">{activeInquiry.symptoms}</p>
+                        <p className="mt-2 text-xs text-gray-500">
+                          Areas: {activeInquiry.selectedBody.join(", ")} • {activeInquiry.duration} • {activeInquiry.severity}
+                        </p>
+                      </div>
+
+                      <div className="rounded-xl border border-gray-200 p-4">
+                        <p className="text-xs uppercase tracking-wide text-gray-500">Latest Guidance</p>
+                        <p className="mt-2 text-sm font-medium text-gray-900">
+                          {activeInquiry.followUps.length > 0
+                            ? activeInquiry.followUps[activeInquiry.followUps.length - 1].result.urgencyTitle
+                            : activeInquiry.result.urgencyTitle}
+                        </p>
+                        <p className="mt-2 text-sm text-gray-700">
+                          {activeInquiry.followUps.length > 0
+                            ? activeInquiry.followUps[activeInquiry.followUps.length - 1].result.urgencyMessage
+                            : activeInquiry.result.urgencyMessage}
+                        </p>
+                      </div>
+
+                      {activeInquiry.followUps.length > 0 ? (
+                        <div className="rounded-xl border border-gray-200 p-4">
+                          <p className="text-xs uppercase tracking-wide text-gray-500">Past Follow-ups</p>
+                          <div className="mt-3 space-y-3">
+                            {activeInquiry.followUps.map((item) => (
+                              <div key={item.id} className="rounded-lg bg-gray-50 p-3">
+                                <p className="text-sm font-medium text-gray-900">{item.message}</p>
+                                <p className="mt-1 text-sm text-gray-600">{item.result.urgencyMessage}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+
+                      <div className="rounded-xl border border-gray-200 p-4">
+                        <p className="text-xs uppercase tracking-wide text-gray-500">Continue Conversation</p>
+                        <Textarea
+                          className="mt-3 min-h-24"
+                          placeholder="Ask a follow-up question about this guidance..."
+                          value={followUpPrompt}
+                          onChange={(e) => setFollowUpPrompt(e.target.value)}
+                        />
+                        <div className="mt-3 flex gap-2">
+                          <Button type="button" className="flex-1 bg-teal-600 hover:bg-teal-700" onClick={requestFollowUp} disabled={!followUpPrompt.trim() || followUpLoading}>
+                            {followUpLoading ? "Sending..." : "Ask Follow-up"}
+                          </Button>
+                          <Button type="button" variant="outline" onClick={() => reopenInquiry(activeInquiry)}>
+                            Open Result
+                          </Button>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-gray-200 p-6 text-sm text-gray-500">
+                      Select a past inquiry to continue the conversation.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -358,15 +620,83 @@ export default function SymptomChecker({ onBack }: SymptomCheckerProps) {
           </div>
         )}
 
-        <Button
-          onClick={handleGetGuidance}
-          disabled={!canSubmit}
-          className="w-full bg-teal-600 hover:bg-teal-700 text-white h-12"
-          type="button"
-        >
-          {loading ? "Getting guidance..." : "Get Guidance"}
-        </Button>
+        <div className="space-y-3">
+          <Button
+            onClick={handleGetGuidance}
+            disabled={!canSubmit}
+            className="w-full bg-teal-600 hover:bg-teal-700 text-white h-12"
+            type="button"
+          >
+            {loading ? "Getting guidance..." : "Get Guidance"}
+          </Button>
+
+          <Button
+            variant="outline"
+            className="w-full h-12"
+            type="button"
+            onClick={() => openInquiryHistory()}
+          >
+            <Search className="w-5 h-5 mr-2" />
+            Past Inquiries
+          </Button>
+        </div>
       </div>
+
+      {showHistory ? (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white shadow-xl max-h-[85vh] overflow-hidden">
+            <div className="flex items-center justify-between border-b border-gray-100 p-4">
+              <div>
+                <h3 className="text-gray-900">Past Inquiries</h3>
+                <p className="text-xs text-gray-500">Continue a previous AI guidance conversation.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowHistory(false)}
+                className="rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-100"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="max-h-[calc(85vh-72px)] overflow-y-auto p-4">
+              <div className="space-y-3">
+                {history.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-gray-200 p-4 text-sm text-gray-500">
+                    No past inquiries yet. Ask for guidance first and it will appear here.
+                  </div>
+                ) : (
+                  history.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => {
+                        setActiveInquiryId(item.id);
+                        setResult(item.result);
+                        setStep("result");
+                        setShowHistory(true);
+                      }}
+                      className="w-full rounded-xl border border-gray-200 p-4 text-left hover:bg-gray-50"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-gray-900 line-clamp-2">{item.symptoms}</p>
+                          <p className="mt-1 text-xs text-gray-500">
+                            {new Date(item.createdAt).toLocaleDateString()} • {item.severity}
+                          </p>
+                        </div>
+                        <Badge className="border-0 bg-orange-100 text-orange-700">
+                          {item.result.urgencyLevel}
+                        </Badge>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

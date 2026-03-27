@@ -395,7 +395,15 @@ export default function App() {
         return <NutritionFitness onBack={() => handleNavigation('dashboard', 'home')} />;
 
       case 'symptom-checker':
-        return <SymptomChecker onBack={() => handleNavigation('dashboard', 'home')} />;
+        return (
+          <SymptomChecker
+            onBack={() => handleNavigation('dashboard', 'home')}
+            onNavigate={(screen) => {
+              if (screen === 'appointments') handleNavigation('appointments', 'appointments');
+              if (screen === 'messages') handleNavigation('messages', 'messages');
+            }}
+          />
+        );
 
       case 'medical-history':
         return <MedicalHistory onBack={() => handleNavigation('dashboard', 'home')} />;
