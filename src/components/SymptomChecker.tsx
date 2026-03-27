@@ -42,7 +42,7 @@ type InquiryRecord = {
     id: string;
     createdAt: string;
     message: string;
-    result: GuidanceResult;
+    reply: string;
   }>;
 };
 
@@ -188,9 +188,13 @@ export default function SymptomChecker({ onBack, onNavigate }: SymptomCheckerPro
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           bodyParts: activeInquiry.selectedBody,
-          symptoms: `${activeInquiry.symptoms}\n\nFollow-up question: ${followUpPrompt.trim()}`,
+          symptoms: activeInquiry.symptoms,
           duration: activeInquiry.duration,
           severity: activeInquiry.severity,
+          priorGuidance: activeInquiry.followUps.length > 0
+            ? activeInquiry.followUps[activeInquiry.followUps.length - 1].reply
+            : activeInquiry.result.urgencyMessage,
+          followUpQuestion: followUpPrompt.trim(),
         }),
       });
 
@@ -199,14 +203,14 @@ export default function SymptomChecker({ onBack, onNavigate }: SymptomCheckerPro
         throw new Error(text || `Request failed (${res.status})`);
       }
 
-      const data = (await res.json()) as { result: GuidanceResult };
-      if (!data?.result) throw new Error("Invalid response from AI service");
+      const data = (await res.json()) as { followUp?: { reply?: string } };
+      if (!data?.followUp?.reply) throw new Error("Invalid response from AI service");
 
       const followUpEntry = {
         id: `${Date.now()}-followup`,
         createdAt: new Date().toISOString(),
         message: followUpPrompt.trim(),
-        result: data.result,
+        reply: data.followUp.reply,
       };
 
       setHistory((current) =>
@@ -432,8 +436,7 @@ export default function SymptomChecker({ onBack, onNavigate }: SymptomCheckerPro
                         </div>
                         <div className="ml-auto rounded-2xl bg-teal-50 border border-teal-100 px-4 py-3 max-w-[90%]">
                           <p className="text-xs uppercase tracking-wide text-teal-700">MediLink AI</p>
-                          <p className="mt-1 text-sm font-medium text-gray-900">{item.result.urgencyTitle}</p>
-                          <p className="mt-2 text-sm text-gray-700">{item.result.urgencyMessage}</p>
+                          <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-gray-700">{item.reply}</p>
                         </div>
                       </div>
                     ))}

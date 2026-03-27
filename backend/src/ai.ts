@@ -9,7 +9,7 @@ const client = new OpenAI({
 
 router.post('/symptom-guidance', async (req, res) => {
   try {
-    const { bodyParts, symptoms, duration, severity } = req.body ?? {};
+    const { bodyParts, symptoms, duration, severity, followUpQuestion, priorGuidance } = req.body ?? {};
 
     if (!Array.isArray(bodyParts) || bodyParts.length === 0) {
       return res.status(400).send('bodyParts is required');
@@ -45,6 +45,63 @@ Rules:
 - Do NOT provide medical diagnosis.
 Return ONLY valid JSON matching the schema.
 `;
+
+    if (typeof followUpQuestion === 'string' && followUpQuestion.trim()) {
+      const followUpSystem = `
+You are a conversational health guidance assistant continuing an existing symptom-checker conversation.
+Rules:
+- Answer the patient's latest follow-up question directly and naturally.
+- Use the earlier symptom context to keep the answer relevant.
+- General guidance only, not a diagnosis.
+- Be practical, concise, and safety-focused.
+- If the patient asks what they can take, you may mention common over-the-counter options only in general terms and include key safety caveats.
+- Never claim to cure the problem.
+- Mention red-flag symptoms or worsening signs when important.
+- Return ONLY valid JSON.
+`;
+
+      const followUpSchema = `
+Return JSON exactly in this shape:
+{
+  "reply": string
+}
+`;
+
+      const followUpUser = `
+Original symptom context:
+- Where it hurts: ${selected}
+- Duration: ${duration}
+- Severity: ${severity}
+- Description: ${symptoms}
+
+Previous guidance summary:
+${typeof priorGuidance === 'string' && priorGuidance.trim() ? priorGuidance.trim() : 'Not provided'}
+
+Latest patient follow-up question:
+${followUpQuestion.trim()}
+
+Write a helpful conversational reply in 1-3 short paragraphs.
+${followUpSchema}
+`;
+
+      const followUpResponse = await client.responses.create({
+        model: 'gpt-4.1-mini',
+        input: [
+          { role: 'system', content: followUpSystem },
+          { role: 'user', content: followUpUser },
+        ],
+        temperature: 0.5,
+      });
+
+      const text = followUpResponse.output_text?.trim() || '';
+      const firstBrace = text.indexOf('{');
+      const lastBrace = text.lastIndexOf('}');
+      const jsonStr =
+        firstBrace !== -1 && lastBrace !== -1 ? text.slice(firstBrace, lastBrace + 1) : text;
+
+      const followUpResult = JSON.parse(jsonStr);
+      return res.json({ followUp: followUpResult });
+    }
 
     const schema = `
 Return JSON exactly in this shape:
