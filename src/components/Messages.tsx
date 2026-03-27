@@ -386,7 +386,7 @@ export default function Messages() {
   // ---------------- UI: THREAD VIEW ----------------
   if (selectedConversationId && selectedConversation) {
     return (
-      <div className="h-[calc(100vh-4rem)] bg-gray-50 flex flex-col">
+      <div className="flex h-[calc(100dvh-8rem)] flex-col bg-gray-50">
         <div className="bg-white border-b border-gray-200 p-4">
           <div className="flex items-center gap-3">
             <button onClick={() => setSelectedConversationId(null)} className="text-gray-600">
@@ -412,51 +412,53 @@ export default function Messages() {
           </div>
         )}
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 pt-4 pb-36 space-y-4">
-          {loadingMessages ? (
-            <div className="text-sm text-gray-500">Loading messages…</div>
-          ) : messages.length === 0 ? (
-            <div className="text-sm text-gray-500">No messages yet.</div>
-          ) : (
-            messages.map((m) => {
-              const isPatient = m.sender_type === "patient";
-              const isSystem = m.sender_type === "system";
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+          <div className="space-y-4">
+            {loadingMessages ? (
+              <div className="text-sm text-gray-500">Loading messages…</div>
+            ) : messages.length === 0 ? (
+              <div className="text-sm text-gray-500">No messages yet.</div>
+            ) : (
+              messages.map((m) => {
+                const isPatient = m.sender_type === "patient";
+                const isSystem = m.sender_type === "system";
 
-              if (isSystem) {
+                if (isSystem) {
+                  return (
+                    <div key={m.id} className="flex justify-center">
+                      <div className="text-xs text-gray-500 bg-gray-100 border border-gray-200 rounded-full px-3 py-1">
+                        {m.body}
+                      </div>
+                    </div>
+                  );
+                }
+
                 return (
-                  <div key={m.id} className="flex justify-center">
-                    <div className="text-xs text-gray-500 bg-gray-100 border border-gray-200 rounded-full px-3 py-1">
-                      {m.body}
+                  <div key={m.id} className={`flex ${isPatient ? "justify-end" : "justify-start"}`}>
+                    <div
+                      className={`rounded-2xl p-4 max-w-xs shadow-sm ${
+                        isPatient
+                          ? "bg-teal-600 text-white rounded-tr-sm"
+                          : "bg-white border border-gray-200 text-gray-800 rounded-tl-sm"
+                      }`}
+                    >
+                      <p className="whitespace-pre-wrap">{m.body}</p>
+                      <p
+                        className={`text-xs mt-2 ${
+                          isPatient ? "text-teal-100" : "text-gray-500"
+                        }`}
+                      >
+                        {formatTime(m.created_at)}
+                      </p>
                     </div>
                   </div>
                 );
-              }
-
-              return (
-                <div key={m.id} className={`flex ${isPatient ? "justify-end" : "justify-start"}`}>
-                  <div
-                    className={`rounded-2xl p-4 max-w-xs shadow-sm ${
-                      isPatient
-                        ? "bg-teal-600 text-white rounded-tr-sm"
-                        : "bg-white border border-gray-200 text-gray-800 rounded-tl-sm"
-                    }`}
-                  >
-                    <p className="whitespace-pre-wrap">{m.body}</p>
-                    <p
-                      className={`text-xs mt-2 ${
-                        isPatient ? "text-teal-100" : "text-gray-500"
-                      }`}
-                    >
-                      {formatTime(m.created_at)}
-                    </p>
-                  </div>
-                </div>
-              );
-            })
-          )}
+              })
+            )}
+          </div>
         </div>
 
-        <div className="sticky bottom-16 z-10 border-t border-gray-200 bg-white p-4 shadow-[0_-6px_18px_rgba(15,23,42,0.08)]">
+        <div className="shrink-0 border-t border-gray-200 bg-white p-4">
           <div className="flex items-center gap-2">
             <Input
               placeholder={
