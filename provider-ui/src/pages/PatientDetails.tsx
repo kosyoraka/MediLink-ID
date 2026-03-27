@@ -213,11 +213,25 @@ const intakeStatusBadge = (value: 'taken' | 'missed' | 'skipped' | null) => {
 };
 
 const refillRequestBadge = (value: string | null) => {
-  if (value) {
+  if (value === 'open') {
     return {
       label: 'Refill requested',
       className: 'bg-sky-100 text-sky-700',
       cardClassName: 'border-sky-200 bg-sky-50/40',
+    };
+  }
+  if (value === 'approved') {
+    return {
+      label: 'Refill approved',
+      className: 'bg-emerald-100 text-emerald-700',
+      cardClassName: 'border-emerald-200 bg-emerald-50/40',
+    };
+  }
+  if (value === 'denied') {
+    return {
+      label: 'Refill denied',
+      className: 'bg-rose-100 text-rose-700',
+      cardClassName: 'border-rose-200 bg-rose-50/40',
     };
   }
   return {
@@ -467,6 +481,7 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
   const [showConditionModal, setShowConditionModal] = useState(false);
   const [editingCondition, setEditingCondition] = useState<ProviderHealthSummaryCondition | null>(null);
   const [showVitalsModal, setShowVitalsModal] = useState(false);
+  const [resolvingRefillRequestId, setResolvingRefillRequestId] = useState<string | null>(null);
   const [vitalRange, setVitalRange] = useState<VitalRange>('1y');
   const [expandedProviderVitalGroups, setExpandedProviderVitalGroups] = useState<Record<string, boolean>>({});
   const [pendingMedicationResolve, setPendingMedicationResolve] = useState<{ medicationId: string; requestId: string } | null>(
@@ -758,10 +773,10 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
   const refillAlerts = useMemo(
     () =>
       activeMedications
-        .filter((medication) => Boolean(medication.lastRefillRequestedAt))
+        .filter((medication) => medication.latestRefillRequestStatus === 'open')
         .sort((a, b) => {
-          const aTime = new Date(a.lastRefillRequestedAt || 0).getTime();
-          const bTime = new Date(b.lastRefillRequestedAt || 0).getTime();
+          const aTime = new Date(a.latestRefillRequestCreatedAt || a.lastRefillRequestedAt || 0).getTime();
+          const bTime = new Date(b.latestRefillRequestCreatedAt || b.lastRefillRequestedAt || 0).getTime();
           return bTime - aTime;
         }),
     [activeMedications]
@@ -885,6 +900,32 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
       setPatientMedications((current) => current.map((item) => (item.id === medicationId ? res.medication : item)));
     } catch (error) {
       console.error('Failed to update medication:', error);
+    }
+  };
+
+  const resolveRefillRequest = async (
+    medication: ProviderMedication,
+    resolution: 'approved' | 'denied'
+  ) => {
+    if (!medication.latestRefillRequestId) return;
+    try {
+      setResolvingRefillRequestId(medication.latestRefillRequestId);
+      const res = await apiFetch<{ ok: true; resolution: 'approved' | 'denied'; medication: ProviderMedication | null }>(
+        `/api/staff/medication-refill-requests/${medication.latestRefillRequestId}/resolve`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ resolution }),
+        }
+      );
+      if (res.medication) {
+        setPatientMedications((current) =>
+          current.map((item) => (item.id === medication.id ? res.medication! : item))
+        );
+      }
+    } catch (error) {
+      console.error('Failed to resolve refill request:', error);
+    } finally {
+      setResolvingRefillRequestId(null);
     }
   };
 
@@ -1466,15 +1507,39 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
                               <div className="min-w-0">
                                 <p className="text-sm font-medium text-gray-900">{medication.name}</p>
                                 <p className="text-xs text-gray-600">
-                                  Requested on {formatDateTime(medication.lastRefillRequestedAt)}
+                                  Requested on {formatDateTime(medication.latestRefillRequestCreatedAt || medication.lastRefillRequestedAt)}
                                 </p>
                                 <p className="mt-1 text-xs text-gray-500">
                                   Refills remaining: {medication.refillsRemaining ?? '—'}
                                 </p>
+                                {medication.latestRefillRequestNote ? (
+                                  <p className="mt-1 text-xs text-gray-500">
+                                    Patient note: {medication.latestRefillRequestNote}
+                                  </p>
+                                ) : null}
                               </div>
-                              <Badge className={`${refillRequestBadge(medication.lastRefillRequestedAt).className} border-0`}>
-                                {refillRequestBadge(medication.lastRefillRequestedAt).label}
-                              </Badge>
+                              <div className="flex flex-col items-end gap-2">
+                                <Badge className={`${refillRequestBadge(medication.latestRefillRequestStatus).className} border-0`}>
+                                  {refillRequestBadge(medication.latestRefillRequestStatus).label}
+                                </Badge>
+                                <div className="flex gap-2">
+                                  <Button
+                                    size="sm"
+                                    onClick={() => resolveRefillRequest(medication, 'approved')}
+                                    disabled={resolvingRefillRequestId === medication.latestRefillRequestId}
+                                  >
+                                    Approve
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => resolveRefillRequest(medication, 'denied')}
+                                    disabled={resolvingRefillRequestId === medication.latestRefillRequestId}
+                                  >
+                                    Deny
+                                  </Button>
+                                </div>
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -1505,9 +1570,9 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
                               <Badge className={`${intakeStatusBadge(medication.lastIntakeStatus).className} border-0`}>
                                 {intakeStatusBadge(medication.lastIntakeStatus).label}
                               </Badge>
-                              {medication.lastRefillRequestedAt ? (
-                                <Badge className={`${refillRequestBadge(medication.lastRefillRequestedAt).className} border-0`}>
-                                  {refillRequestBadge(medication.lastRefillRequestedAt).label}
+                              {medication.latestRefillRequestStatus ? (
+                                <Badge className={`${refillRequestBadge(medication.latestRefillRequestStatus).className} border-0`}>
+                                  {refillRequestBadge(medication.latestRefillRequestStatus).label}
                                 </Badge>
                               ) : null}
                             </div>
@@ -1519,9 +1584,24 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
                               Latest intake: {intakeStatusLabel(medication.lastIntakeStatus)}
                               {medication.lastIntakeDate ? ` on ${formatDate(medication.lastIntakeDate)}` : ''}
                             </p>
-                            {medication.lastRefillRequestedAt ? (
+                            {medication.latestRefillRequestStatus === 'open' ? (
                               <p className="text-xs text-sky-700 mt-1">
-                                Refill requested on {formatDateTime(medication.lastRefillRequestedAt)}
+                                Refill requested on {formatDateTime(medication.latestRefillRequestCreatedAt || medication.lastRefillRequestedAt)}
+                              </p>
+                            ) : null}
+                            {medication.latestRefillRequestStatus === 'approved' ? (
+                              <p className="text-xs text-emerald-700 mt-1">
+                                Refill approved {medication.latestRefillRequestResolvedAt ? `on ${formatDateTime(medication.latestRefillRequestResolvedAt)}` : ''}
+                              </p>
+                            ) : null}
+                            {medication.latestRefillRequestStatus === 'denied' ? (
+                              <p className="text-xs text-rose-700 mt-1">
+                                Refill denied {medication.latestRefillRequestResolvedAt ? `on ${formatDateTime(medication.latestRefillRequestResolvedAt)}` : ''}
+                              </p>
+                            ) : null}
+                            {medication.latestRefillRequestResolutionNote ? (
+                              <p className="text-xs text-gray-500 mt-1">
+                                Resolution note: {medication.latestRefillRequestResolutionNote}
                               </p>
                             ) : null}
                           </div>

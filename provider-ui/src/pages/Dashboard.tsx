@@ -78,6 +78,7 @@ type StaffConversationRow = {
   id: string;
   unread_count: number;
   open_medication_change_count?: number;
+  open_medication_refill_count?: number;
 };
 
 type StaffConversationsResponse = {
@@ -101,6 +102,7 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
   const [patientCount, setPatientCount] = useState<number | null>(null);
   const [unreadMessages, setUnreadMessages] = useState<number>(0);
   const [medicationChangeRequests, setMedicationChangeRequests] = useState<number>(0);
+  const [medicationRefillRequests, setMedicationRefillRequests] = useState<number>(0);
 
   // ✅ NEW: real appointments from DB (for Today's Appointments count)
   const [appointments, setAppointments] = useState<StaffAppointmentRow[]>([]);
@@ -172,13 +174,19 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
           (sum, c) => sum + (Number(c.open_medication_change_count) || 0),
           0
         );
+        const medicationRefillTotal = (data.conversations || []).reduce(
+          (sum, c) => sum + (Number(c.open_medication_refill_count) || 0),
+          0
+        );
 
         setUnreadMessages(total);
         setMedicationChangeRequests(medicationChangeTotal);
+        setMedicationRefillRequests(medicationRefillTotal);
       } catch {
         if (!alive) return;
         setUnreadMessages(0);
         setMedicationChangeRequests(0);
+        setMedicationRefillRequests(0);
       }
     })();
 
@@ -559,6 +567,25 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
                       </div>
                     </div>
                     <Badge variant="outline">{medicationChangeRequests}</Badge>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  className="w-full rounded-xl border border-gray-200 p-3 text-left transition-colors hover:bg-gray-50"
+                  onClick={() => onNavigate("messages")}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <div className="mt-0.5 rounded-full bg-sky-100 p-2 text-sky-600">
+                        <ClipboardList className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">Refill Requests</p>
+                        <p className="text-xs text-gray-500">Review pending medication refill requests</p>
+                      </div>
+                    </div>
+                    <Badge variant="outline">{medicationRefillRequests}</Badge>
                   </div>
                 </button>
               </div>

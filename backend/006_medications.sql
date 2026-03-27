@@ -79,3 +79,32 @@ CREATE INDEX IF NOT EXISTS idx_medication_change_requests_hospital
 
 CREATE INDEX IF NOT EXISTS idx_medication_change_requests_patient
   ON medication_change_requests (patient_id, status, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS medication_refill_requests (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  medication_id UUID NOT NULL,
+  patient_id UUID NOT NULL,
+  hospital_id UUID NOT NULL,
+  staff_id UUID,
+  conversation_id UUID NOT NULL,
+  requested_by_patient_id UUID NOT NULL,
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'approved', 'denied')),
+  request_note TEXT,
+  resolution_note TEXT,
+  resolved_at TIMESTAMPTZ,
+  resolved_by_staff_id UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_medication_refill_requests_conversation
+  ON medication_refill_requests (conversation_id, status, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_medication_refill_requests_hospital
+  ON medication_refill_requests (hospital_id, status, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_medication_refill_requests_patient
+  ON medication_refill_requests (patient_id, status, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_medication_refill_requests_medication
+  ON medication_refill_requests (medication_id, status, created_at DESC);
