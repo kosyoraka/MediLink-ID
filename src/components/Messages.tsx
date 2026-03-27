@@ -386,7 +386,7 @@ export default function Messages() {
   // ---------------- UI: THREAD VIEW ----------------
   if (selectedConversationId && selectedConversation) {
     return (
-      <div className="fixed inset-x-0 top-0 bottom-16 z-10 mx-auto flex w-full max-w-md flex-col bg-gray-50">
+      <div className="flex h-[calc(100vh-8rem)] flex-col overflow-hidden bg-gray-50">
         <div className="shrink-0 bg-white border-b border-gray-200 p-4">
           <div className="flex items-center gap-3">
             <button onClick={() => setSelectedConversationId(null)} className="text-gray-600">
