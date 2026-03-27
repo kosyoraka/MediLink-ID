@@ -79,6 +79,7 @@ type StaffConversationRow = {
   unread_count: number;
   open_medication_change_count?: number;
   open_medication_refill_count?: number;
+  open_condition_change_count?: number;
 };
 
 type StaffConversationsResponse = {
@@ -103,6 +104,7 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
   const [unreadMessages, setUnreadMessages] = useState<number>(0);
   const [medicationChangeRequests, setMedicationChangeRequests] = useState<number>(0);
   const [medicationRefillRequests, setMedicationRefillRequests] = useState<number>(0);
+  const [conditionChangeRequests, setConditionChangeRequests] = useState<number>(0);
 
   // ✅ NEW: real appointments from DB (for Today's Appointments count)
   const [appointments, setAppointments] = useState<StaffAppointmentRow[]>([]);
@@ -178,15 +180,21 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
           (sum, c) => sum + (Number(c.open_medication_refill_count) || 0),
           0
         );
+        const conditionChangeTotal = (data.conversations || []).reduce(
+          (sum, c) => sum + (Number(c.open_condition_change_count) || 0),
+          0
+        );
 
         setUnreadMessages(total);
         setMedicationChangeRequests(medicationChangeTotal);
         setMedicationRefillRequests(medicationRefillTotal);
+        setConditionChangeRequests(conditionChangeTotal);
       } catch {
         if (!alive) return;
         setUnreadMessages(0);
         setMedicationChangeRequests(0);
         setMedicationRefillRequests(0);
+        setConditionChangeRequests(0);
       }
     })();
 
@@ -266,8 +274,8 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
   );
 
   const pendingAppointments = useMemo(
-    () => todayAppointments.filter((appointment) => appointment.status === "Pending").length,
-    [todayAppointments]
+    () => appointments.filter((appointment) => appointment.status === "Pending").length,
+    [appointments]
   );
 
   const recentDocumentItems = useMemo(() => documents.slice(0, 3), [documents]);
@@ -327,9 +335,9 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Today&apos;s Appointments</p>
+                <p className="text-sm text-gray-600">Total Appointments</p>
                 <p className="text-3xl font-bold text-gray-900 mt-1">
-                  {todayAppointments.length}
+                  {appointments.length}
                 </p>
               </div>
               <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
@@ -392,10 +400,14 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
                     <p className="text-xs text-gray-500">Upcoming today</p>
                     <p className="mt-1 text-xl font-semibold text-gray-900">{upcomingToday}</p>
                   </div>
-                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
-                    <p className="text-xs text-gray-500">Pending confirmations</p>
+                  <button
+                    type="button"
+                    className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-left transition-colors hover:bg-gray-100"
+                    onClick={() => onNavigate("appointments")}
+                  >
+                    <p className="text-xs text-gray-500">Total pending confirmations</p>
                     <p className="mt-1 text-xl font-semibold text-gray-900">{pendingAppointments}</p>
-                  </div>
+                  </button>
                 </div>
 
                 {todayAppointments.length === 0 ? (
@@ -543,11 +555,11 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
                         <Activity className="w-4 h-4" />
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-gray-900">Unread Messages</p>
-                        <p className="text-xs text-gray-500">Catch up on patient conversations</p>
+                        <p className="text-sm font-medium text-gray-900">Condition Change Requests</p>
+                        <p className="text-xs text-gray-500">Review patient requests to update provider-managed conditions</p>
                       </div>
                     </div>
-                    <Badge variant="outline">{unreadMessages}</Badge>
+                    <Badge variant="outline">{conditionChangeRequests}</Badge>
                   </div>
                 </button>
 

@@ -2896,6 +2896,15 @@ app.get("/api/staff/messages/conversations", requireStaffAuth, async (req: any, 
         )::int AS open_medication_refill_count,
 
         (
+          SELECT COUNT(*)
+          FROM message_items mi
+          WHERE mi.conversation_id = c.id
+            AND mi.sender_type = 'patient'
+            AND mi.body ILIKE 'Condition change request for %'
+            AND mi.created_at > COALESCE(c.staff_last_read_at, '1970-01-01'::timestamptz)
+        )::int AS open_condition_change_count,
+
+        (
           SELECT mcr.id
           FROM medication_change_requests mcr
           WHERE mcr.conversation_id = c.id
