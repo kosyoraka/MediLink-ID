@@ -5622,13 +5622,14 @@ app.delete("/api/staff/patients/:patientId/conditions/:conditionId", requireStaf
       DELETE FROM patient_conditions
       WHERE id = $1::uuid
         AND patient_id = $2::uuid
+        AND source_type = 'provider'
       RETURNING id
       `,
       [conditionId, patientId]
     );
 
     if ((deleted.rowCount ?? 0) === 0) {
-      return res.status(404).json({ message: "Condition not found" });
+      return res.status(404).json({ message: "Provider-managed condition not found" });
     }
 
     await syncPatientConditionSummary(patientId);

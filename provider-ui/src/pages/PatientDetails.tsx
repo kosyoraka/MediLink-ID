@@ -1417,15 +1417,17 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
                             <Button variant="outline" size="sm" onClick={() => openConditionModal(item)}>
                               Edit Condition
                             </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => deleteCondition(item.id)}
-                              className="gap-2 text-red-600 hover:text-red-700"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                              Delete
-                            </Button>
+                            {item.sourceType === 'provider' ? (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => deleteCondition(item.id)}
+                                className="gap-2 text-red-600 hover:text-red-700"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                                Delete
+                              </Button>
+                            ) : null}
                             <Button variant="outline" size="sm" onClick={() => markConditionInactive(item.id)}>
                               Mark Inactive
                             </Button>
@@ -1456,15 +1458,17 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
                                   <Button variant="outline" size="sm" onClick={() => restoreCondition(item.id)}>
                                     Restore
                                   </Button>
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => deleteCondition(item.id)}
-                                    className="gap-2 text-red-600 hover:text-red-700"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                    Delete
-                                  </Button>
+                                  {item.sourceType === 'provider' ? (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => deleteCondition(item.id)}
+                                      className="gap-2 text-red-600 hover:text-red-700"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                      Delete
+                                    </Button>
+                                  ) : null}
                                 </div>
                               </div>
                             </div>
