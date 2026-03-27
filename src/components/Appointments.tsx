@@ -766,7 +766,7 @@ setAppointments(
                     <p className="mt-2 text-sm leading-6 text-gray-700">
                       {selectedSummary.notes?.trim()
                         ? selectedSummary.notes
-                        : "No visit summary has been added yet. This screen still gives you the appointment date, provider, and visit details."}
+                        : "No visit summary has been added yet."}
                     </p>
                   </div>
 
