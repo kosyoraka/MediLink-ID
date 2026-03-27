@@ -72,6 +72,7 @@ export default function SymptomChecker({ onBack, onNavigate }: SymptomCheckerPro
   const [result, setResult] = useState<GuidanceResult | null>(null);
   const [history, setHistory] = useState<InquiryRecord[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [showConversation, setShowConversation] = useState(false);
   const [activeInquiryId, setActiveInquiryId] = useState<string | null>(null);
   const [followUpPrompt, setFollowUpPrompt] = useState("");
   const [followUpLoading, setFollowUpLoading] = useState(false);
@@ -244,12 +245,6 @@ export default function SymptomChecker({ onBack, onNavigate }: SymptomCheckerPro
     setShowHistory(true);
   }
 
-  function reopenInquiry(inquiry: InquiryRecord) {
-    setActiveInquiryId(inquiry.id);
-    setResult(inquiry.result);
-    setShowHistory(true);
-  }
-
   // ----------------------------
   // RESULT SCREEN
   // ----------------------------
@@ -395,114 +390,73 @@ export default function SymptomChecker({ onBack, onNavigate }: SymptomCheckerPro
           </div>
         </div>
 
-        {showHistory ? (
+        {showConversation ? (
           <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-4">
             <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white shadow-xl max-h-[85vh] overflow-hidden">
               <div className="flex items-center justify-between border-b border-gray-100 p-4">
                 <div>
-                  <h3 className="text-gray-900">Additional Inquiries</h3>
-                  <p className="text-xs text-gray-500">Review past guidance and ask follow-up questions.</p>
+                  <h3 className="text-gray-900">Continue Conversation</h3>
+                  <p className="text-xs text-gray-500">Ask follow-up questions about this guidance.</p>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setShowHistory(false)}
+                  onClick={() => setShowConversation(false)}
                   className="rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-100"
                 >
                   Close
                 </button>
               </div>
 
-              <div className="grid gap-4 p-4 sm:grid-cols-[180px_minmax(0,1fr)] max-h-[calc(85vh-72px)] overflow-y-auto">
-                <div className="space-y-2">
-                  <p className="text-xs uppercase tracking-wide text-gray-500">Past Inquiries</p>
-                  {history.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-gray-200 p-3 text-sm text-gray-500">
-                      No past inquiries yet.
+              <div className="max-h-[calc(85vh-72px)] overflow-y-auto p-4 space-y-4">
+                {activeInquiry ? (
+                  <>
+                    <div className="rounded-2xl bg-gray-100 px-4 py-3 max-w-[85%]">
+                      <p className="text-xs uppercase tracking-wide text-gray-500">You asked</p>
+                      <p className="mt-1 text-sm text-gray-900">{activeInquiry.symptoms}</p>
+                      <p className="mt-2 text-xs text-gray-500">
+                        Areas: {activeInquiry.selectedBody.join(", ")} • {activeInquiry.duration} • {activeInquiry.severity}
+                      </p>
                     </div>
-                  ) : (
-                    history.map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => setActiveInquiryId(item.id)}
-                        className={`w-full rounded-xl border p-3 text-left transition-colors ${
-                          item.id === activeInquiryId
-                            ? "border-teal-200 bg-teal-50"
-                            : "border-gray-200 hover:bg-gray-50"
-                        }`}
-                      >
-                        <p className="text-sm font-medium text-gray-900 line-clamp-2">{item.symptoms}</p>
-                        <p className="mt-1 text-xs text-gray-500">
-                          {new Date(item.createdAt).toLocaleDateString()} • {item.severity}
-                        </p>
-                      </button>
-                    ))
-                  )}
-                </div>
 
-                <div className="space-y-4">
-                  {activeInquiry ? (
-                    <>
-                      <div className="rounded-xl border border-gray-200 p-4">
-                        <p className="text-xs uppercase tracking-wide text-gray-500">Original Inquiry</p>
-                        <p className="mt-2 text-sm text-gray-900">{activeInquiry.symptoms}</p>
-                        <p className="mt-2 text-xs text-gray-500">
-                          Areas: {activeInquiry.selectedBody.join(", ")} • {activeInquiry.duration} • {activeInquiry.severity}
-                        </p>
-                      </div>
+                    <div className="ml-auto rounded-2xl bg-teal-50 border border-teal-100 px-4 py-3 max-w-[90%]">
+                      <p className="text-xs uppercase tracking-wide text-teal-700">MediLink AI</p>
+                      <p className="mt-1 text-sm font-medium text-gray-900">{activeInquiry.result.urgencyTitle}</p>
+                      <p className="mt-2 text-sm text-gray-700">{activeInquiry.result.urgencyMessage}</p>
+                    </div>
 
-                      <div className="rounded-xl border border-gray-200 p-4">
-                        <p className="text-xs uppercase tracking-wide text-gray-500">Latest Guidance</p>
-                        <p className="mt-2 text-sm font-medium text-gray-900">
-                          {activeInquiry.followUps.length > 0
-                            ? activeInquiry.followUps[activeInquiry.followUps.length - 1].result.urgencyTitle
-                            : activeInquiry.result.urgencyTitle}
-                        </p>
-                        <p className="mt-2 text-sm text-gray-700">
-                          {activeInquiry.followUps.length > 0
-                            ? activeInquiry.followUps[activeInquiry.followUps.length - 1].result.urgencyMessage
-                            : activeInquiry.result.urgencyMessage}
-                        </p>
-                      </div>
-
-                      {activeInquiry.followUps.length > 0 ? (
-                        <div className="rounded-xl border border-gray-200 p-4">
-                          <p className="text-xs uppercase tracking-wide text-gray-500">Past Follow-ups</p>
-                          <div className="mt-3 space-y-3">
-                            {activeInquiry.followUps.map((item) => (
-                              <div key={item.id} className="rounded-lg bg-gray-50 p-3">
-                                <p className="text-sm font-medium text-gray-900">{item.message}</p>
-                                <p className="mt-1 text-sm text-gray-600">{item.result.urgencyMessage}</p>
-                              </div>
-                            ))}
-                          </div>
+                    {activeInquiry.followUps.map((item) => (
+                      <div key={item.id} className="space-y-3">
+                        <div className="rounded-2xl bg-gray-100 px-4 py-3 max-w-[85%]">
+                          <p className="text-xs uppercase tracking-wide text-gray-500">Follow-up</p>
+                          <p className="mt-1 text-sm text-gray-900">{item.message}</p>
                         </div>
-                      ) : null}
-
-                      <div className="rounded-xl border border-gray-200 p-4">
-                        <p className="text-xs uppercase tracking-wide text-gray-500">Continue Conversation</p>
-                        <Textarea
-                          className="mt-3 min-h-24"
-                          placeholder="Ask a follow-up question about this guidance..."
-                          value={followUpPrompt}
-                          onChange={(e) => setFollowUpPrompt(e.target.value)}
-                        />
-                        <div className="mt-3 flex gap-2">
-                          <Button type="button" className="flex-1 bg-teal-600 hover:bg-teal-700" onClick={requestFollowUp} disabled={!followUpPrompt.trim() || followUpLoading}>
-                            {followUpLoading ? "Sending..." : "Ask Follow-up"}
-                          </Button>
-                          <Button type="button" variant="outline" onClick={() => reopenInquiry(activeInquiry)}>
-                            Open Result
-                          </Button>
+                        <div className="ml-auto rounded-2xl bg-teal-50 border border-teal-100 px-4 py-3 max-w-[90%]">
+                          <p className="text-xs uppercase tracking-wide text-teal-700">MediLink AI</p>
+                          <p className="mt-1 text-sm font-medium text-gray-900">{item.result.urgencyTitle}</p>
+                          <p className="mt-2 text-sm text-gray-700">{item.result.urgencyMessage}</p>
                         </div>
                       </div>
-                    </>
-                  ) : (
-                    <div className="rounded-xl border border-dashed border-gray-200 p-6 text-sm text-gray-500">
-                      Select a past inquiry to continue the conversation.
+                    ))}
+
+                    <div className="rounded-xl border border-gray-200 p-4">
+                      <Textarea
+                        className="min-h-24"
+                        placeholder="Ask a follow-up question about this guidance..."
+                        value={followUpPrompt}
+                        onChange={(e) => setFollowUpPrompt(e.target.value)}
+                      />
+                      <div className="mt-3 flex gap-2">
+                        <Button type="button" className="flex-1 bg-teal-600 hover:bg-teal-700" onClick={requestFollowUp} disabled={!followUpPrompt.trim() || followUpLoading}>
+                          {followUpLoading ? "Sending..." : "Send"}
+                        </Button>
+                      </div>
                     </div>
-                  )}
-                </div>
+                  </>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-gray-200 p-6 text-sm text-gray-500">
+                    Select a past inquiry to continue the conversation.
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -674,7 +628,8 @@ export default function SymptomChecker({ onBack, onNavigate }: SymptomCheckerPro
                         setActiveInquiryId(item.id);
                         setResult(item.result);
                         setStep("result");
-                        setShowHistory(true);
+                        setShowHistory(false);
+                        setShowConversation(true);
                       }}
                       className="w-full rounded-xl border border-gray-200 p-4 text-left hover:bg-gray-50"
                     >
