@@ -23,6 +23,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 
 import type { Patient, EmergencyContact } from '@/lib/types';
 import { formatDate, formatDateTime } from '@/lib/utils';
@@ -259,11 +260,6 @@ const formatConditionDate = (value?: string | null) => {
   return /^\d{4}-\d{2}-\d{2}$/.test(value) ? formatDate(value) : value;
 };
 
-const openAppointmentDirections = (appointment: StaffAppointmentRow) => {
-  const query = encodeURIComponent(appointment.hospitalName || appointment.providerName || 'Hospital');
-  window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, '_blank', 'noopener,noreferrer');
-};
-
 type WeightUnit = 'lbs' | 'kg';
 type ProviderVitalType = 'bloodPressure' | 'heartRate' | 'weight' | 'bloodSugar';
 type VitalRange = '1w' | '1m' | '6m' | '1y' | '2y' | '3y' | '4y' | '5y';
@@ -480,6 +476,7 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
   const [activeTab, setActiveTab] = useState<'history' | 'documents' | 'appointments' | 'emergency'>('history');
   const [profile, setProfile] = useState<PatientProfileResponse | null>(null);
   const [patientAppointments, setPatientAppointments] = useState<StaffAppointmentRow[]>([]);
+  const [selectedAppointment, setSelectedAppointment] = useState<StaffAppointmentRow | null>(null);
   const [patientDocuments, setPatientDocuments] = useState<ProviderDocument[]>([]);
   const [patientHealthSummary, setPatientHealthSummary] = useState<ProviderHealthSummary | null>(null);
   const [patientConditions, setPatientConditions] = useState<ProviderHealthSummaryCondition[]>([]);
@@ -1846,14 +1843,11 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
                 .slice()
                 .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime())
                 .map((appointment) => {
-                  const visitMode = String(appointment.type || '').toLowerCase();
-                  const hasDirections = visitMode === 'in-person';
-
                   return (
                     <Card
                       key={appointment.id}
-                      className={hasDirections ? 'cursor-pointer transition hover:border-blue-200 hover:bg-blue-50/30' : undefined}
-                      onClick={hasDirections ? () => openAppointmentDirections(appointment) : undefined}
+                      className="cursor-pointer transition hover:border-blue-200 hover:bg-blue-50/30"
+                      onClick={() => setSelectedAppointment(appointment)}
                     >
                       <CardContent className="p-5">
                         <div className="flex items-start justify-between gap-4">
@@ -1873,21 +1867,17 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
                           </div>
                           <div className="flex flex-col items-end gap-3">
                             <Badge variant="outline">{appointment.status}</Badge>
-                            {hasDirections ? (
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="gap-2"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  openAppointmentDirections(appointment);
-                                }}
-                              >
-                                <MapPin className="h-4 w-4" />
-                                Directions
-                              </Button>
-                            ) : null}
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setSelectedAppointment(appointment);
+                              }}
+                            >
+                              View Details
+                            </Button>
                           </div>
                         </div>
                       </CardContent>
@@ -1898,6 +1888,58 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
           )}
         </div>
       )}
+
+      <Dialog open={!!selectedAppointment} onOpenChange={(open) => !open && setSelectedAppointment(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Appointment Details</DialogTitle>
+          </DialogHeader>
+
+          {selectedAppointment ? (
+            <div className="space-y-4">
+              <div className="rounded-xl bg-gray-50 p-4">
+                <p className="text-sm text-gray-600">Date & Time</p>
+                <p className="mt-1 font-medium text-gray-900">
+                  {formatDateTime(selectedAppointment.startTime)}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="rounded-xl bg-gray-50 p-4">
+                  <p className="text-sm text-gray-600">Visit Mode</p>
+                  <p className="mt-1 font-medium capitalize text-gray-900">
+                    {String(selectedAppointment.type || 'Appointment').replace('-', ' ')}
+                  </p>
+                </div>
+                <div className="rounded-xl bg-gray-50 p-4">
+                  <p className="text-sm text-gray-600">Status</p>
+                  <div className="mt-2">
+                    <Badge variant="outline">{selectedAppointment.status}</Badge>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl bg-gray-50 p-4">
+                <p className="text-sm text-gray-600">Location</p>
+                <p className="mt-1 font-medium text-gray-900">
+                  {selectedAppointment.hospitalName || selectedAppointment.providerName || 'Provider location'}
+                </p>
+              </div>
+
+              <div className="rounded-xl bg-gray-50 p-4">
+                <p className="text-sm text-gray-600">Notes</p>
+                <p className="mt-1 text-sm leading-6 text-gray-900">
+                  {selectedAppointment.notes?.trim() || 'No notes were added for this appointment.'}
+                </p>
+              </div>
+
+              <Button type="button" onClick={() => setSelectedAppointment(null)} className="w-full">
+                Close
+              </Button>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
       {activeTab === 'emergency' && (
         <div className="space-y-6">
