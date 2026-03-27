@@ -462,7 +462,7 @@ export default function App() {
         return <ManageProviders onBack={() => handleNavigation('more', 'more')} />;
 
       case 'notifications':
-        return <Notifications onBack={() => handleNavigation('dashboard', 'home')} />;
+        return <Notifications onBack={() => handleNavigation('dashboard', 'home')} onNavigate={(screen) => handleNavigation(screen as Screen)} />;
 
       default:
         return <Dashboard onNavigate={handleNavigation} />;

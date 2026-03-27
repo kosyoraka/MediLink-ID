@@ -1,4 +1,4 @@
-import { Home, Users, Calendar, MessageSquare, FileText, Settings, Activity, X } from 'lucide-react';
+import { Home, Users, Calendar, MessageSquare, FileText, Settings, Activity, Bell, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface SidebarProps {
@@ -13,6 +13,7 @@ const navigation = [
   { name: 'Patients', page: 'patients', icon: Users },
   { name: 'Appointments', page: 'appointments', icon: Calendar },
   { name: 'Messages', page: 'messages', icon: MessageSquare },
+  { name: 'Notifications', page: 'notifications', icon: Bell },
   { name: 'Documents', page: 'documents', icon: FileText },
   { name: 'Settings', page: 'settings', icon: Settings },
 ];

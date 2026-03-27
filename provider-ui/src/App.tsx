@@ -8,9 +8,9 @@ import { Patients } from "./pages/Patients";
 import { PatientDetails } from "./pages/PatientDetails";
 import { Appointments } from "./pages/Appointments";
 import { Messages } from "./pages/Messages";
+import { Notifications } from "./pages/Notifications";
 import { Documents } from "./pages/Documents";
 import { Settings } from "./pages/Settings";
-import { conversations } from "./lib/mockData";
 import { Patient } from "./lib/types";
 import { apiFetch } from "./lib/api";
 
@@ -20,6 +20,7 @@ type Page =
   | "patient-details"
   | "appointments"
   | "messages"
+  | "notifications"
   | "documents"
   | "settings";
 
@@ -31,9 +32,7 @@ function App() {
   const [currentPage, setCurrentPage] = useState<Page>("dashboard");
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [patientDetailsContext, setPatientDetailsContext] = useState<{ medicationId?: string; medicationChangeRequestId?: string } | null>(null);
-
-  // Calculate unread messages count
-  const unreadCount = conversations.reduce((sum, conv) => sum + conv.unreadCount, 0);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   // ✅ Auto-auth if staff exists (localStorage remember-me OR sessionStorage)
   useEffect(() => {
@@ -77,6 +76,30 @@ function App() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!isAuthenticated) {
+      setUnreadCount(0);
+      return;
+    }
+
+    (async () => {
+      try {
+        const data = await apiFetch<{ notifications: Array<{ unread: boolean }> }>("/api/staff/notifications");
+        if (!cancelled) {
+          setUnreadCount((data.notifications || []).filter((item) => item.unread).length);
+        }
+      } catch (error) {
+        console.error("STAFF NOTIFICATION COUNT ERROR:", error);
+        if (!cancelled) setUnreadCount(0);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, currentPage]);
 
   const handleLogin = () => {
     setIsAuthenticated(true);
@@ -172,6 +195,8 @@ function App() {
         {currentPage === "appointments" && <Appointments onNavigate={handleNavigate} />}
 
         {currentPage === "messages" && <Messages onNavigate={handleNavigate} />}
+
+        {currentPage === "notifications" && <Notifications onNavigate={handleNavigate} />}
 
         {currentPage === "documents" && <Documents />}
 

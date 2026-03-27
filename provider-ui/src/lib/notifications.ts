@@ -1,4 +1,4 @@
-export type AppNotification = {
+export type StaffNotification = {
   id: string;
   title: string;
   detail: string;
@@ -9,16 +9,14 @@ export type AppNotification = {
 
 export type NotificationSection = {
   label: "Today" | "Yesterday" | "This Week" | "Last Month" | "Older";
-  items: AppNotification[];
+  items: StaffNotification[];
 };
-
-export const NOTIFICATIONS_UPDATED_EVENT = "medilink-notifications-updated";
 
 function startOfDay(value: Date) {
   return new Date(value.getFullYear(), value.getMonth(), value.getDate());
 }
 
-export function getNotificationPeriod(isoDate: string): NotificationSection["label"] {
+function getNotificationPeriod(isoDate: string): NotificationSection["label"] {
   const now = new Date();
   const target = new Date(isoDate);
   if (Number.isNaN(target.getTime())) return "Older";
@@ -34,8 +32,8 @@ export function getNotificationPeriod(isoDate: string): NotificationSection["lab
   return "Older";
 }
 
-export function groupNotifications(notifications: AppNotification[]): NotificationSection[] {
-  const grouped: Record<NotificationSection["label"], AppNotification[]> = {
+export function groupNotifications(notifications: StaffNotification[]): NotificationSection[] {
+  const grouped: Record<NotificationSection["label"], StaffNotification[]> = {
     Today: [],
     Yesterday: [],
     "This Week": [],
@@ -56,7 +54,7 @@ export function groupNotifications(notifications: AppNotification[]): Notificati
   ].filter((section) => section.items.length > 0);
 }
 
-export function getUnreadCount(notifications: AppNotification[]): number {
+export function getUnreadCount(notifications: StaffNotification[]): number {
   return notifications.filter((notification) => notification.unread).length;
 }
 

@@ -1,11 +1,10 @@
-import { ArrowLeft, Bell, ChevronRight } from "lucide-react";
+import { Bell, ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { api, type PatientNotification } from "@/lib/api";
-import { groupNotifications } from "@/lib/notifications";
+import { apiFetch } from "@/lib/api";
+import { groupNotifications, type StaffNotification } from "@/lib/notifications";
 
 interface NotificationsProps {
-  onBack: () => void;
-  onNavigate?: (screen: string) => void;
+  onNavigate: (page: string, data?: any) => void;
 }
 
 function formatNotificationTime(isoDate: string) {
@@ -19,17 +18,17 @@ function formatNotificationTime(isoDate: string) {
   });
 }
 
-export default function Notifications({ onBack, onNavigate }: NotificationsProps) {
-  const [notifications, setNotifications] = useState<PatientNotification[]>([]);
+export function Notifications({ onNavigate }: NotificationsProps) {
+  const [notifications, setNotifications] = useState<StaffNotification[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const data = await api.listMyNotifications();
+        const data = await apiFetch<{ notifications: StaffNotification[] }>("/api/staff/notifications");
         if (!cancelled) setNotifications(data.notifications || []);
-      } catch (e) {
-        console.error("PATIENT NOTIFICATIONS FETCH ERROR:", e);
+      } catch (error) {
+        console.error("STAFF NOTIFICATIONS FETCH ERROR:", error);
         if (!cancelled) setNotifications([]);
       }
     })();
@@ -42,56 +41,50 @@ export default function Notifications({ onBack, onNavigate }: NotificationsProps
   const sections = useMemo(() => groupNotifications(notifications), [notifications]);
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="flex items-center justify-between mb-6">
-        <button onClick={onBack} className="text-gray-600">
-          <ArrowLeft className="w-6 h-6" />
-        </button>
-        <h2 className="text-gray-900">Notifications</h2>
-        <div className="w-6" />
-      </div>
-
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-        <div className="flex items-center gap-3 mb-5">
-          <div className="w-12 h-12 bg-teal-100 rounded-full flex items-center justify-center flex-shrink-0">
-            <Bell className="w-6 h-6 text-teal-600" />
+    <div className="p-4 lg:p-6">
+      <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="mb-6 flex items-center gap-3">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50">
+            <Bell className="h-6 w-6 text-blue-600" />
           </div>
           <div>
-            <p className="text-gray-900">Recent activity</p>
-            <p className="text-sm text-gray-500">Appointments, messages, and care updates</p>
+            <h1 className="text-2xl font-semibold text-gray-900">Notifications</h1>
+            <p className="text-sm text-gray-500">Patient activity, confirmations, and action items</p>
           </div>
         </div>
 
         <div className="space-y-6">
           {sections.length === 0 ? (
-            <p className="text-sm text-gray-500">No notifications yet.</p>
+            <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-10 text-center text-sm text-gray-500">
+              No notifications yet.
+            </div>
           ) : null}
 
           {sections.map((section) => (
             <section key={section.label}>
-              <p className="text-xs uppercase tracking-[0.2em] text-gray-400 mb-3">{section.label}</p>
+              <p className="mb-3 text-xs uppercase tracking-[0.2em] text-gray-400">{section.label}</p>
               <div className="space-y-3">
                 {section.items.map((item) => (
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() => item.screen && onNavigate?.(item.screen)}
+                    onClick={() => item.screen && onNavigate(item.screen)}
                     className={`w-full rounded-2xl border p-4 text-left transition ${
                       item.unread
-                        ? "border-teal-200 bg-teal-50/80"
+                        ? "border-blue-200 bg-blue-50/70"
                         : "border-gray-200 bg-gray-50 hover:border-gray-300"
                     }`}
                   >
                     <div className="flex items-start gap-3">
                       <div
                         className={`mt-1 h-2.5 w-2.5 flex-shrink-0 rounded-full ${
-                          item.unread ? "bg-teal-500" : "bg-gray-300"
+                          item.unread ? "bg-blue-500" : "bg-gray-300"
                         }`}
                       />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <p className="text-gray-900">{item.title}</p>
+                            <p className="font-medium text-gray-900">{item.title}</p>
                             <p className="mt-1 text-sm text-gray-600">{item.detail}</p>
                           </div>
                           {item.screen ? <ChevronRight className="h-5 w-5 flex-shrink-0 text-gray-400" /> : null}

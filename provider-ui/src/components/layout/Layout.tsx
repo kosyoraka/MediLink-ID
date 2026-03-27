@@ -26,6 +26,7 @@ export function Layout({ currentPage, onNavigate, onLogout, unreadCount, childre
         <Header
           onLogout={onLogout}
           onMenuClick={() => setSidebarOpen(true)}
+          onNotificationsClick={() => onNavigate("notifications")}
           unreadCount={unreadCount}
         />
         

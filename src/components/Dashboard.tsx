@@ -28,9 +28,7 @@ import { API_BASE } from "@/config/api";
 import { api, type PatientAppointment } from "@/lib/api";
 import { fetchHealthTasks, getTaskTimeLabel, type HealthTask } from "@/lib/healthTasks";
 import {
-  buildAppointmentNotifications,
   getUnreadCount,
-  NOTIFICATIONS_UPDATED_EVENT,
 } from "@/lib/notifications";
 import { createPortal } from "react-dom";
 import { QRCodeCanvas } from "qrcode.react";
@@ -131,13 +129,21 @@ export default function Dashboard({
   }, []);
 
   useEffect(() => {
-    const syncUnread = () => {
-      setUnreadNotificationCount(getUnreadCount(buildAppointmentNotifications(appointments)));
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await api.listMyNotifications();
+        if (!cancelled) setUnreadNotificationCount(getUnreadCount(data.notifications || []));
+      } catch (e) {
+        console.error("DASHBOARD NOTIFICATIONS FETCH ERROR:", e);
+        if (!cancelled) setUnreadNotificationCount(0);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
     };
-    syncUnread();
-    window.addEventListener(NOTIFICATIONS_UPDATED_EVENT, syncUnread);
-    return () => window.removeEventListener(NOTIFICATIONS_UPDATED_EVENT, syncUnread);
-  }, [appointments]);
+  }, []);
 
   const displayName = useMemo(() => {
     const dbName = [profile?.first_name, profile?.last_name].filter(Boolean).join(' ').trim();

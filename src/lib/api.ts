@@ -89,6 +89,15 @@ export type PatientAppointment = {
   notes: string;
 };
 
+export type PatientNotification = {
+  id: string;
+  title: string;
+  detail: string;
+  isoDate: string;
+  unread: boolean;
+  screen?: string;
+};
+
 export type RecordDocument = {
   id: string;
   patientId: string;
@@ -321,6 +330,7 @@ export const api = {
   listMyAppointments: (
     status: "upcoming" | "today" | "completed" | "cancelled" | "all" = "upcoming"
   ) => request<{ appointments: PatientAppointment[] }>(`/api/patient/appointments?status=${status}`),
+  listMyNotifications: () => request<{ notifications: PatientNotification[] }>("/api/patient/notifications"),
 
   listMyRecords: (params: {
     category?: string;

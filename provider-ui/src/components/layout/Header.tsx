@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 interface HeaderProps {
   onLogout: () => void;
   onMenuClick: () => void;
+  onNotificationsClick: () => void;
   unreadCount: number;
 }
 
@@ -27,7 +28,7 @@ function getStoredStaff(): StoredStaff | null {
   }
 }
 
-export function Header({ onLogout, onMenuClick, unreadCount }: HeaderProps) {
+export function Header({ onLogout, onMenuClick, onNotificationsClick, unreadCount }: HeaderProps) {
   const staff = getStoredStaff();
 
   const hospitalName = staff?.hospitalName || "Hospital";
@@ -59,7 +60,7 @@ export function Header({ onLogout, onMenuClick, unreadCount }: HeaderProps) {
       {/* Right: Notifications + User */}
       <div className="flex items-center gap-4">
         {/* Notifications */}
-        <button className="relative p-2 rounded-lg hover:bg-gray-100">
+        <button className="relative p-2 rounded-lg hover:bg-gray-100" onClick={onNotificationsClick}>
           <Bell className="w-5 h-5 text-gray-700" />
           {unreadCount > 0 && (
             <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">

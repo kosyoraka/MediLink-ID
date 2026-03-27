@@ -2687,6 +2687,109 @@ app.get("/api/patients/me/messages/conversations", requirePatient, async (req: a
   }
 });
 
+app.get("/api/patient/notifications", requirePatientAuth, async (req: any, res) => {
+  try {
+    const patientId = req.patientId as string;
+
+    const [appointmentResult, messageResult] = await Promise.all([
+      pool.query(
+        `
+        SELECT
+          a.id,
+          a.provider_name,
+          a.specialty,
+          a.start_time,
+          a.status,
+          a.created_at
+        FROM appointments a
+        WHERE a.patient_id = $1::uuid
+          AND LOWER(COALESCE(a.status, '')) <> 'cancelled'
+        ORDER BY a.start_time DESC
+        LIMIT 100
+        `,
+        [patientId]
+      ),
+      pool.query(
+        `
+        SELECT
+          mi.id,
+          mi.body,
+          mi.created_at,
+          c.patient_last_read_at,
+          sa.full_name AS staff_name,
+          h.name AS hospital_name
+        FROM message_items mi
+        JOIN message_conversations c ON c.id = mi.conversation_id
+        JOIN staff_accounts sa ON sa.id = c.staff_id
+        JOIN hospitals h ON h.id = c.provider_id
+        WHERE c.patient_id = $1::uuid
+          AND mi.sender_type = 'staff'
+        ORDER BY mi.created_at DESC
+        LIMIT 150
+        `,
+        [patientId]
+      ),
+    ]);
+
+    const notifications = [
+      ...appointmentResult.rows.map((row) => {
+        const status = String(row.status || "").trim().toLowerCase();
+        const providerName = String(row.provider_name || row.specialty || "your provider").trim();
+        let title = "Appointment update";
+        if (status === "pending" || status === "scheduled") title = "Appointment awaiting confirmation";
+        else if (status === "confirmed") title = "Appointment confirmed";
+        else if (status === "completed") title = "Appointment completed";
+
+        return {
+          id: `patient-appointment:${row.id}`,
+          title,
+          detail: `${providerName} • ${new Date(row.start_time).toLocaleString()}`,
+          isoDate: row.start_time || row.created_at,
+          unread: false,
+          screen: "appointments",
+        };
+      }),
+      ...messageResult.rows.map((row) => {
+        const body = String(row.body || "").trim();
+        const staffName = String(row.staff_name || "Your provider").trim();
+        const hospitalName = String(row.hospital_name || "").trim();
+        const unread =
+          new Date(row.created_at).getTime() >
+          new Date(row.patient_last_read_at || "1970-01-01T00:00:00.000Z").getTime();
+
+        let title = `New message from ${staffName}`;
+        let detail = body;
+
+        if (body.includes("approved the refill request")) title = "Refill approved";
+        else if (body.includes("denied the refill request")) title = "Refill denied";
+        else if (body.includes("resolved the medication change request")) title = "Medication change updated";
+        else if (body.includes("fulfilled the medical record request")) title = "Records are ready";
+        else if (body.startsWith("New health concern added:")) title = "New condition added";
+
+        if (hospitalName && title.startsWith("New message from")) {
+          detail = `${hospitalName} • ${detail}`;
+        }
+
+        return {
+          id: `patient-message:${row.id}`,
+          title,
+          detail,
+          isoDate: row.created_at,
+          unread,
+          screen: "messages",
+        };
+      }),
+    ]
+      .filter((item) => item.isoDate)
+      .sort((a, b) => new Date(b.isoDate).getTime() - new Date(a.isoDate).getTime());
+
+    return res.json({ notifications });
+  } catch (e: any) {
+    console.error("GET /api/patient/notifications error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to load notifications" });
+  }
+});
+
 // GET /api/patients/me/providers/:providerId/staff
 app.get("/api/patients/me/providers/:providerId/staff", requirePatient, async (req: any, res) => {
   try {
@@ -2973,6 +3076,117 @@ app.get("/api/staff/messages/conversations", requireStaffAuth, async (req: any, 
   } catch (e: any) {
     console.error("STAFF LIST CONVERSATIONS ERROR:", e);
     return res.status(500).json({ message: e?.message || "Server error" });
+  }
+});
+
+app.get("/api/staff/notifications", requireStaffAuth, async (req: any, res) => {
+  try {
+    const staffId = req.staffId as string;
+
+    const [messageResult, appointmentResult, refillResult] = await Promise.all([
+      pool.query(
+        `
+        SELECT
+          mi.id,
+          mi.body,
+          mi.created_at,
+          c.staff_last_read_at,
+          COALESCE(NULLIF(TRIM(pp.first_name || ' ' || pp.last_name), ''), p.email, 'Patient') AS patient_name
+        FROM message_items mi
+        JOIN message_conversations c ON c.id = mi.conversation_id
+        JOIN patients p ON p.id = c.patient_id
+        LEFT JOIN patient_profiles pp ON pp.patient_id = p.id
+        WHERE c.staff_id = $1::uuid
+          AND mi.sender_type = 'patient'
+        ORDER BY mi.created_at DESC
+        LIMIT 150
+        `,
+        [staffId]
+      ),
+      pool.query(
+        `
+        SELECT
+          a.id,
+          a.start_time,
+          COALESCE(NULLIF(TRIM(pp.first_name || ' ' || pp.last_name), ''), p.email, 'Patient') AS patient_name
+        FROM appointments a
+        JOIN patients p ON p.id = a.patient_id
+        LEFT JOIN patient_profiles pp ON pp.patient_id = p.id
+        WHERE a.staff_id = $1::uuid
+          AND LOWER(COALESCE(a.status, '')) IN ('pending', 'scheduled')
+          AND a.start_time >= NOW() - INTERVAL '1 day'
+        ORDER BY a.start_time ASC
+        LIMIT 100
+        `,
+        [staffId]
+      ),
+      pool.query(
+        `
+        SELECT
+          mrr.id,
+          mrr.created_at,
+          pm.name AS medication_name,
+          COALESCE(NULLIF(TRIM(pp.first_name || ' ' || pp.last_name), ''), p.email, 'Patient') AS patient_name
+        FROM medication_refill_requests mrr
+        JOIN patient_medications pm ON pm.id = mrr.medication_id
+        JOIN patients p ON p.id = mrr.patient_id
+        LEFT JOIN patient_profiles pp ON pp.patient_id = p.id
+        WHERE mrr.staff_id = $1::uuid
+          AND mrr.status = 'open'
+        ORDER BY mrr.created_at DESC
+        LIMIT 100
+        `,
+        [staffId]
+      ),
+    ]);
+
+    const notifications = [
+      ...messageResult.rows.map((row) => {
+        const body = String(row.body || "").trim();
+        const patientName = String(row.patient_name || "Patient").trim();
+        const unread =
+          new Date(row.created_at).getTime() >
+          new Date(row.staff_last_read_at || "1970-01-01T00:00:00.000Z").getTime();
+
+        let title = `New message from ${patientName}`;
+        if (body.startsWith("Condition change request for")) title = "Condition change request";
+        else if (body.startsWith("Medication change request for")) title = "Medication change request";
+        else if (body.startsWith("Medical record request for")) title = "Medical record request";
+        else if (body.startsWith("Refill request for")) title = "Refill request";
+
+        return {
+          id: `staff-message:${row.id}`,
+          title,
+          detail: `${patientName} • ${body}`,
+          isoDate: row.created_at,
+          unread,
+          screen: body.startsWith("Medical record request for") ? "documents" : "messages",
+        };
+      }),
+      ...appointmentResult.rows.map((row) => ({
+        id: `staff-appointment:${row.id}`,
+        title: "Pending appointment confirmation",
+        detail: `${String(row.patient_name || "Patient").trim()} • ${new Date(row.start_time).toLocaleString()}`,
+        isoDate: row.start_time,
+        unread: true,
+        screen: "appointments",
+      })),
+      ...refillResult.rows.map((row) => ({
+        id: `staff-refill:${row.id}`,
+        title: "Refill request pending",
+        detail: `${String(row.patient_name || "Patient").trim()} • ${String(row.medication_name || "Medication").trim()}`,
+        isoDate: row.created_at,
+        unread: true,
+        screen: "messages",
+      })),
+    ]
+      .filter((item) => item.isoDate)
+      .sort((a, b) => new Date(b.isoDate).getTime() - new Date(a.isoDate).getTime());
+
+    return res.json({ notifications });
+  } catch (e: any) {
+    console.error("GET /api/staff/notifications error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to load notifications" });
   }
 });
 
