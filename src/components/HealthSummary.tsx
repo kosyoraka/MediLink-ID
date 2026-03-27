@@ -541,6 +541,7 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
   const [conditionRequestOpen, setConditionRequestOpen] = useState(false);
   const [requestingCondition, setRequestingCondition] = useState<HealthSummaryCondition | null>(null);
   const [conditionRequestMessage, setConditionRequestMessage] = useState('');
+  const [conditionEditorError, setConditionEditorError] = useState<string | null>(null);
   const [vitalForm, setVitalForm] = useState({
     systolic: '120',
     diastolic: '80',
@@ -866,6 +867,7 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
 
   const openConditionEditor = (condition?: HealthSummaryCondition) => {
     setEditingCondition(condition || null);
+    setConditionEditorError(null);
     setConditionForm(
       condition
         ? {
@@ -879,26 +881,37 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
   };
 
   const submitConditionEditor = async () => {
-    if (!conditionForm.name.trim()) return;
+    const name = conditionForm.name.trim();
+    const status = conditionForm.status.trim();
+    const diagnosed = conditionForm.diagnosed.trim();
+    const metric = conditionForm.metric.trim();
+    const notes = (conditionForm.notes || '').trim();
+
+    if (!name) {
+      setConditionEditorError('Condition name is required.');
+      return;
+    }
+
+    setConditionEditorError(null);
     setSaving(true);
     try {
       if (editingCondition?.id) {
         const res = await api.updateMyCondition(editingCondition.id, {
-          name: conditionForm.name.trim(),
-          status: conditionForm.status.trim(),
-          diagnosed: conditionForm.diagnosed.trim(),
-          metric: conditionForm.metric.trim(),
-          notes: (conditionForm.notes || '').trim(),
+          name,
+          status: status || undefined,
+          diagnosed: diagnosed || undefined,
+          metric: metric || undefined,
+          notes: notes || undefined,
           isActive: true,
         });
         setConditions((current) => current.map((item) => (item.id === editingCondition.id ? res.condition : item)));
       } else {
         const res = await api.createMyCondition({
-          name: conditionForm.name.trim(),
-          status: conditionForm.status.trim(),
-          diagnosed: conditionForm.diagnosed.trim(),
-          metric: conditionForm.metric.trim(),
-          notes: (conditionForm.notes || '').trim(),
+          name,
+          status: status || undefined,
+          diagnosed: diagnosed || undefined,
+          metric: metric || undefined,
+          notes: notes || undefined,
         });
         setConditions((current) => [res.condition, ...current]);
       }
@@ -910,8 +923,10 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
       }
       setConditionEditorOpen(false);
       setEditingCondition(null);
+      setConditionForm(emptyCondition());
     } catch (error) {
       console.error('Failed to save condition:', error);
+      setConditionEditorError(error instanceof Error ? error.message : 'Unable to save this health concern right now.');
     } finally {
       setSaving(false);
     }
@@ -1660,11 +1675,15 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
           <div className="w-full max-w-md rounded-2xl bg-white p-5 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-gray-900">{editingCondition ? 'Edit Health Concern' : 'Add Health Concern'}</h3>
-              <button type="button" onClick={() => setConditionEditorOpen(false)} className="text-sm text-gray-500">Close</button>
             </div>
             <p className="text-sm text-gray-500">
               Personal health concerns stay clearly marked as patient-noted until a provider reviews them.
             </p>
+            {conditionEditorError ? (
+              <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {conditionEditorError}
+              </div>
+            ) : null}
             <div className="space-y-3">
               <input className="w-full rounded-lg border border-gray-200 px-3 py-2" placeholder="Condition name" value={conditionForm.name} onChange={(e) => setConditionForm({ ...conditionForm, name: e.target.value })} />
               <select className="w-full rounded-lg border border-gray-200 px-3 py-2" value={conditionForm.status} onChange={(e) => setConditionForm({ ...conditionForm, status: e.target.value })}>
@@ -1678,8 +1697,19 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
               <textarea className="w-full rounded-lg border border-gray-200 px-3 py-2 min-h-[96px]" placeholder="Notes for your provider" value={conditionForm.notes || ''} onChange={(e) => setConditionForm({ ...conditionForm, notes: e.target.value })} />
             </div>
             <div className="flex gap-3">
-              <Button variant="outline" className="flex-1" onClick={() => setConditionEditorOpen(false)}>Cancel</Button>
-              <Button className="flex-1" onClick={submitConditionEditor}>Save</Button>
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => {
+                  setConditionEditorOpen(false);
+                  setConditionEditorError(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button className="flex-1" onClick={submitConditionEditor} disabled={saving}>
+                {saving ? 'Saving...' : 'Save'}
+              </Button>
             </div>
           </div>
         </div>
@@ -1690,7 +1720,6 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
           <div className="w-full max-w-md rounded-2xl bg-white p-5 space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-gray-900">Request Condition Change</h3>
-              <button type="button" onClick={() => setConditionRequestOpen(false)} className="text-sm text-gray-500">Close</button>
             </div>
             <p className="text-sm text-gray-500">
               Your provider manages official diagnoses. Send a quick note and they can review and update {requestingCondition.name}.
@@ -1724,7 +1753,6 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
                   ? 'Update advance directives'
                   : `Add ${editorType.slice(0, -1)}`}
               </h3>
-              <button type="button" onClick={() => setEditorType(null)} className="text-sm text-gray-500">Close</button>
             </div>
 
             {editorType === 'allergies' && (
