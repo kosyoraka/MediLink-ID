@@ -26,6 +26,7 @@ import { Badge } from './ui/badge';
 import { useEffect, useMemo, useState } from 'react';
 import { API_BASE } from "@/config/api";
 import { api, type PatientAppointment } from "@/lib/api";
+import { fetchHealthTasks, getTaskTimeLabel, type HealthTask } from "@/lib/healthTasks";
 import {
   buildAppointmentNotifications,
   getUnreadCount,
@@ -74,6 +75,7 @@ export default function Dashboard({
   const [emergencyUrl, setEmergencyUrl] = useState('');
   const [copied, setCopied] = useState(false);
   const [appointments, setAppointments] = useState<PatientAppointment[]>([]);
+  const [healthTasks, setHealthTasks] = useState<HealthTask[]>([]);
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
 
   useEffect(() => {
@@ -102,6 +104,24 @@ export default function Dashboard({
       } catch (e) {
         console.error("DASHBOARD APPOINTMENTS FETCH ERROR:", e);
         if (!cancelled) setAppointments([]);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const tasks = await fetchHealthTasks();
+        if (cancelled) return;
+        setHealthTasks(tasks);
+      } catch (e) {
+        console.error("DASHBOARD HEALTH TASKS FETCH ERROR:", e);
+        if (!cancelled) setHealthTasks([]);
       }
     })();
 
@@ -148,6 +168,13 @@ export default function Dashboard({
     const status = String(nextAppointment.status || "").toLowerCase().trim();
     return status === "confirmed" ? "Confirmed" : "Waiting for confirmation";
   }, [nextAppointment]);
+
+  const dashboardHealthTasks = useMemo(() => healthTasks.slice(0, 3), [healthTasks]);
+
+  const urgentHealthTaskCount = useMemo(
+    () => healthTasks.filter((task) => task.priority === 'urgent').length,
+    [healthTasks]
+  );
 
   const getInitials = (name: string) => {
     const parts = name.split(' ').filter(Boolean);
@@ -543,31 +570,33 @@ export default function Dashboard({
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-gray-900">Your Health To-Dos</h3>
-            <Badge className="bg-red-100 text-red-700 border-0">3</Badge>
+            <Badge className="bg-red-100 text-red-700 border-0">{urgentHealthTaskCount}</Badge>
           </div>
 
           <div className="space-y-3 mb-4">
-            {[
-              { task: 'Complete Annual Physical', due: 'Due: Dec 1', urgent: false },
-              { task: 'Schedule Mammogram', due: 'Overdue by 2 months', urgent: true },
-              { task: 'Review new lab results', due: '3 days ago', urgent: false },
-            ].map((item, index) => (
+            {dashboardHealthTasks.map((task) => (
               <button
-                key={index}
+                key={task.id}
                 className="w-full flex items-start gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors text-left"
+                onClick={() => onNavigate(task.actionScreen || 'health-tasks')}
+                type="button"
               >
-                <div className={`w-5 h-5 rounded border-2 flex-shrink-0 mt-0.5 ${item.urgent ? 'border-red-500 bg-red-50' : 'border-gray-300'}`} />
+                <div className={`w-5 h-5 rounded border-2 flex-shrink-0 mt-0.5 ${task.priority === 'urgent' ? 'border-red-500 bg-red-50' : 'border-gray-300'}`} />
                 <div className="flex-1 min-w-0">
-                  <p className="text-gray-900">{item.task}</p>
-                  <p className={`text-sm ${item.urgent ? 'text-red-600' : 'text-gray-500'}`}>{item.due}</p>
+                  <p className="text-gray-900">{task.title}</p>
+                  <p className={`text-sm ${task.priority === 'urgent' ? 'text-red-600' : 'text-gray-500'}`}>{getTaskTimeLabel(task)}</p>
                 </div>
                 <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0" />
               </button>
             ))}
           </div>
 
-          <button onClick={() => onNavigate('health-tasks')} className="w-full text-center text-teal-600">
-            View All Tasks (7)
+          {dashboardHealthTasks.length === 0 ? (
+            <div className="rounded-lg bg-gray-50 p-4 text-sm text-gray-500">You have no pending health tasks.</div>
+          ) : null}
+
+          <button onClick={() => onNavigate('health-tasks')} className="w-full text-center text-teal-600" type="button">
+            View All Tasks ({healthTasks.length})
           </button>
         </div>
       </div>
