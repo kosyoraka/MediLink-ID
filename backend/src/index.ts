@@ -2900,7 +2900,10 @@ app.get("/api/staff/messages/conversations", requireStaffAuth, async (req: any, 
           FROM message_items mi
           WHERE mi.conversation_id = c.id
             AND mi.sender_type = 'patient'
-            AND mi.body ILIKE 'Condition change request for %'
+            AND (
+              mi.body ILIKE 'Condition change request for %'
+              OR mi.body ILIKE 'New health concern added: %'
+            )
             AND mi.created_at > COALESCE(c.staff_last_read_at, '1970-01-01'::timestamptz)
         )::int AS open_condition_change_count,
 
@@ -4319,6 +4322,72 @@ app.post("/api/patient/conditions", requirePatientAuth, async (req: any, res) =>
         notes ? String(notes).trim() : null,
       ]
     );
+
+    const condition = created.rows[0];
+    const connections = await pool.query(
+      `
+      SELECT
+        ppc.provider_id,
+        (
+          SELECT sa.id
+          FROM staff_accounts sa
+          WHERE sa.hospital_id = ppc.provider_id
+          ORDER BY sa.created_at ASC
+          LIMIT 1
+        ) AS staff_id
+      FROM patient_provider_connections ppc
+      WHERE ppc.patient_id = $1::uuid
+        AND ppc.disconnected_at IS NULL
+      `,
+      [patientId]
+    );
+
+    const baseMessage = `New health concern added: ${String(condition.name || "Health concern").trim()}`;
+    const detailParts = [
+      status ? `Status: ${String(status).trim()}` : null,
+      diagnosed ? `Diagnosed: ${String(diagnosed).trim()}` : null,
+      metric ? `Metric: ${String(metric).trim()}` : null,
+      notes ? `Notes: ${String(notes).trim()}` : null,
+    ].filter(Boolean);
+    const messageBody = detailParts.length > 0 ? `${baseMessage}. ${detailParts.join(" • ")}` : baseMessage;
+
+    for (const row of connections.rows) {
+      const providerId = row.provider_id ? String(row.provider_id) : "";
+      const staffId = row.staff_id ? String(row.staff_id) : "";
+      if (!providerId || !staffId) continue;
+
+      const conversationResult = await pool.query(
+        `
+        INSERT INTO message_conversations (patient_id, provider_id, staff_id, created_at, updated_at)
+        VALUES ($1::uuid, $2::uuid, $3::uuid, NOW(), NOW())
+        ON CONFLICT (patient_id, provider_id, staff_id)
+        DO UPDATE SET updated_at = NOW()
+        RETURNING id
+        `,
+        [patientId, providerId, staffId]
+      );
+
+      const conversationId = String(conversationResult.rows[0].id);
+
+      await pool.query(
+        `
+        INSERT INTO message_items (conversation_id, sender_type, sender_patient_id, body)
+        VALUES ($1::uuid, 'patient', $2::uuid, $3)
+        `,
+        [conversationId, patientId, messageBody]
+      );
+
+      await pool.query(
+        `
+        UPDATE message_conversations
+        SET last_message_preview = $2,
+            last_message_at = NOW(),
+            updated_at = NOW()
+        WHERE id = $1::uuid
+        `,
+        [conversationId, messageBody.slice(0, 200)]
+      );
+    }
 
     await syncPatientConditionSummary(patientId);
     return res.status(201).json({ condition: mapConditionRow(created.rows[0]) });

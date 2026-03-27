@@ -256,6 +256,20 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
     );
   }, [appointments]);
 
+  const upcomingAppointments = useMemo(
+    () =>
+      appointments.filter((appointment) => {
+        const ts = new Date(appointment.startTime).getTime();
+        return (
+          !Number.isNaN(ts) &&
+          ts >= Date.now() &&
+          appointment.status !== "Completed" &&
+          appointment.status !== "Cancelled"
+        );
+      }),
+    [appointments]
+  );
+
   const recentDocuments = useMemo(() => {
     const cutoff = Date.now() - 4 * 60 * 60 * 1000;
     return documents.filter((doc) => {
@@ -274,8 +288,8 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
   );
 
   const pendingAppointments = useMemo(
-    () => appointments.filter((appointment) => appointment.status === "Pending").length,
-    [appointments]
+    () => upcomingAppointments.filter((appointment) => appointment.status === "Pending").length,
+    [upcomingAppointments]
   );
 
   const recentDocumentItems = useMemo(() => documents.slice(0, 3), [documents]);
@@ -335,9 +349,9 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Total Appointments</p>
+                <p className="text-sm text-gray-600">Upcoming Appointments</p>
                 <p className="text-3xl font-bold text-gray-900 mt-1">
-                  {appointments.length}
+                  {upcomingAppointments.length}
                 </p>
               </div>
               <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
@@ -556,7 +570,7 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
                       </div>
                       <div>
                         <p className="text-sm font-medium text-gray-900">Condition Change Requests</p>
-                        <p className="text-xs text-gray-500">Review patient requests to update provider-managed conditions</p>
+                        <p className="text-xs text-gray-500">Review new patient health concerns and requested condition updates</p>
                       </div>
                     </div>
                     <Badge variant="outline">{conditionChangeRequests}</Badge>
