@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Search,
   Plus,
@@ -23,7 +23,6 @@ type ConversationSummary = {
   last_message_preview: string | null;
   last_message_at: string | null;
   unread_count: number;
-  // optional (if your backend includes it)
   can_send?: boolean;
 };
 
@@ -88,16 +87,13 @@ export default function Messages() {
 
   const [messageInput, setMessageInput] = useState("");
 
-  // New message UI state
   const [providers, setProviders] = useState<Provider[]>([]);
   const [providerId, setProviderId] = useState<string>("");
   const [staff, setStaff] = useState<StaffUser[]>([]);
   const [staffId, setStaffId] = useState<string>("");
   const [newMessageBody, setNewMessageBody] = useState("");
   const [starting, setStarting] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
-  // read-only (e.g., disconnected)
   const [readOnlyReason, setReadOnlyReason] = useState<string | null>(null);
 
   const selectedConversation = useMemo(() => {
@@ -134,14 +130,12 @@ export default function Messages() {
     setReadOnlyReason(null);
 
     try {
-      // mark read (if you implemented this endpoint)
       try {
         await api.markPatientConversationRead(conversationId);
         setConversations((prev) =>
           prev.map((c) => (c.id === conversationId ? { ...c, unread_count: 0 } : c))
         );
       } catch {
-        // ignore if not implemented
       }
 
       const data = await api.getPatientMessages(conversationId);
@@ -161,10 +155,8 @@ export default function Messages() {
 
   useEffect(() => {
     loadConversations();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // When selecting a conversation, load messages
   useEffect(() => {
     if (selectedConversationId) {
       loadConversationMessages(selectedConversationId);
@@ -173,15 +165,8 @@ export default function Messages() {
       setMessageInput("");
       setReadOnlyReason(null);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedConversationId]);
 
-  useEffect(() => {
-    if (!selectedConversationId) return;
-    messagesEndRef.current?.scrollIntoView({ block: "end" });
-  }, [messages, selectedConversationId]);
-
-  // When opening new message screen, load providers
   useEffect(() => {
     if (!showNewMessage) return;
 
@@ -189,7 +174,6 @@ export default function Messages() {
       try {
         const data = await api.listMyProviders();
         setProviders(data.providers || []);
-        // reset
         setProviderId("");
         setStaff([]);
         setStaffId("");
@@ -201,7 +185,6 @@ export default function Messages() {
     })();
   }, [showNewMessage]);
 
-  // When provider changes, load staff list
   useEffect(() => {
     if (!showNewMessage) return;
     if (!providerId) {
@@ -235,7 +218,6 @@ export default function Messages() {
 
       await api.sendPatientMessage(conversationId, body);
 
-      // refresh conversations, open the convo, close new message UI
       await loadConversations();
       setShowNewMessage(false);
       setSelectedConversationId(conversationId);
@@ -252,7 +234,6 @@ export default function Messages() {
     const body = messageInput.trim();
     if (!conversationId || !body) return;
 
-    // optimistic message
     const optimistic: ChatMessage = {
       id: `tmp-${Date.now()}`,
       sender_type: "patient",
@@ -263,7 +244,6 @@ export default function Messages() {
     setMessages((prev) => [...prev, optimistic]);
     setMessageInput("");
 
-    // update preview in list optimistically
     setConversations((prev) =>
       prev.map((c) =>
         c.id === conversationId
@@ -280,7 +260,6 @@ export default function Messages() {
       const data = await api.sendPatientMessage(conversationId, body);
       const serverMsg = (data as any).message as ChatMessage;
 
-      // replace optimistic
       setMessages((prev) => {
         const copy = [...prev];
         const idx = copy.findIndex((m) => m.id === optimistic.id);
@@ -288,11 +267,9 @@ export default function Messages() {
         return copy;
       });
     } catch (e: any) {
-      // rollback
       setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
       setMessageInput(body);
 
-      // if disconnected / read-only
       const msg = e?.message || "Failed to send message";
       if (String(msg).toLowerCase().includes("disconnect") || String(msg).includes("403")) {
         setReadOnlyReason(
@@ -304,7 +281,6 @@ export default function Messages() {
     }
   }
 
-  // ---------------- UI: NEW MESSAGE ----------------
   if (showNewMessage) {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -389,11 +365,10 @@ export default function Messages() {
     );
   }
 
-  // ---------------- UI: THREAD VIEW ----------------
   if (selectedConversationId && selectedConversation) {
     return (
-      <div className="flex h-[calc(100dvh-4rem)] flex-col overflow-hidden bg-gray-50">
-        <div className="shrink-0 bg-white border-b border-gray-200 p-4">
+      <div className="h-[calc(100vh-4rem)] bg-gray-50 flex flex-col pb-16">
+        <div className="bg-white border-b border-gray-200 p-4">
           <div className="flex items-center gap-3">
             <button onClick={() => setSelectedConversationId(null)} className="text-gray-600">
               <ArrowLeft className="w-6 h-6" />
@@ -413,59 +388,56 @@ export default function Messages() {
         </div>
 
         {readOnlyReason && (
-          <div className="shrink-0 bg-yellow-50 border-b border-yellow-200 p-3 text-sm text-yellow-900">
+          <div className="bg-yellow-50 border-b border-yellow-200 p-3 text-sm text-yellow-900">
             {readOnlyReason}
           </div>
         )}
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-          <div className="flex min-h-full flex-col justify-end gap-4">
-            {loadingMessages ? (
-              <div className="text-sm text-gray-500">Loading messages…</div>
-            ) : messages.length === 0 ? (
-              <div className="text-sm text-gray-500">No messages yet.</div>
-            ) : (
-              messages.map((m) => {
-                const isPatient = m.sender_type === "patient";
-                const isSystem = m.sender_type === "system";
+        <div className="min-h-0 flex-1 p-4 space-y-4 overflow-y-auto">
+          {loadingMessages ? (
+            <div className="text-sm text-gray-500">Loading messages…</div>
+          ) : messages.length === 0 ? (
+            <div className="text-sm text-gray-500">No messages yet.</div>
+          ) : (
+            messages.map((m) => {
+              const isPatient = m.sender_type === "patient";
+              const isSystem = m.sender_type === "system";
 
-                if (isSystem) {
-                  return (
-                    <div key={m.id} className="flex justify-center">
-                      <div className="text-xs text-gray-500 bg-gray-100 border border-gray-200 rounded-full px-3 py-1">
-                        {m.body}
-                      </div>
-                    </div>
-                  );
-                }
-
+              if (isSystem) {
                 return (
-                  <div key={m.id} className={`flex ${isPatient ? "justify-end" : "justify-start"}`}>
-                    <div
-                      className={`rounded-2xl p-4 max-w-xs shadow-sm ${
-                        isPatient
-                          ? "bg-teal-600 text-white rounded-tr-sm"
-                          : "bg-white border border-gray-200 text-gray-800 rounded-tl-sm"
-                      }`}
-                    >
-                      <p className="whitespace-pre-wrap">{m.body}</p>
-                      <p
-                        className={`text-xs mt-2 ${
-                          isPatient ? "text-teal-100" : "text-gray-500"
-                        }`}
-                      >
-                        {formatTime(m.created_at)}
-                      </p>
+                  <div key={m.id} className="flex justify-center">
+                    <div className="text-xs text-gray-500 bg-gray-100 border border-gray-200 rounded-full px-3 py-1">
+                      {m.body}
                     </div>
                   </div>
                 );
-              })
-            )}
-            <div ref={messagesEndRef} />
-          </div>
+              }
+
+              return (
+                <div key={m.id} className={`flex ${isPatient ? "justify-end" : "justify-start"}`}>
+                  <div
+                    className={`rounded-2xl p-4 max-w-xs shadow-sm ${
+                      isPatient
+                        ? "bg-teal-600 text-white rounded-tr-sm"
+                        : "bg-white border border-gray-200 text-gray-800 rounded-tl-sm"
+                    }`}
+                  >
+                    <p className="whitespace-pre-wrap">{m.body}</p>
+                    <p
+                      className={`text-xs mt-2 ${
+                        isPatient ? "text-teal-100" : "text-gray-500"
+                      }`}
+                    >
+                      {formatTime(m.created_at)}
+                    </p>
+                  </div>
+                </div>
+              );
+            })
+          )}
         </div>
 
-        <div className="shrink-0 border-t border-gray-200 bg-white p-4">
+        <div className="bg-white border-t border-gray-200 p-4 sticky bottom-0">
           <div className="flex items-center gap-2">
             <Input
               placeholder={
@@ -499,7 +471,6 @@ export default function Messages() {
     );
   }
 
-  // ---------------- UI: LIST ----------------
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="bg-white border-b border-gray-200 p-4 sticky top-0 z-10">
