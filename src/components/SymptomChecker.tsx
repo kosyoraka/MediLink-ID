@@ -396,7 +396,7 @@ export default function SymptomChecker({ onBack, onNavigate }: SymptomCheckerPro
 
         {showConversation ? (
           <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-4">
-            <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white shadow-xl max-h-[85vh] overflow-hidden">
+            <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white shadow-xl h-[85vh] max-h-[85vh] overflow-hidden flex flex-col">
               <div className="flex items-center justify-between border-b border-gray-100 p-4">
                 <div>
                   <h3 className="text-gray-900">Continue Conversation</h3>
@@ -411,7 +411,7 @@ export default function SymptomChecker({ onBack, onNavigate }: SymptomCheckerPro
                 </button>
               </div>
 
-              <div className="max-h-[calc(85vh-72px)] overflow-y-auto p-4 space-y-4">
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 {activeInquiry ? (
                   <>
                     <div className="rounded-2xl bg-gray-100 px-4 py-3 max-w-[85%]">
@@ -440,20 +440,6 @@ export default function SymptomChecker({ onBack, onNavigate }: SymptomCheckerPro
                         </div>
                       </div>
                     ))}
-
-                    <div className="rounded-xl border border-gray-200 p-4">
-                      <Textarea
-                        className="min-h-24"
-                        placeholder="Ask a follow-up question about this guidance..."
-                        value={followUpPrompt}
-                        onChange={(e) => setFollowUpPrompt(e.target.value)}
-                      />
-                      <div className="mt-3 flex gap-2">
-                        <Button type="button" className="flex-1 bg-teal-600 hover:bg-teal-700" onClick={requestFollowUp} disabled={!followUpPrompt.trim() || followUpLoading}>
-                          {followUpLoading ? "Sending..." : "Send"}
-                        </Button>
-                      </div>
-                    </div>
                   </>
                 ) : (
                   <div className="rounded-xl border border-dashed border-gray-200 p-6 text-sm text-gray-500">
@@ -461,6 +447,22 @@ export default function SymptomChecker({ onBack, onNavigate }: SymptomCheckerPro
                   </div>
                 )}
               </div>
+
+              {activeInquiry ? (
+                <div className="border-t border-gray-100 p-4 bg-white">
+                  <Textarea
+                    className="min-h-24"
+                    placeholder="Ask a follow-up question about this guidance..."
+                    value={followUpPrompt}
+                    onChange={(e) => setFollowUpPrompt(e.target.value)}
+                  />
+                  <div className="mt-3 flex gap-2">
+                    <Button type="button" className="flex-1 bg-teal-600 hover:bg-teal-700" onClick={requestFollowUp} disabled={!followUpPrompt.trim() || followUpLoading}>
+                      {followUpLoading ? "Sending..." : "Send"}
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
             </div>
           </div>
         ) : null}
