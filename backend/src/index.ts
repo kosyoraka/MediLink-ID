@@ -2743,7 +2743,7 @@ app.get("/api/patient/notifications", requirePatientAuth, async (req: any, res) 
         return {
           id: `patient-appointment:${row.id}`,
           title,
-          detail: `${providerName} • ${new Date(row.start_time).toLocaleString()}`,
+          detail: providerName,
           isoDate: row.start_time || row.created_at,
           unread: false,
           screen: "appointments",
@@ -3108,14 +3108,15 @@ app.get("/api/staff/notifications", requireStaffAuth, async (req: any, res) => {
         SELECT
           a.id,
           a.start_time,
+          a.status,
           COALESCE(NULLIF(TRIM(pp.first_name || ' ' || pp.last_name), ''), p.email, 'Patient') AS patient_name
         FROM appointments a
         JOIN patients p ON p.id = a.patient_id
         LEFT JOIN patient_profiles pp ON pp.patient_id = p.id
         WHERE a.staff_id = $1::uuid
-          AND LOWER(COALESCE(a.status, '')) IN ('pending', 'scheduled')
-          AND a.start_time >= NOW() - INTERVAL '1 day'
-        ORDER BY a.start_time ASC
+          AND LOWER(COALESCE(a.status, '')) IN ('pending', 'scheduled', 'confirmed', 'completed')
+          AND a.start_time >= NOW() - INTERVAL '30 days'
+        ORDER BY a.start_time DESC
         LIMIT 100
         `,
         [staffId]
@@ -3163,14 +3164,29 @@ app.get("/api/staff/notifications", requireStaffAuth, async (req: any, res) => {
           screen: body.startsWith("Medical record request for") ? "documents" : "messages",
         };
       }),
-      ...appointmentResult.rows.map((row) => ({
-        id: `staff-appointment:${row.id}`,
-        title: "Pending appointment confirmation",
-        detail: `${String(row.patient_name || "Patient").trim()} • ${new Date(row.start_time).toLocaleString()}`,
-        isoDate: row.start_time,
-        unread: true,
-        screen: "appointments",
-      })),
+      ...appointmentResult.rows.map((row) => {
+        const status = String(row.status || "").trim().toLowerCase();
+        let title = "Appointment update";
+        let unread = false;
+
+        if (status === "pending" || status === "scheduled") {
+          title = "Pending appointment confirmation";
+          unread = true;
+        } else if (status === "confirmed") {
+          title = "Appointment confirmed";
+        } else if (status === "completed") {
+          title = "Appointment completed";
+        }
+
+        return {
+          id: `staff-appointment:${row.id}`,
+          title,
+          detail: String(row.patient_name || "Patient").trim(),
+          isoDate: row.start_time,
+          unread,
+          screen: "appointments",
+        };
+      }),
       ...refillResult.rows.map((row) => ({
         id: `staff-refill:${row.id}`,
         title: "Refill request pending",

@@ -18,6 +18,18 @@ function formatNotificationTime(isoDate: string) {
   });
 }
 
+function formatAppointmentTime(isoDate: string) {
+  const date = new Date(isoDate);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 export function Notifications({ onNavigate }: NotificationsProps) {
   const [notifications, setNotifications] = useState<StaffNotification[]>([]);
 
@@ -86,6 +98,9 @@ export function Notifications({ onNavigate }: NotificationsProps) {
                           <div>
                             <p className="font-medium text-gray-900">{item.title}</p>
                             <p className="mt-1 text-sm text-gray-600">{item.detail}</p>
+                            {item.id.startsWith("staff-appointment:") ? (
+                              <p className="mt-1 text-xs text-gray-500">{formatAppointmentTime(item.isoDate)}</p>
+                            ) : null}
                           </div>
                           {item.screen ? <ChevronRight className="h-5 w-5 flex-shrink-0 text-gray-400" /> : null}
                         </div>
