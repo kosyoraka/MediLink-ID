@@ -703,9 +703,12 @@ setAppointments(
       </div>
 
       {selectedSummary ? (
-        <div className="fixed inset-0 z-50 flex items-end bg-black/40" onClick={() => setSelectedSummary(null)}>
+        <div
+          className="fixed inset-0 z-50 flex items-end bg-black/40 sm:items-center sm:justify-center sm:p-4"
+          onClick={() => setSelectedSummary(null)}
+        >
           <div
-            className="max-h-[88vh] w-full overflow-y-auto rounded-t-[28px] bg-white px-4 pb-6 pt-3 shadow-2xl"
+            className="max-h-[88vh] w-full overflow-y-auto rounded-t-[28px] bg-white px-4 pb-6 pt-3 shadow-2xl sm:max-w-md sm:rounded-[28px] sm:px-5 sm:pt-4"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-gray-300" />
@@ -729,7 +732,7 @@ setAppointments(
               </button>
             </div>
 
-            <div className="space-y-3">
+            <div className="mx-auto max-w-md space-y-3">
               <div className="rounded-2xl border border-gray-200 bg-white p-4">
                 <p className="text-xs font-medium uppercase tracking-wide text-gray-500">When</p>
                 <p className="mt-2 text-base font-semibold text-gray-900">
