@@ -4311,11 +4311,39 @@ app.post("/api/patient/conditions", requirePatientAuth, async (req: any, res) =>
   const patientId = req.patientId;
   const { name, status, diagnosed, metric, notes } = req.body ?? {};
 
-  if (!String(name || "").trim()) {
+  const normalizedName = String(name || "").trim();
+  const normalizedStatus = String(status || "").trim();
+  const normalizedDiagnosed = String(diagnosed || "").trim();
+  const normalizedMetric = String(metric || "").trim();
+  const normalizedNotes = String(notes || "").trim();
+
+  if (!normalizedName) {
     return res.status(400).json({ message: "Condition name is required" });
   }
 
   try {
+    const existing = await pool.query(
+      `
+      SELECT *
+      FROM patient_conditions
+      WHERE patient_id = $1::uuid
+        AND source_type = 'patient'
+        AND is_active = true
+        AND LOWER(BTRIM(name)) = LOWER(BTRIM($2))
+        AND COALESCE(NULLIF(BTRIM(status), ''), '') = COALESCE(NULLIF(BTRIM($3), ''), '')
+        AND COALESCE(NULLIF(BTRIM(diagnosed), ''), '') = COALESCE(NULLIF(BTRIM($4), ''), '')
+        AND COALESCE(NULLIF(BTRIM(metric), ''), '') = COALESCE(NULLIF(BTRIM($5), ''), '')
+        AND COALESCE(NULLIF(BTRIM(notes), ''), '') = COALESCE(NULLIF(BTRIM($6), ''), '')
+      ORDER BY updated_at DESC, created_at DESC
+      LIMIT 1
+      `,
+      [patientId, normalizedName, normalizedStatus || null, normalizedDiagnosed || null, normalizedMetric || null, normalizedNotes || null]
+    );
+
+    if ((existing.rowCount ?? 0) > 0) {
+      return res.status(200).json({ condition: mapConditionRow(existing.rows[0]) });
+    }
+
     const created = await pool.query(
       `
       INSERT INTO patient_conditions (
@@ -4327,11 +4355,11 @@ app.post("/api/patient/conditions", requirePatientAuth, async (req: any, res) =>
       [
         randomUUID(),
         patientId,
-        String(name).trim(),
-        status ? String(status).trim() : null,
-        diagnosed ? String(diagnosed).trim() : null,
-        metric ? String(metric).trim() : null,
-        notes ? String(notes).trim() : null,
+        normalizedName,
+        normalizedStatus || null,
+        normalizedDiagnosed || null,
+        normalizedMetric || null,
+        normalizedNotes || null,
       ]
     );
 
@@ -4356,10 +4384,10 @@ app.post("/api/patient/conditions", requirePatientAuth, async (req: any, res) =>
 
     const baseMessage = `New health concern added: ${String(condition.name || "Health concern").trim()}`;
     const detailParts = [
-      status ? `Status: ${String(status).trim()}` : null,
-      diagnosed ? `Diagnosed: ${String(diagnosed).trim()}` : null,
-      metric ? `Metric: ${String(metric).trim()}` : null,
-      notes ? `Notes: ${String(notes).trim()}` : null,
+      normalizedStatus ? `Status: ${normalizedStatus}` : null,
+      normalizedDiagnosed ? `Diagnosed: ${normalizedDiagnosed}` : null,
+      normalizedMetric ? `Metric: ${normalizedMetric}` : null,
+      normalizedNotes ? `Notes: ${normalizedNotes}` : null,
     ].filter(Boolean);
     const messageBody = detailParts.length > 0 ? `${baseMessage}. ${detailParts.join(" • ")}` : baseMessage;
 
@@ -5340,11 +5368,16 @@ app.post("/api/staff/patients/:id/conditions", requireStaffAuth, async (req: any
   const staffId = req.staffId;
   const patientId = String(req.params.id || "");
   const { name, status, diagnosed, metric, notes } = req.body ?? {};
+  const normalizedName = String(name || "").trim();
+  const normalizedStatus = String(status || "").trim();
+  const normalizedDiagnosed = String(diagnosed || "").trim();
+  const normalizedMetric = String(metric || "").trim();
+  const normalizedNotes = String(notes || "").trim();
 
   if (!isUuid(patientId)) {
     return res.status(400).json({ message: "Invalid patient id" });
   }
-  if (!String(name || "").trim()) {
+  if (!normalizedName) {
     return res.status(400).json({ message: "Condition name is required" });
   }
 
@@ -5377,6 +5410,30 @@ app.post("/api/staff/patients/:id/conditions", requireStaffAuth, async (req: any
       return res.status(403).json({ message: "This patient is not linked to your hospital" });
     }
 
+    const existing = await pool.query(
+      `
+      SELECT pc.*, sa.full_name AS staff_full_name
+      FROM patient_conditions pc
+      LEFT JOIN staff_accounts sa ON sa.id = pc.staff_id
+      WHERE pc.patient_id = $1::uuid
+        AND pc.hospital_id = $2::uuid
+        AND pc.source_type = 'provider'
+        AND pc.is_active = true
+        AND LOWER(BTRIM(pc.name)) = LOWER(BTRIM($3))
+        AND COALESCE(NULLIF(BTRIM(pc.status), ''), '') = COALESCE(NULLIF(BTRIM($4), ''), '')
+        AND COALESCE(NULLIF(BTRIM(pc.diagnosed), ''), '') = COALESCE(NULLIF(BTRIM($5), ''), '')
+        AND COALESCE(NULLIF(BTRIM(pc.metric), ''), '') = COALESCE(NULLIF(BTRIM($6), ''), '')
+        AND COALESCE(NULLIF(BTRIM(pc.notes), ''), '') = COALESCE(NULLIF(BTRIM($7), ''), '')
+      ORDER BY pc.updated_at DESC, pc.created_at DESC
+      LIMIT 1
+      `,
+      [patientId, hospitalId, normalizedName, normalizedStatus || null, normalizedDiagnosed || null, normalizedMetric || null, normalizedNotes || null]
+    );
+
+    if ((existing.rowCount ?? 0) > 0) {
+      return res.status(200).json({ condition: mapConditionRow(existing.rows[0]) });
+    }
+
     const created = await pool.query(
       `
       INSERT INTO patient_conditions (
@@ -5390,12 +5447,12 @@ app.post("/api/staff/patients/:id/conditions", requireStaffAuth, async (req: any
         patientId,
         hospitalId,
         staffId,
-        String(name).trim(),
-        status ? String(status).trim() : null,
-        diagnosed ? String(diagnosed).trim() : null,
-        metric ? String(metric).trim() : null,
+        normalizedName,
+        normalizedStatus || null,
+        normalizedDiagnosed || null,
+        normalizedMetric || null,
         relation.rows[0].full_name || null,
-        notes ? String(notes).trim() : null,
+        normalizedNotes || null,
       ]
     );
 
