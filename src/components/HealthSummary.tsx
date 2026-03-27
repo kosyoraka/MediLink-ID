@@ -12,6 +12,7 @@ import {
   Edit3,
   Plus,
   Syringe,
+  Trash2,
   Users,
 } from 'lucide-react';
 import { Button } from './ui/button';
@@ -968,6 +969,26 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
     }
   };
 
+  const deleteCondition = async (conditionId: string) => {
+    if (!window.confirm('Delete this health concern permanently?')) return;
+    setSaving(true);
+    try {
+      await api.deleteMyCondition(conditionId);
+      setConditions((current) => current.filter((item) => item.id !== conditionId));
+      try {
+        const refreshed = await api.getMyHealthSummary();
+        setSummary(refreshed.summary);
+      } catch {
+        // ignore summary refresh failures
+      }
+    } catch (error) {
+      console.error('Failed to delete condition:', error);
+      setConditionEditorError(error instanceof Error ? error.message : 'Unable to delete this health concern right now.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const openConditionRequest = (condition: HealthSummaryCondition) => {
     setRequestingCondition(condition);
     setConditionRequestMessage('');
@@ -1273,6 +1294,16 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
                       <Button type="button" variant="outline" size="sm" onClick={() => openConditionEditor(condition)}>
                         Edit Concern
                       </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => deleteCondition(condition.id)}
+                        className="gap-2 text-red-600 hover:text-red-700"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        Delete
+                      </Button>
                       <button
                         type="button"
                         onClick={() => archiveCondition(condition.id)}
@@ -1307,9 +1338,21 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
                           </div>
                         </div>
                         {condition.sourceType !== 'provider' ? (
-                          <Button type="button" variant="outline" size="sm" onClick={() => restoreCondition(condition.id)}>
-                            Restore
-                          </Button>
+                          <div className="flex flex-col gap-2">
+                            <Button type="button" variant="outline" size="sm" onClick={() => restoreCondition(condition.id)}>
+                              Restore
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => deleteCondition(condition.id)}
+                              className="gap-2 text-red-600 hover:text-red-700"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                              Delete
+                            </Button>
+                          </div>
                         ) : null}
                       </div>
                       <div className="space-y-1 text-sm text-gray-600">

@@ -4487,6 +4487,38 @@ app.patch("/api/patient/conditions/:id", requirePatientAuth, async (req: any, re
   }
 });
 
+app.delete("/api/patient/conditions/:id", requirePatientAuth, async (req: any, res) => {
+  const patientId = req.patientId;
+  const conditionId = String(req.params.id || "");
+
+  if (!isUuid(conditionId)) {
+    return res.status(400).json({ message: "Invalid condition id" });
+  }
+
+  try {
+    const deleted = await pool.query(
+      `
+      DELETE FROM patient_conditions
+      WHERE id = $1::uuid
+        AND patient_id = $2::uuid
+        AND source_type = 'patient'
+      RETURNING id
+      `,
+      [conditionId, patientId]
+    );
+
+    if ((deleted.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: "Health concern not found" });
+    }
+
+    await syncPatientConditionSummary(patientId);
+    return res.json({ ok: true });
+  } catch (e: any) {
+    console.error("DELETE /api/patient/conditions/:id error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to delete health concern" });
+  }
+});
+
 app.post("/api/patient/conditions/:id/request-change", requirePatientAuth, async (req: any, res) => {
   const patientId = req.patientId;
   const conditionId = String(req.params.id || "");
@@ -5548,6 +5580,62 @@ app.patch("/api/staff/patients/:patientId/conditions/:conditionId", requireStaff
   } catch (e: any) {
     console.error("PATCH /api/staff/patients/:patientId/conditions/:conditionId error:", e);
     return res.status(500).json({ message: e?.message || "Failed to update condition" });
+  }
+});
+
+app.delete("/api/staff/patients/:patientId/conditions/:conditionId", requireStaffAuth, async (req: any, res) => {
+  const hospitalId = req.staffHospitalId;
+  const patientId = String(req.params.patientId || "");
+  const conditionId = String(req.params.conditionId || "");
+
+  if (!isUuid(patientId) || !isUuid(conditionId)) {
+    return res.status(400).json({ message: "Invalid patient or condition id" });
+  }
+
+  try {
+    const relation = await pool.query(
+      `
+      SELECT 1
+      WHERE EXISTS (
+        SELECT 1 FROM patient_hospital_connections phc
+        WHERE phc.patient_id = $1::uuid
+          AND phc.hospital_id = $2::uuid
+          AND phc.disconnected_at IS NULL
+      )
+      OR EXISTS (
+        SELECT 1 FROM patient_provider_connections ppc
+        WHERE ppc.patient_id = $1::uuid
+          AND ppc.provider_id = $2::uuid
+          AND ppc.disconnected_at IS NULL
+      )
+      LIMIT 1
+      `,
+      [patientId, hospitalId]
+    );
+
+    if ((relation.rowCount ?? 0) === 0) {
+      return res.status(403).json({ message: "This patient is not linked to your hospital" });
+    }
+
+    const deleted = await pool.query(
+      `
+      DELETE FROM patient_conditions
+      WHERE id = $1::uuid
+        AND patient_id = $2::uuid
+      RETURNING id
+      `,
+      [conditionId, patientId]
+    );
+
+    if ((deleted.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: "Condition not found" });
+    }
+
+    await syncPatientConditionSummary(patientId);
+    return res.json({ ok: true });
+  } catch (e: any) {
+    console.error("DELETE /api/staff/patients/:patientId/conditions/:conditionId error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to delete condition" });
   }
 });
 

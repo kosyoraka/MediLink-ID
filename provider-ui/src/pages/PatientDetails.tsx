@@ -17,6 +17,7 @@ import {
   Pill,
   Activity,
   Syringe,
+  Trash2,
   Users,
 } from 'lucide-react';
 
@@ -1044,6 +1045,24 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
     }
   };
 
+  const deleteCondition = async (conditionId: string) => {
+    if (!window.confirm('Delete this condition permanently?')) return;
+    try {
+      await apiFetch<{ ok: boolean }>(`/api/staff/patients/${patient.id}/conditions/${conditionId}`, {
+        method: 'DELETE',
+      });
+      setPatientConditions((current) => current.filter((item) => item.id !== conditionId));
+      try {
+        const refreshed = await apiFetch<{ summary: ProviderHealthSummary }>(`/api/staff/patients/${patient.id}/health-summary`);
+        setPatientHealthSummary(refreshed.summary || null);
+      } catch {
+        // ignore refresh failures
+      }
+    } catch (error) {
+      console.error('Failed to delete condition:', error);
+    }
+  };
+
   const allSharedVitals = patientHealthSummary?.vitals || [];
   const latestSharedBloodPressure = useMemo(
     () => getLatestProviderVitalForType(allSharedVitals, 'bloodPressure') || null,
@@ -1398,6 +1417,15 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
                             <Button variant="outline" size="sm" onClick={() => openConditionModal(item)}>
                               Edit Condition
                             </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => deleteCondition(item.id)}
+                              className="gap-2 text-red-600 hover:text-red-700"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                              Delete
+                            </Button>
                             <Button variant="outline" size="sm" onClick={() => markConditionInactive(item.id)}>
                               Mark Inactive
                             </Button>
@@ -1424,9 +1452,20 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
                                   {item.notes ? <p className="text-xs text-gray-500 mt-1">{item.notes}</p> : null}
                                   {item.hospitalName ? <p className="text-xs text-gray-500 mt-1">{item.hospitalName}</p> : null}
                                 </div>
-                                <Button variant="outline" size="sm" onClick={() => restoreCondition(item.id)}>
-                                  Restore
-                                </Button>
+                                <div className="flex flex-col gap-2">
+                                  <Button variant="outline" size="sm" onClick={() => restoreCondition(item.id)}>
+                                    Restore
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => deleteCondition(item.id)}
+                                    className="gap-2 text-red-600 hover:text-red-700"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                    Delete
+                                  </Button>
+                                </div>
                               </div>
                             </div>
                           ))}

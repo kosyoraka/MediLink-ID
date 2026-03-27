@@ -399,6 +399,10 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(body),
     }),
+  deleteMyCondition: (conditionId: string) =>
+    request<{ ok: boolean }>(`/api/patient/conditions/${conditionId}`, {
+      method: "DELETE",
+    }),
   requestConditionChange: (conditionId: string, body: { message: string }) =>
     request<{ ok: boolean; conversationId: string }>(`/api/patient/conditions/${conditionId}/request-change`, {
       method: "POST",
