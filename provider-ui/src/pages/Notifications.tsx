@@ -98,8 +98,8 @@ export function Notifications({ onNavigate }: NotificationsProps) {
                           <div>
                             <p className="font-medium text-gray-900">{item.title}</p>
                             <p className="mt-1 text-sm text-gray-600">{item.detail}</p>
-                            {item.id.startsWith("staff-appointment:") ? (
-                              <p className="mt-1 text-xs text-gray-500">{formatAppointmentTime(item.isoDate)}</p>
+                            {item.id.startsWith("staff-appointment:") && item.eventDate ? (
+                              <p className="mt-1 text-xs text-gray-500">{formatAppointmentTime(item.eventDate)}</p>
                             ) : null}
                           </div>
                           {item.screen ? <ChevronRight className="h-5 w-5 flex-shrink-0 text-gray-400" /> : null}

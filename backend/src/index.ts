@@ -3108,6 +3108,7 @@ app.get("/api/staff/notifications", requireStaffAuth, async (req: any, res) => {
         SELECT
           a.id,
           a.start_time,
+          a.created_at,
           a.status,
           COALESCE(NULLIF(TRIM(pp.first_name || ' ' || pp.last_name), ''), p.email, 'Patient') AS patient_name
         FROM appointments a
@@ -3182,9 +3183,10 @@ app.get("/api/staff/notifications", requireStaffAuth, async (req: any, res) => {
           id: `staff-appointment:${row.id}`,
           title,
           detail: String(row.patient_name || "Patient").trim(),
-          isoDate: row.start_time,
+          isoDate: row.created_at || row.start_time,
           unread,
           screen: "appointments",
+          eventDate: row.start_time,
         };
       }),
       ...refillResult.rows.map((row) => ({

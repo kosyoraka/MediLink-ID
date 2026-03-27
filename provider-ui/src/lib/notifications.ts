@@ -5,6 +5,7 @@ export type StaffNotification = {
   isoDate: string;
   unread: boolean;
   screen?: string;
+  eventDate?: string;
 };
 
 export type NotificationSection = {
@@ -57,4 +58,3 @@ export function groupNotifications(notifications: StaffNotification[]): Notifica
 export function getUnreadCount(notifications: StaffNotification[]): number {
   return notifications.filter((notification) => notification.unread).length;
 }
-
