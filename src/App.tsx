@@ -409,10 +409,13 @@ export default function App() {
             onBack={() => handleNavigation('dashboard', 'home')}
             onNavigate={(screen) => {
               if (screen === 'appointments') handleNavigation('appointments', 'appointments');
-              if (screen === 'documents') handleNavigation('documents', 'home');
+              if (screen === 'records') handleNavigation('records', 'home');
               if (screen === 'medications') handleNavigation('medications', 'home');
-              if (screen === 'recommendations') handleNavigation('recommendations', 'home');
               if (screen === 'manage-providers') handleNavigation('manage-providers', 'more');
+              if (screen === 'messages') handleNavigation('messages', 'messages');
+              if (screen === 'health-summary') handleNavigation('health-summary', 'home');
+              if (screen === 'personal-information') handleNavigation('personal-information', 'more');
+              if (screen === 'emergency-profile') handleNavigation('emergency-profile', 'more');
             }}
           />
         );

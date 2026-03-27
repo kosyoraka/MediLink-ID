@@ -1,6 +1,24 @@
-import { api, type PatientAppointment, type PatientMedication, type Provider, type RecordDocument } from '@/lib/api';
+import {
+  api,
+  type HealthSummaryPayload,
+  type PatientAppointment,
+  type PatientConversationSummary,
+  type PatientEmergencyProfile,
+  type PatientMedication,
+  type PatientProfile,
+  type Provider,
+  type RecordDocument,
+} from '@/lib/api';
 
-export type HealthTaskScreen = 'appointments' | 'documents' | 'medications' | 'recommendations' | 'manage-providers';
+export type HealthTaskScreen =
+  | 'appointments'
+  | 'records'
+  | 'medications'
+  | 'manage-providers'
+  | 'messages'
+  | 'health-summary'
+  | 'personal-information'
+  | 'emergency-profile';
 
 export interface HealthTask {
   id: string;
@@ -76,39 +94,26 @@ function buildAppointmentTasks(appointments: PatientAppointment[]): HealthTask[]
     });
 }
 
-function buildDocumentTasks(documents: RecordDocument[]): HealthTask[] {
-  return documents
-    .filter((document) => {
-      const created = new Date(document.uploadDate).getTime();
-      return !Number.isNaN(created) && Date.now() - created <= 30 * DAY_MS;
-    })
-    .slice(0, 4)
-    .map((document) => {
-      const dueAt = document.serviceDate || document.uploadDate;
-      const statusMeta = getTaskStatusMeta(dueAt, 'routine');
-      const categoryLabel =
-        document.category === 'labs'
-          ? 'Review new lab results'
-          : document.category === 'visits'
-            ? 'Review visit summary'
-            : document.category === 'imaging'
-              ? 'Review imaging result'
-              : `Review ${document.title}`;
+function buildInsuranceTasks(documents: RecordDocument[], profile: PatientProfile | null): HealthTask[] {
+  const insuranceDocuments = documents.filter((document) => document.category === 'insurance');
+  if (insuranceDocuments.length > 0) return [];
 
-      return {
-        id: `document-${document.id}`,
-        category: document.category === 'labs' ? 'followup' : 'document',
-        title: categoryLabel,
-        description: document.title,
-        dueLabel: statusMeta.dueLabel,
-        dueAt,
-        priority: statusMeta.priority,
-        provider: document.hospitalName || document.sourceOrganizationName || undefined,
-        estimatedTime: '3 minutes',
-        overdue: statusMeta.overdue,
-        actionScreen: 'documents',
-      };
-    });
+  const hasInsuranceText = Boolean(profile?.insurance && String(profile.insurance).trim());
+  return [
+    {
+      id: 'insurance-upload',
+      category: 'document',
+      title: 'Add insurance document',
+      description: hasInsuranceText
+        ? 'Upload a copy of your insurance card or benefits document'
+        : 'Add your insurance details and upload a supporting document',
+      dueLabel: 'Any time',
+      dueAt: null,
+      priority: 'soon',
+      estimatedTime: '5 minutes',
+      actionScreen: 'records',
+    },
+  ];
 }
 
 function buildMedicationTasks(medications: PatientMedication[]): HealthTask[] {
@@ -168,6 +173,145 @@ function buildProviderTasks(providers: Provider[]): HealthTask[] {
   ];
 }
 
+function buildProfileTasks(profile: PatientProfile | null): HealthTask[] {
+  if (!profile) return [];
+
+  const missing: string[] = [];
+  if (!profile.first_name?.trim() || !profile.last_name?.trim()) missing.push('name');
+  if (!profile.dob?.trim()) missing.push('date of birth');
+  if (!profile.phone_number?.trim()) missing.push('phone number');
+  if (!profile.home_address_line1?.trim() || !profile.home_city?.trim() || !profile.home_postal_code?.trim()) {
+    missing.push('home address');
+  }
+
+  if (missing.length === 0) return [];
+
+  return [
+    {
+      id: 'profile-complete',
+      category: 'followup',
+      title: 'Complete profile information',
+      description: `Add your ${missing.join(', ')} so your care team can identify and contact you correctly`,
+      dueLabel: 'Any time',
+      dueAt: null,
+      priority: 'urgent',
+      estimatedTime: '5 minutes',
+      actionScreen: 'personal-information',
+    },
+  ];
+}
+
+function buildEmergencyTasks(emergency: PatientEmergencyProfile | null, summary: HealthSummaryPayload | null): HealthTask[] {
+  if (!emergency && !summary) return [];
+
+  const tasks: HealthTask[] = [];
+  const hasEmergencyContact =
+    Boolean(emergency?.emergency_contact_full_name?.trim() && emergency?.emergency_contact_phone?.trim()) ||
+    Boolean(summary?.emergencyContacts?.length);
+  const hasBloodType = Boolean(emergency?.blood_type?.trim() || summary?.bloodType?.trim());
+  const shareFlags = [
+    emergency?.share_blood_type,
+    emergency?.share_allergies,
+    emergency?.share_medical_conditions,
+    emergency?.share_current_medications,
+    emergency?.share_emergency_contacts,
+  ];
+  const hasSharingConfigured = shareFlags.some(Boolean);
+
+  if (!hasEmergencyContact) {
+    tasks.push({
+      id: 'emergency-contact',
+      category: 'followup',
+      title: 'Add emergency contact',
+      description: 'Add someone providers can reach if there is an emergency',
+      dueLabel: 'Any time',
+      dueAt: null,
+      priority: 'urgent',
+      estimatedTime: '3 minutes',
+      actionScreen: 'emergency-profile',
+    });
+  }
+
+  if (!hasSharingConfigured || !hasBloodType) {
+    const missingBits = [
+      !hasBloodType ? 'blood type' : null,
+      !hasSharingConfigured ? 'information to share in emergencies' : null,
+    ].filter(Boolean);
+
+    tasks.push({
+      id: 'emergency-profile',
+      category: 'preventive',
+      title: 'Complete emergency profile',
+      description: `Update your ${missingBits.join(' and ')}`,
+      dueLabel: 'Any time',
+      dueAt: emergency?.updated_at || null,
+      priority: 'soon',
+      estimatedTime: '4 minutes',
+      actionScreen: 'emergency-profile',
+    });
+  }
+
+  return tasks;
+}
+
+function buildMessageTasks(conversations: PatientConversationSummary[]): HealthTask[] {
+  return conversations
+    .filter((conversation) => conversation.unread_count > 0)
+    .slice(0, 3)
+    .map((conversation) => ({
+      id: `message-${conversation.id}`,
+      category: 'followup' as const,
+      title: `Review new message from ${conversation.staff_name || conversation.provider_name}`,
+      description: conversation.last_message_preview || `You have ${conversation.unread_count} unread message${conversation.unread_count === 1 ? '' : 's'}`,
+      dueLabel: formatDueLabel(conversation.last_message_at),
+      dueAt: conversation.last_message_at,
+      priority: 'urgent' as const,
+      provider: conversation.provider_name || undefined,
+      estimatedTime: '2 minutes',
+      actionScreen: 'messages',
+    }));
+}
+
+function buildHealthSummaryTasks(summary: HealthSummaryPayload | null): HealthTask[] {
+  if (!summary) return [];
+
+  const tasks: HealthTask[] = [];
+
+  if (!summary.immunizations.length) {
+    tasks.push({
+      id: 'summary-immunizations',
+      category: 'preventive',
+      title: 'Update immunization record',
+      description: 'Add your vaccines so your health summary stays current',
+      dueLabel: 'Any time',
+      dueAt: summary.updatedAt,
+      priority: 'soon',
+      estimatedTime: '4 minutes',
+      actionScreen: 'health-summary',
+    });
+  }
+
+  if (!summary.bloodType || !summary.allergies.length) {
+    const missing = [
+      !summary.bloodType ? 'blood type' : null,
+      !summary.allergies.length ? 'allergies' : null,
+    ].filter(Boolean);
+    tasks.push({
+      id: 'summary-basics',
+      category: 'preventive',
+      title: 'Fill in health summary details',
+      description: `Add your ${missing.join(' and ')} to complete your health summary`,
+      dueLabel: 'Any time',
+      dueAt: summary.updatedAt,
+      priority: 'soon',
+      estimatedTime: '4 minutes',
+      actionScreen: 'health-summary',
+    });
+  }
+
+  return tasks;
+}
+
 function dedupeTasks(tasks: HealthTask[]) {
   const seen = new Set<string>();
   return tasks.filter((task) => {
@@ -178,18 +322,26 @@ function dedupeTasks(tasks: HealthTask[]) {
 }
 
 export async function fetchHealthTasks(): Promise<HealthTask[]> {
-  const [appointmentsData, documentsData, medicationsData, providersData] = await Promise.all([
+  const [appointmentsData, documentsData, medicationsData, providersData, profileData, emergencyData, summaryData, conversationsData] = await Promise.all([
     api.listMyAppointments('all').catch(() => ({ appointments: [] as PatientAppointment[] })),
     api.listMyRecords().catch(() => ({ documents: [] as RecordDocument[] })),
     api.listMyMedications().catch(() => ({ medications: [] as PatientMedication[] })),
     api.listMyProviders().catch(() => ({ providers: [] as Provider[] })),
+    api.getMyProfile().catch(() => null as PatientProfile | null),
+    api.getMyEmergencyProfile().catch(() => null as PatientEmergencyProfile | null),
+    api.getMyHealthSummary().catch(() => ({ summary: null as HealthSummaryPayload | null })),
+    api.listPatientConversations().catch(() => ({ conversations: [] as PatientConversationSummary[] })),
   ]);
 
   return dedupeTasks([
     ...buildAppointmentTasks(appointmentsData.appointments || []),
-    ...buildDocumentTasks(documentsData.documents || []),
     ...buildMedicationTasks(medicationsData.medications || []),
     ...buildProviderTasks(providersData.providers || []),
+    ...buildProfileTasks(profileData),
+    ...buildEmergencyTasks(emergencyData, summaryData.summary),
+    ...buildHealthSummaryTasks(summaryData.summary),
+    ...buildMessageTasks(conversationsData.conversations || []),
+    ...buildInsuranceTasks(documentsData.documents || [], profileData),
   ]).sort((a, b) => {
     const priorityOrder = { urgent: 0, soon: 1, routine: 2 };
     if (priorityOrder[a.priority] !== priorityOrder[b.priority]) {

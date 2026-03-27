@@ -11,6 +11,10 @@ function getToken(): string | null {
   );
 }
 
+function getPatientId(): string | null {
+  return localStorage.getItem("patientId") || localStorage.getItem("patient_id") || null;
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
 
@@ -185,6 +189,49 @@ export type HealthSummaryEmergencyContact = {
   phone: string;
 };
 
+export type PatientProfile = {
+  patient_id: string;
+  email: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  dob: string | null;
+  health_card: string | null;
+  phone_number: string | null;
+  insurance?: string | null;
+  home_address_line1?: string | null;
+  home_address_line2?: string | null;
+  home_city?: string | null;
+  home_province?: string | null;
+  home_postal_code?: string | null;
+  mailing_same_as_home?: boolean | null;
+  mailing_address_line1?: string | null;
+  mailing_address_line2?: string | null;
+  mailing_city?: string | null;
+  mailing_province?: string | null;
+  mailing_postal_code?: string | null;
+};
+
+export type PatientEmergencyProfile = {
+  patient_id: string;
+  share_personal_info: boolean;
+  share_blood_type: boolean;
+  share_allergies: boolean;
+  share_medical_conditions: boolean;
+  share_current_medications: boolean;
+  share_emergency_contacts: boolean;
+  share_advance_directives: boolean;
+  blood_type: string | null;
+  allergies: string | null;
+  medical_conditions: string | null;
+  current_medications: string | null;
+  emergency_contact_full_name: string | null;
+  emergency_contact_relationship: string | null;
+  emergency_contact_phone: string | null;
+  dnr_status: string | null;
+  living_will: string | null;
+  updated_at: string | null;
+};
+
 export type HealthSummaryAdvanceDirectives = {
   dnrStatus?: string;
   livingWill?: string;
@@ -250,6 +297,16 @@ export const api = {
 
   // patient connections
   listMyProviders: () => request<{ providers: Provider[] }>("/api/patients/me/providers"),
+  getMyProfile: () => {
+    const patientId = getPatientId();
+    if (!patientId) throw new Error("Missing patientId");
+    return request<PatientProfile>(`/api/patients/${patientId}/profile`);
+  },
+  getMyEmergencyProfile: () => {
+    const patientId = getPatientId();
+    if (!patientId) throw new Error("Missing patientId");
+    return request<PatientEmergencyProfile>(`/api/patients/${patientId}/emergency-profile`);
+  },
   connectProvider: (providerId: string, source: "signup" | "settings") =>
     request<{ ok: boolean; alreadyConnected?: boolean }>("/api/patients/me/providers", {
       method: "POST",
