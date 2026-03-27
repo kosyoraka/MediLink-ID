@@ -86,6 +86,7 @@ export default function App() {
   const [connectedProviders, setConnectedProviders] = useState<string[]>([]);
 
   const [emergencyToken, setEmergencyToken] = useState('');
+  const [bootstrappingSession, setBootstrappingSession] = useState(true);
 
   const syncOnboardingState = async (
     email: string,
@@ -194,13 +195,22 @@ export default function App() {
   const completeOnboarding = () => {
     setIsOnboarded(true);
     setCurrentScreen('dashboard');
+    setActiveNav('home');
   };
 
   const handleSignOut = () => {
+    localStorage.removeItem('patient_token');
+    localStorage.removeItem('patientId');
+    localStorage.removeItem('email');
+    localStorage.removeItem('profileComplete');
+    localStorage.removeItem('emergencyComplete');
     setIsOnboarded(false);
     setCurrentScreen('welcome');
     setActiveNav('home');
     setUserEmail('');
+    setUserName('');
+    setUserHealthCard('');
+    setUserDOB('');
     setSelectedProvider('');
     setConnectedProviders([]);
   };
@@ -229,8 +239,30 @@ export default function App() {
     if (match) {
       setEmergencyToken(match[1]);
       setCurrentScreen('emergency-public');
+      setBootstrappingSession(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (emergencyToken) return;
+
+    const token = localStorage.getItem('patient_token');
+    const email = localStorage.getItem('email');
+    const patientId = localStorage.getItem('patientId');
+
+    if (!token || !email || !patientId) {
+      setBootstrappingSession(false);
+      return;
+    }
+
+    void (async () => {
+      try {
+        await syncOnboardingState(email);
+      } finally {
+        setBootstrappingSession(false);
+      }
+    })();
+  }, [emergencyToken]);
 
   const renderScreen = () => {
     switch (currentScreen) {
@@ -426,7 +458,13 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-md mx-auto bg-white min-h-screen relative pb-20">
-        {renderScreen()}
+        {bootstrappingSession && !emergencyToken ? (
+          <div className="min-h-screen flex items-center justify-center p-6 text-gray-600">
+            Restoring your session...
+          </div>
+        ) : (
+          renderScreen()
+        )}
 
         {showBottomNav && (
           <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 max-w-md mx-auto">
