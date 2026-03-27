@@ -56,6 +56,10 @@ function isFutureISO(iso: string) {
   return new Date(iso).getTime() > Date.now();
 }
 
+function needsConfirmation(status: string) {
+  return status === "Pending" || status === "Scheduled";
+}
+
 /* ---------- component ---------- */
 
 export function Appointments({ onNavigate }: AppointmentsProps) {
@@ -109,11 +113,24 @@ export function Appointments({ onNavigate }: AppointmentsProps) {
         return isFutureISO(a.startTime) &&
           a.status !== "Completed" &&
           a.status !== "Cancelled";
+      if (filterStatus === "pending_confirmation")
+        return isFutureISO(a.startTime) && needsConfirmation(a.status);
       if (filterStatus === "completed") return a.status === "Completed";
       if (filterStatus === "cancelled") return a.status === "Cancelled";
       return true;
     });
   }, [appointments, filterStatus]);
+
+  const pendingConfirmations = useMemo(
+    () =>
+      appointments
+        .filter((appointment) => {
+          const ts = new Date(appointment.startTime).getTime();
+          return !Number.isNaN(ts) && ts >= Date.now() && needsConfirmation(appointment.status);
+        })
+        .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()),
+    [appointments]
+  );
 
   const updateStatus = async (
     id: string,
@@ -184,6 +201,7 @@ export function Appointments({ onNavigate }: AppointmentsProps) {
                 <option value="all">All</option>
                 <option value="today">Today</option>
                 <option value="upcoming">Upcoming</option>
+                <option value="pending_confirmation">Pending Confirmation</option>
                 <option value="completed">Completed</option>
                 <option value="cancelled">Cancelled</option>
               </Select>
@@ -214,6 +232,43 @@ export function Appointments({ onNavigate }: AppointmentsProps) {
 
       {!loading && !error && (
         <>
+          {pendingConfirmations.length > 0 ? (
+            <Card>
+              <CardContent className="p-4">
+                <div className="mb-3 flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-gray-500" />
+                  <h3 className="text-gray-900">Pending Confirmations</h3>
+                </div>
+
+                <div className="space-y-3">
+                  {pendingConfirmations.map((a) => (
+                    <div key={`pending-${a.id}`} className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{a.patientName}</p>
+                          <p className="mt-1 text-xs text-gray-600">
+                            {formatPrettyDate(a.startTime)} • {formatPrettyTime(a.startTime)} • {a.type}
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <Badge variant={getStatusColor(a.status)}>{a.status}</Badge>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => updateStatus(a.id, "Confirmed", "Appointment confirmed")}
+                          >
+                            Confirm
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
+
           <div className="text-sm text-gray-600">
             Showing {filteredAppointments.length} appointments
           </div>

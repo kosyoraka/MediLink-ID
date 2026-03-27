@@ -59,6 +59,10 @@ function formatTime(iso: string) {
   return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
+function needsConfirmation(status: string) {
+  return status === "Pending" || status === "Scheduled";
+}
+
 function initials(name: string) {
   return name
     .split(" ")
@@ -288,7 +292,7 @@ export function Dashboard({ onNavigate, onAddPatientClick }: DashboardProps) {
   );
 
   const pendingAppointments = useMemo(
-    () => upcomingAppointments.filter((appointment) => appointment.status === "Pending").length,
+    () => upcomingAppointments.filter((appointment) => needsConfirmation(appointment.status)).length,
     [upcomingAppointments]
   );
 
