@@ -394,6 +394,12 @@ function mapMedicationRow(row: any) {
     recentIntakeLogs: Array.isArray(row.recent_intake_logs) ? row.recent_intake_logs : [],
     isActive: Boolean(row.is_active),
     lastRefillRequestedAt: row.last_refill_requested_at || null,
+    latestRefillRequestId: row.latest_refill_request_id || null,
+    latestRefillRequestStatus: row.latest_refill_request_status || null,
+    latestRefillRequestNote: row.latest_refill_request_note || "",
+    latestRefillRequestCreatedAt: row.latest_refill_request_created_at || null,
+    latestRefillRequestResolvedAt: row.latest_refill_request_resolved_at || null,
+    latestRefillRequestResolutionNote: row.latest_refill_request_resolution_note || "",
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -408,7 +414,13 @@ async function fetchMedicationById(medicationId: string) {
       sa.full_name AS staff_full_name,
       latest_log.status AS last_intake_status,
       latest_log.logged_for_date AS last_intake_date,
-      COALESCE(logs.recent_intake_logs, '[]'::json) AS recent_intake_logs
+      COALESCE(logs.recent_intake_logs, '[]'::json) AS recent_intake_logs,
+      latest_refill.id AS latest_refill_request_id,
+      latest_refill.status AS latest_refill_request_status,
+      latest_refill.request_note AS latest_refill_request_note,
+      latest_refill.created_at AS latest_refill_request_created_at,
+      latest_refill.resolved_at AS latest_refill_request_resolved_at,
+      latest_refill.resolution_note AS latest_refill_request_resolution_note
     FROM patient_medications pm
     LEFT JOIN hospitals h ON h.id = pm.hospital_id
     LEFT JOIN staff_accounts sa ON sa.id = pm.staff_id
@@ -438,6 +450,13 @@ async function fetchMedicationById(medicationId: string) {
         LIMIT 7
       ) mil
     ) logs ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT mrr.id, mrr.status, mrr.request_note, mrr.created_at, mrr.resolved_at, mrr.resolution_note
+      FROM medication_refill_requests mrr
+      WHERE mrr.medication_id = pm.id
+      ORDER BY mrr.created_at DESC
+      LIMIT 1
+    ) latest_refill ON TRUE
     WHERE pm.id = $1::uuid
     LIMIT 1
     `,
@@ -2868,6 +2887,13 @@ app.get("/api/staff/messages/conversations", requireStaffAuth, async (req: any, 
         )::int AS open_medication_change_count,
 
         (
+          SELECT COUNT(*)
+          FROM medication_refill_requests mrr
+          WHERE mrr.conversation_id = c.id
+            AND mrr.status = 'open'
+        )::int AS open_medication_refill_count,
+
+        (
           SELECT mcr.id
           FROM medication_change_requests mcr
           WHERE mcr.conversation_id = c.id
@@ -2884,6 +2910,24 @@ app.get("/api/staff/messages/conversations", requireStaffAuth, async (req: any, 
           ORDER BY mcr.created_at DESC
           LIMIT 1
         ) AS active_medication_change_medication_id,
+
+        (
+          SELECT mrr.id
+          FROM medication_refill_requests mrr
+          WHERE mrr.conversation_id = c.id
+            AND mrr.status = 'open'
+          ORDER BY mrr.created_at DESC
+          LIMIT 1
+        ) AS active_medication_refill_request_id,
+
+        (
+          SELECT mrr.medication_id
+          FROM medication_refill_requests mrr
+          WHERE mrr.conversation_id = c.id
+            AND mrr.status = 'open'
+          ORDER BY mrr.created_at DESC
+          LIMIT 1
+        ) AS active_medication_refill_medication_id,
 
         (
           SELECT COUNT(*)
@@ -3046,6 +3090,27 @@ app.get("/api/staff/medication-change-requests/summary", requireStaffAuth, async
   }
 });
 
+app.get("/api/staff/medication-refill-requests/summary", requireStaffAuth, async (req: any, res) => {
+  try {
+    const hospitalId = req.staffHospitalId as string;
+
+    const result = await pool.query(
+      `
+      SELECT COUNT(*)::int AS open_count
+      FROM medication_refill_requests
+      WHERE hospital_id = $1::uuid
+        AND status = 'open'
+      `,
+      [hospitalId]
+    );
+
+    return res.json({ openCount: Number(result.rows[0]?.open_count || 0) });
+  } catch (e: any) {
+    console.error("GET /api/staff/medication-refill-requests/summary error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to load medication refill requests" });
+  }
+});
+
 app.post("/api/staff/medication-change-requests/:id/resolve", requireStaffAuth, async (req: any, res) => {
   try {
     const hospitalId = req.staffHospitalId as string;
@@ -3114,6 +3179,87 @@ app.post("/api/staff/medication-change-requests/:id/resolve", requireStaffAuth, 
   } catch (e: any) {
     console.error("POST /api/staff/medication-change-requests/:id/resolve error:", e);
     return res.status(500).json({ message: e?.message || "Failed to resolve medication change request" });
+  }
+});
+
+app.post("/api/staff/medication-refill-requests/:id/resolve", requireStaffAuth, async (req: any, res) => {
+  try {
+    const hospitalId = req.staffHospitalId as string;
+    const staffId = req.staffId as string;
+    const requestId = String(req.params.id || "");
+    const resolution = String(req.body?.resolution || "").trim().toLowerCase();
+    const resolutionNote = String(req.body?.resolutionNote || "").trim();
+
+    if (!isUuid(requestId)) {
+      return res.status(400).json({ message: "Invalid request id" });
+    }
+    if (!["approved", "denied"].includes(resolution)) {
+      return res.status(400).json({ message: "Invalid resolution" });
+    }
+
+    const staffResult = await pool.query(
+      `
+      SELECT full_name
+      FROM staff_accounts
+      WHERE id = $1::uuid
+      LIMIT 1
+      `,
+      [staffId]
+    );
+
+    const result = await pool.query(
+      `
+      UPDATE medication_refill_requests
+      SET status = $4,
+          resolution_note = NULLIF($5, ''),
+          resolved_at = NOW(),
+          resolved_by_staff_id = $3::uuid,
+          updated_at = NOW()
+      WHERE id = $1::uuid
+        AND hospital_id = $2::uuid
+        AND status = 'open'
+      RETURNING id, conversation_id, medication_id
+      `,
+      [requestId, hospitalId, staffId, resolution, resolutionNote]
+    );
+
+    if ((result.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: "Medication refill request not found" });
+    }
+
+    const doctorName = String(staffResult.rows[0]?.full_name || "Your provider").trim();
+    const actionText = resolution === "approved" ? "approved" : "denied";
+    const resolutionMessage = resolutionNote
+      ? `Dr. ${doctorName} has ${actionText} the refill request. Note: ${resolutionNote}`
+      : `Dr. ${doctorName} has ${actionText} the refill request.`;
+    const conversationId = String(result.rows[0].conversation_id || "");
+
+    if (conversationId) {
+      await pool.query(
+        `
+        INSERT INTO message_items (conversation_id, sender_type, sender_staff_id, body)
+        VALUES ($1::uuid, 'staff', $2::uuid, $3)
+        `,
+        [conversationId, staffId, resolutionMessage]
+      );
+
+      await pool.query(
+        `
+        UPDATE message_conversations
+        SET last_message_preview = $2,
+            last_message_at = NOW(),
+            updated_at = NOW()
+        WHERE id = $1::uuid
+        `,
+        [conversationId, resolutionMessage.slice(0, 200)]
+      );
+    }
+
+    const fresh = await fetchMedicationById(String(result.rows[0].medication_id || ""));
+    return res.json({ ok: true, resolution, medication: fresh ? mapMedicationRow(fresh) : null });
+  } catch (e: any) {
+    console.error("POST /api/staff/medication-refill-requests/:id/resolve error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to resolve medication refill request" });
   }
 });
 
@@ -4319,7 +4465,13 @@ app.get("/api/patient/medications", requirePatientAuth, async (req: any, res) =>
         sa.full_name AS staff_full_name,
         latest_log.status AS last_intake_status,
         latest_log.logged_for_date AS last_intake_date,
-        COALESCE(logs.recent_intake_logs, '[]'::json) AS recent_intake_logs
+        COALESCE(logs.recent_intake_logs, '[]'::json) AS recent_intake_logs,
+        latest_refill.id AS latest_refill_request_id,
+        latest_refill.status AS latest_refill_request_status,
+        latest_refill.request_note AS latest_refill_request_note,
+        latest_refill.created_at AS latest_refill_request_created_at,
+        latest_refill.resolved_at AS latest_refill_request_resolved_at,
+        latest_refill.resolution_note AS latest_refill_request_resolution_note
       FROM patient_medications pm
       LEFT JOIN hospitals h ON h.id = pm.hospital_id
       LEFT JOIN staff_accounts sa ON sa.id = pm.staff_id
@@ -4346,9 +4498,16 @@ app.get("/api/patient/medications", requirePatientAuth, async (req: any, res) =>
           FROM medication_intake_logs
           WHERE medication_id = pm.id
           ORDER BY logged_for_date DESC, created_at DESC
-          LIMIT 7
-        ) mil
-      ) logs ON TRUE
+        LIMIT 7
+      ) mil
+    ) logs ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT mrr.id, mrr.status, mrr.request_note, mrr.created_at, mrr.resolved_at, mrr.resolution_note
+        FROM medication_refill_requests mrr
+        WHERE mrr.medication_id = pm.id
+        ORDER BY mrr.created_at DESC
+        LIMIT 1
+      ) latest_refill ON TRUE
       WHERE pm.patient_id = $1::uuid
       ORDER BY pm.is_active DESC, COALESCE(pm.start_date, DATE(pm.created_at)) DESC, pm.created_at DESC
       `,
@@ -4544,49 +4703,7 @@ app.post("/api/patient/medications/:id/intake-logs", requirePatientAuth, async (
       ]
     );
 
-    const mappedMedication = await pool.query(
-      `
-      SELECT
-        pm.*,
-        h.name AS hospital_name,
-        sa.full_name AS staff_full_name,
-        latest_log.status AS last_intake_status,
-        latest_log.logged_for_date AS last_intake_date,
-        COALESCE(logs.recent_intake_logs, '[]'::json) AS recent_intake_logs
-      FROM patient_medications pm
-      LEFT JOIN hospitals h ON h.id = pm.hospital_id
-      LEFT JOIN staff_accounts sa ON sa.id = pm.staff_id
-      LEFT JOIN LATERAL (
-        SELECT mil.status, mil.logged_for_date
-        FROM medication_intake_logs mil
-        WHERE mil.medication_id = pm.id
-        ORDER BY mil.logged_for_date DESC, mil.created_at DESC
-        LIMIT 1
-      ) latest_log ON TRUE
-      LEFT JOIN LATERAL (
-        SELECT json_agg(
-          json_build_object(
-            'id', mil.id,
-            'loggedForDate', mil.logged_for_date,
-            'status', mil.status,
-            'note', mil.note,
-            'createdAt', mil.created_at
-          )
-          ORDER BY mil.logged_for_date DESC, mil.created_at DESC
-        ) AS recent_intake_logs
-        FROM (
-          SELECT *
-          FROM medication_intake_logs
-          WHERE medication_id = pm.id
-          ORDER BY logged_for_date DESC, created_at DESC
-          LIMIT 7
-        ) mil
-      ) logs ON TRUE
-      WHERE pm.id = $1::uuid
-      LIMIT 1
-      `,
-      [medicationId]
-    );
+    const mappedMedication = await fetchMedicationById(medicationId);
 
     return res.status(201).json({
       log: {
@@ -4596,7 +4713,7 @@ app.post("/api/patient/medications/:id/intake-logs", requirePatientAuth, async (
         note: logResult.rows[0].note || "",
         createdAt: logResult.rows[0].created_at,
       },
-      medication: mapMedicationRow(mappedMedication.rows[0]),
+      medication: mapMedicationRow(mappedMedication),
     });
   } catch (e: any) {
     console.error("POST /api/patient/medications/:id/intake-logs error:", e);
@@ -4607,29 +4724,138 @@ app.post("/api/patient/medications/:id/intake-logs", requirePatientAuth, async (
 app.post("/api/patient/medications/:id/refill-request", requirePatientAuth, async (req: any, res) => {
   const patientId = req.patientId;
   const medicationId = String(req.params.id || "");
+  const requestNote = String(req.body?.note || "").trim();
 
   if (!isUuid(medicationId)) {
     return res.status(400).json({ message: "Invalid medication id" });
   }
 
   try {
-    const result = await pool.query(
+    const medicationResult = await pool.query(
       `
-      UPDATE patient_medications
-      SET last_refill_requested_at = NOW(), updated_at = NOW()
-      WHERE id = $1::uuid
+      SELECT pm.id, pm.source_type, pm.name, pm.hospital_id, pm.staff_id, pm.last_refill_requested_at
+      FROM patient_medications pm
+      WHERE pm.id = $1::uuid
         AND patient_id = $2::uuid
-      RETURNING *
+      LIMIT 1
       `,
       [medicationId, patientId]
     );
 
-    if ((result.rowCount ?? 0) === 0) {
+    if ((medicationResult.rowCount ?? 0) === 0) {
       return res.status(404).json({ message: "Medication not found" });
     }
 
+    const medication = medicationResult.rows[0];
+    if (String(medication.source_type || "") !== "provider") {
+      return res.status(400).json({ message: "Refill requests are only available for provider-prescribed medications" });
+    }
+    if (!medication.hospital_id) {
+      return res.status(400).json({ message: "No provider is linked to this medication yet" });
+    }
+
+    const ok = await ensureActiveConnection(patientId, String(medication.hospital_id));
+    if (!ok) {
+      return res.status(403).json({ message: "You are not actively connected to this provider" });
+    }
+
+    const existingOpen = await pool.query(
+      `
+      SELECT id
+      FROM medication_refill_requests
+      WHERE medication_id = $1::uuid
+        AND patient_id = $2::uuid
+        AND status = 'open'
+      ORDER BY created_at DESC
+      LIMIT 1
+      `,
+      [medicationId, patientId]
+    );
+
+    if ((existingOpen.rowCount ?? 0) > 0) {
+      const fresh = await fetchMedicationById(medicationId);
+      return res.status(200).json({
+        ok: true,
+        alreadyOpen: true,
+        medication: mapMedicationRow(fresh || medication),
+      });
+    }
+
+    let staffId = medication.staff_id ? String(medication.staff_id) : "";
+    if (!staffId) {
+      const fallbackStaff = await pool.query(
+        `
+        SELECT id
+        FROM staff_accounts
+        WHERE hospital_id = $1::uuid
+        ORDER BY created_at ASC
+        LIMIT 1
+        `,
+        [medication.hospital_id]
+      );
+
+      if ((fallbackStaff.rowCount ?? 0) === 0) {
+        return res.status(400).json({ message: "No provider contact is available for this medication" });
+      }
+      staffId = String(fallbackStaff.rows[0].id);
+    }
+
+    const conversationResult = await pool.query(
+      `
+      INSERT INTO message_conversations (patient_id, provider_id, staff_id, created_at, updated_at)
+      VALUES ($1::uuid, $2::uuid, $3::uuid, NOW(), NOW())
+      ON CONFLICT (patient_id, provider_id, staff_id)
+      DO UPDATE SET updated_at = NOW()
+      RETURNING id
+      `,
+      [patientId, medication.hospital_id, staffId]
+    );
+
+    const conversationId = String(conversationResult.rows[0].id);
+    const refillBody = requestNote
+      ? `Refill request for ${String(medication.name || "medication").trim()}: ${requestNote}`
+      : `Refill request for ${String(medication.name || "medication").trim()}.`;
+
+    await pool.query(
+      `
+      INSERT INTO message_items (conversation_id, sender_type, sender_patient_id, body)
+      VALUES ($1::uuid, 'patient', $2::uuid, $3)
+      `,
+      [conversationId, patientId, refillBody]
+    );
+
+    await pool.query(
+      `
+      INSERT INTO medication_refill_requests (
+        id, medication_id, patient_id, hospital_id, staff_id, conversation_id, requested_by_patient_id, request_note, status
+      )
+      VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::uuid, $6::uuid, $3::uuid, NULLIF($7, ''), 'open')
+      `,
+      [randomUUID(), medicationId, patientId, medication.hospital_id, staffId, conversationId, requestNote]
+    );
+
+    await pool.query(
+      `
+      UPDATE patient_medications
+      SET last_refill_requested_at = NOW(), updated_at = NOW()
+      WHERE id = $1::uuid
+      `,
+      [medicationId]
+    );
+
+    await pool.query(
+      `
+      UPDATE message_conversations
+      SET last_message_preview = $2,
+          last_message_at = NOW(),
+          updated_at = NOW()
+      WHERE id = $1::uuid
+      `,
+      [conversationId, refillBody.slice(0, 200)]
+    );
+
     const fresh = await fetchMedicationById(medicationId);
-    return res.json({ ok: true, medication: mapMedicationRow(fresh || result.rows[0]) });
+    return res.status(201).json({ ok: true, conversationId, medication: mapMedicationRow(fresh || medication) });
   } catch (e: any) {
     console.error("POST /api/patient/medications/:id/refill-request error:", e);
     return res.status(500).json({ message: e?.message || "Failed to request refill" });
@@ -4903,7 +5129,13 @@ app.get("/api/staff/patients/:id/medications", requireStaffAuth, async (req: any
         sa.full_name AS staff_full_name,
         latest_log.status AS last_intake_status,
         latest_log.logged_for_date AS last_intake_date,
-        COALESCE(logs.recent_intake_logs, '[]'::json) AS recent_intake_logs
+        COALESCE(logs.recent_intake_logs, '[]'::json) AS recent_intake_logs,
+        latest_refill.id AS latest_refill_request_id,
+        latest_refill.status AS latest_refill_request_status,
+        latest_refill.request_note AS latest_refill_request_note,
+        latest_refill.created_at AS latest_refill_request_created_at,
+        latest_refill.resolved_at AS latest_refill_request_resolved_at,
+        latest_refill.resolution_note AS latest_refill_request_resolution_note
       FROM patient_medications pm
       LEFT JOIN hospitals h ON h.id = pm.hospital_id
       LEFT JOIN staff_accounts sa ON sa.id = pm.staff_id
@@ -4930,9 +5162,16 @@ app.get("/api/staff/patients/:id/medications", requireStaffAuth, async (req: any
           FROM medication_intake_logs
           WHERE medication_id = pm.id
           ORDER BY logged_for_date DESC, created_at DESC
-          LIMIT 7
-        ) mil
-      ) logs ON TRUE
+        LIMIT 7
+      ) mil
+    ) logs ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT mrr.id, mrr.status, mrr.request_note, mrr.created_at, mrr.resolved_at, mrr.resolution_note
+        FROM medication_refill_requests mrr
+        WHERE mrr.medication_id = pm.id
+        ORDER BY mrr.created_at DESC
+        LIMIT 1
+      ) latest_refill ON TRUE
       WHERE pm.patient_id = $1::uuid
       ORDER BY pm.is_active DESC, COALESCE(pm.start_date, DATE(pm.created_at)) DESC, pm.created_at DESC
       `,

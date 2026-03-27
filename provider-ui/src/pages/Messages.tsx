@@ -23,6 +23,9 @@ type StaffConversation = {
   open_medication_change_count: number;
   active_medication_change_request_id: string | null;
   active_medication_change_medication_id: string | null;
+  open_medication_refill_count?: number;
+  active_medication_refill_request_id?: string | null;
+  active_medication_refill_medication_id?: string | null;
 };
 
 type PatientListRow = {
@@ -101,13 +104,17 @@ function isMedicationChangeConversation(c: StaffConversation) {
   return Number(c.open_medication_change_count || 0) > 0;
 }
 
+function isMedicationRefillConversation(c: StaffConversation) {
+  return Number(c.open_medication_refill_count || 0) > 0;
+}
+
 export function Messages({ onNavigate }: MessagesProps) {
   const [conversations, setConversations] = useState<StaffConversation[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [patientsById, setPatientsById] = useState<Record<string, Patient>>({});
   const [searchQuery, setSearchQuery] = useState("");
-  const [filter, setFilter] = useState<"all" | "medication-change">("all");
+  const [filter, setFilter] = useState<"all" | "medication-change" | "refill">("all");
   const [newMessage, setNewMessage] = useState("");
   const [loadingConversations, setLoadingConversations] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
@@ -122,6 +129,7 @@ export function Messages({ onNavigate }: MessagesProps) {
     const q = searchQuery.trim().toLowerCase();
     const base = conversations.filter((c) => {
       if (filter === "medication-change" && !isMedicationChangeConversation(c)) return false;
+      if (filter === "refill" && !isMedicationRefillConversation(c)) return false;
       if (!q) return true;
       const name = displayPatientName(c).toLowerCase();
       const email = (c.patient_email || "").toLowerCase();
@@ -132,6 +140,10 @@ export function Messages({ onNavigate }: MessagesProps) {
 
   const medicationChangeConversationCount = useMemo(
     () => conversations.filter((c) => isMedicationChangeConversation(c)).length,
+    [conversations]
+  );
+  const medicationRefillConversationCount = useMemo(
+    () => conversations.filter((c) => isMedicationRefillConversation(c)).length,
     [conversations]
   );
 
@@ -306,6 +318,19 @@ export function Messages({ onNavigate }: MessagesProps) {
     });
   };
 
+  const handleResolveMedicationRefill = (conversation: StaffConversation) => {
+    const patient = patientsById[conversation.patient_id];
+    if (!patient || !conversation.active_medication_refill_medication_id) {
+      toast.error("Could not open the related refill request right now.");
+      return;
+    }
+
+    onNavigate("patient-details", {
+      patient,
+      medicationId: conversation.active_medication_refill_medication_id,
+    });
+  };
+
   return (
     <div className="h-[calc(100vh-4rem)] flex flex-col lg:flex-row">
       {/* Conversations List */}
@@ -344,6 +369,16 @@ export function Messages({ onNavigate }: MessagesProps) {
             >
               Medication Change
               {medicationChangeConversationCount > 0 ? ` (${medicationChangeConversationCount})` : ""}
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilter("refill")}
+              className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                filter === "refill" ? "bg-sky-600 text-white" : "bg-sky-50 text-sky-700"
+              }`}
+            >
+              Refill Requests
+              {medicationRefillConversationCount > 0 ? ` (${medicationRefillConversationCount})` : ""}
             </button>
           </div>
           {loadingConversations && (
@@ -392,6 +427,14 @@ export function Messages({ onNavigate }: MessagesProps) {
                             : ""}
                         </span>
                       ) : null}
+                      {isMedicationRefillConversation(conversation) ? (
+                        <span className="inline-flex items-center rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-medium text-sky-700">
+                          Refill Request
+                          {conversation.open_medication_refill_count > 0
+                            ? ` • ${conversation.open_medication_refill_count} open`
+                            : ""}
+                        </span>
+                      ) : null}
                     </div>
                     <p className="text-sm text-gray-600 truncate">
                       {conversation.last_message_preview || "No messages yet"}
@@ -410,6 +453,22 @@ export function Messages({ onNavigate }: MessagesProps) {
                         >
                           <CheckCircle2 className="w-4 h-4" />
                           Resolve
+                        </Button>
+                      </div>
+                    ) : isMedicationRefillConversation(conversation) ? (
+                      <div className="mt-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="gap-2"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleResolveMedicationRefill(conversation);
+                          }}
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
+                          Review Refill
                         </Button>
                       </div>
                     ) : null}
@@ -463,6 +522,17 @@ export function Messages({ onNavigate }: MessagesProps) {
                 >
                   <CheckCircle2 className="w-4 h-4" />
                   Resolve
+                </Button>
+              ) : isMedicationRefillConversation(selectedConversation) ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="ml-auto gap-2"
+                  onClick={() => handleResolveMedicationRefill(selectedConversation)}
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  Review Refill
                 </Button>
               ) : null}
             </div>

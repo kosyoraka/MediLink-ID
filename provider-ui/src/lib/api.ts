@@ -200,6 +200,12 @@ export type ProviderMedication = {
   }>;
   isActive: boolean;
   lastRefillRequestedAt: string | null;
+  latestRefillRequestId: string | null;
+  latestRefillRequestStatus: "open" | "approved" | "denied" | null;
+  latestRefillRequestNote: string;
+  latestRefillRequestCreatedAt: string | null;
+  latestRefillRequestResolvedAt: string | null;
+  latestRefillRequestResolutionNote: string;
   createdAt: string;
   updatedAt: string;
 };

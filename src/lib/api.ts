@@ -234,6 +234,12 @@ export type PatientMedication = {
   }>;
   isActive: boolean;
   lastRefillRequestedAt: string | null;
+  latestRefillRequestId: string | null;
+  latestRefillRequestStatus: "open" | "approved" | "denied" | null;
+  latestRefillRequestNote: string;
+  latestRefillRequestCreatedAt: string | null;
+  latestRefillRequestResolvedAt: string | null;
+  latestRefillRequestResolutionNote: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -375,7 +381,7 @@ export const api = {
       body: JSON.stringify(body),
     }),
   requestMedicationRefill: (medicationId: string) =>
-    request<{ ok: boolean; medication: PatientMedication }>(`/api/patient/medications/${medicationId}/refill-request`, {
+    request<{ ok: boolean; alreadyOpen?: boolean; conversationId?: string; medication: PatientMedication }>(`/api/patient/medications/${medicationId}/refill-request`, {
       method: "POST",
     }),
   requestMedicationChange: (medicationId: string, body: { message: string }) =>

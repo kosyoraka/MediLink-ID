@@ -41,6 +41,13 @@ const sourceBadge = (medication: PatientMedication) =>
     ? { label: 'Provider-prescribed', className: 'bg-emerald-100 text-emerald-700' }
     : { label: 'Patient-added', className: 'bg-blue-100 text-blue-700' };
 
+const refillStatusBadge = (status: PatientMedication['latestRefillRequestStatus']) => {
+  if (status === 'open') return { label: 'Refill pending', className: 'bg-sky-100 text-sky-700' };
+  if (status === 'approved') return { label: 'Refill approved', className: 'bg-emerald-100 text-emerald-700' };
+  if (status === 'denied') return { label: 'Refill denied', className: 'bg-rose-100 text-rose-700' };
+  return null;
+};
+
 export default function Medications({ onBack }: MedicationsProps) {
   const [medications, setMedications] = useState<PatientMedication[]>([]);
   const [loading, setLoading] = useState(true);
@@ -113,7 +120,7 @@ export default function Medications({ onBack }: MedicationsProps) {
     try {
       const res = await api.requestMedicationRefill(medicationId);
       setMedications((current) => current.map((item) => (item.id === medicationId ? res.medication : item)));
-      setStatusMessage('Refill request sent.');
+      setStatusMessage(res.alreadyOpen ? 'A refill request is already pending review.' : 'Refill request sent to your provider.');
     } catch (error) {
       console.error('Failed to request refill:', error);
       setStatusMessage(error instanceof Error ? error.message : 'Failed to request refill');
@@ -214,6 +221,11 @@ export default function Medications({ onBack }: MedicationsProps) {
               <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="text-gray-900 mb-1">{med.name}</h3>
                 <Badge className={`${badge.className} border-0`}>{badge.label}</Badge>
+                {refillStatusBadge(med.latestRefillRequestStatus) ? (
+                  <Badge className={`${refillStatusBadge(med.latestRefillRequestStatus)?.className} border-0`}>
+                    {refillStatusBadge(med.latestRefillRequestStatus)?.label}
+                  </Badge>
+                ) : null}
                 {!med.isActive && <Badge variant="secondary">Inactive</Badge>}
               </div>
               <p className="text-gray-600">{[med.dosage, med.frequency].filter(Boolean).join(' • ') || 'Details not added yet'}</p>
@@ -272,9 +284,15 @@ export default function Medications({ onBack }: MedicationsProps) {
               <CheckCircle2 className="w-4 h-4 mr-1" />
               Log Intake
             </Button>
-            <Button variant="outline" size="sm" className="w-full" onClick={() => requestRefill(med.id)}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={() => requestRefill(med.id)}
+              disabled={med.sourceType !== 'provider' || med.latestRefillRequestStatus === 'open'}
+            >
               <RefreshCw className="w-4 h-4 mr-1" />
-              Request Refill
+              {med.latestRefillRequestStatus === 'open' ? 'Refill Pending' : 'Request Refill'}
             </Button>
             <Button variant="outline" size="sm" className="w-full" onClick={() => updateMedication(med.id, { isActive: !med.isActive })}>
               {med.isActive ? 'Archive' : 'Reactivate'}
@@ -300,8 +318,23 @@ export default function Medications({ onBack }: MedicationsProps) {
 
           <div className="mt-3 text-xs text-gray-500">
             {intakeSummary(med)}
-            {med.lastRefillRequestedAt ? ` • Refill requested ${formatDate(med.lastRefillRequestedAt)}` : ''}
+            {med.latestRefillRequestStatus === 'open' && med.latestRefillRequestCreatedAt
+              ? ` • Refill requested ${formatDate(med.latestRefillRequestCreatedAt)}`
+              : ''}
+            {med.latestRefillRequestStatus === 'approved' && med.latestRefillRequestResolvedAt
+              ? ` • Refill approved ${formatDate(med.latestRefillRequestResolvedAt)}`
+              : ''}
+            {med.latestRefillRequestStatus === 'denied' && med.latestRefillRequestResolvedAt
+              ? ` • Refill denied ${formatDate(med.latestRefillRequestResolvedAt)}`
+              : ''}
           </div>
+
+          {med.latestRefillRequestResolutionNote ? (
+            <div className="mt-3 rounded-lg bg-gray-50 p-3">
+              <p className="text-xs uppercase tracking-wide text-gray-500">Refill Update</p>
+              <p className="mt-1 text-sm text-gray-700">{med.latestRefillRequestResolutionNote}</p>
+            </div>
+          ) : null}
 
           {med.recentIntakeLogs.length > 0 ? (
             <div className="mt-3 rounded-lg bg-gray-50 p-3">
