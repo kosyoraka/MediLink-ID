@@ -60,6 +60,13 @@ function needsConfirmation(status: string) {
   return status === "Pending" || status === "Scheduled";
 }
 
+function isPastAppointment(appointment: Appointment) {
+  const ts = new Date(appointment.startTime).getTime();
+  if (Number.isNaN(ts)) return false;
+  if (appointment.status === "Completed" || appointment.status === "Cancelled") return true;
+  return ts < Date.now();
+}
+
 /* ---------- component ---------- */
 
 export function Appointments({ onNavigate }: AppointmentsProps) {
@@ -131,6 +138,18 @@ export function Appointments({ onNavigate }: AppointmentsProps) {
         .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime()),
     [appointments]
   );
+
+  const groupedAppointments = useMemo(() => {
+    const upcoming = filteredAppointments
+      .filter((appointment) => !isPastAppointment(appointment))
+      .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+
+    const past = filteredAppointments
+      .filter((appointment) => isPastAppointment(appointment))
+      .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
+
+    return { upcoming, past };
+  }, [filteredAppointments]);
 
   const updateStatus = async (
     id: string,
@@ -273,100 +292,163 @@ export function Appointments({ onNavigate }: AppointmentsProps) {
             Showing {filteredAppointments.length} appointments
           </div>
 
-          <div className="space-y-4">
-            {filteredAppointments.map((a) => {
-              const initials =
-                (a.patientName || "Patient")
-                  .split(" ")
-                  .map((n) => n[0])
-                  .join("")
-                  .slice(0, 2)
-                  .toUpperCase() || "P";
+          <div className="space-y-6">
+            {groupedAppointments.upcoming.length > 0 ? (
+              <div className="space-y-4">
+                <div className="text-sm font-medium text-gray-900">Upcoming</div>
+                {groupedAppointments.upcoming.map((a) => {
+                  const initials =
+                    (a.patientName || "Patient")
+                      .split(" ")
+                      .map((n) => n[0])
+                      .join("")
+                      .slice(0, 2)
+                      .toUpperCase() || "P";
 
-              return (
-                <Card key={a.id}>
-                  <CardContent className="p-6">
-                    <div className="flex flex-col lg:flex-row gap-4">
-                      <div className="flex items-center gap-4 flex-1">
-                        <div className="w-14 h-14 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-semibold text-lg">
-                          {initials}
-                        </div>
+                  return (
+                    <Card key={a.id}>
+                      <CardContent className="p-6">
+                        <div className="flex flex-col lg:flex-row gap-4">
+                          <div className="flex items-center gap-4 flex-1">
+                            <div className="w-14 h-14 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-semibold text-lg">
+                              {initials}
+                            </div>
 
-                        <div>
-                          <h3 className="font-semibold text-gray-900">
-                            {a.patientName}
-                          </h3>
-                          <div className="flex items-center gap-2 mt-1 text-sm text-gray-600">
-                            <Calendar className="w-3 h-3" />
-                            <span>{formatPrettyDate(a.startTime)}</span>
-                            <span className="text-gray-400">•</span>
-                            <Clock className="w-3 h-3" />
-                            <span>{formatPrettyTime(a.startTime)}</span>
+                            <div>
+                              <h3 className="font-semibold text-gray-900">
+                                {a.patientName}
+                              </h3>
+                              <div className="flex items-center gap-2 mt-1 text-sm text-gray-600">
+                                <Calendar className="w-3 h-3" />
+                                <span>{formatPrettyDate(a.startTime)}</span>
+                                <span className="text-gray-400">•</span>
+                                <Clock className="w-3 h-3" />
+                                <span>{formatPrettyTime(a.startTime)}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-3">
+                            <div className="text-sm">
+                              <p className="text-gray-600">Type</p>
+                              <p className="font-medium">{a.type}</p>
+                            </div>
+                            <Badge variant={getStatusColor(a.status)}>
+                              {a.status}
+                            </Badge>
+                          </div>
+
+                          <div className="flex gap-2">
+                            {a.status !== "Completed" && a.status !== "Cancelled" && (
+                              <>
+                                {a.status !== "Confirmed" && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => updateStatus(a.id, "Confirmed", "Appointment confirmed")}
+                                  >
+                                    Confirm
+                                  </Button>
+                                )}
+
+                                {a.status === "Confirmed" && (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => updateStatus(a.id, "Completed", "Marked completed")}
+                                  >
+                                    <CheckCircle className="w-3 h-3 mr-1" />
+                                    Complete
+                                  </Button>
+                                )}
+
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={() => updateStatus(a.id, "Cancelled", "Cancelled")}
+                                >
+                                  <XCircle className="w-3 h-3 mr-1" />
+                                  Cancel
+                                </Button>
+                              </>
+                            )}
+
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setSelectedAppointment(a)}
+                            >
+                              Details
+                            </Button>
                           </div>
                         </div>
-                      </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            ) : null}
 
-                      <div className="flex items-center gap-3">
-                        <div className="text-sm">
-                          <p className="text-gray-600">Type</p>
-                          <p className="font-medium">{a.type}</p>
+            {groupedAppointments.past.length > 0 ? (
+              <div className="space-y-4">
+                <div className="text-sm font-medium text-gray-900">Past</div>
+                {groupedAppointments.past.map((a) => {
+                  const initials =
+                    (a.patientName || "Patient")
+                      .split(" ")
+                      .map((n) => n[0])
+                      .join("")
+                      .slice(0, 2)
+                      .toUpperCase() || "P";
+
+                  return (
+                    <Card key={a.id}>
+                      <CardContent className="p-6">
+                        <div className="flex flex-col lg:flex-row gap-4">
+                          <div className="flex items-center gap-4 flex-1">
+                            <div className="w-14 h-14 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-semibold text-lg">
+                              {initials}
+                            </div>
+
+                            <div>
+                              <h3 className="font-semibold text-gray-900">
+                                {a.patientName}
+                              </h3>
+                              <div className="flex items-center gap-2 mt-1 text-sm text-gray-600">
+                                <Calendar className="w-3 h-3" />
+                                <span>{formatPrettyDate(a.startTime)}</span>
+                                <span className="text-gray-400">•</span>
+                                <Clock className="w-3 h-3" />
+                                <span>{formatPrettyTime(a.startTime)}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-3">
+                            <div className="text-sm">
+                              <p className="text-gray-600">Type</p>
+                              <p className="font-medium">{a.type}</p>
+                            </div>
+                            <Badge variant={getStatusColor(a.status)}>
+                              {a.status}
+                            </Badge>
+                          </div>
+
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setSelectedAppointment(a)}
+                            >
+                              Details
+                            </Button>
+                          </div>
                         </div>
-                        <Badge variant={getStatusColor(a.status)}>
-                          {a.status}
-                        </Badge>
-                      </div>
-
-                      <div className="flex gap-2">
-                        {a.status !== "Completed" && a.status !== "Cancelled" && (
-  <>
-    {/* Confirm only makes sense before it's confirmed */}
-    {a.status !== "Confirmed" && (
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={() => updateStatus(a.id, "Confirmed", "Appointment confirmed")}
-      >
-        Confirm
-      </Button>
-    )}
-
-    {/* Complete usually after confirm (you can loosen this if you want) */}
-    {a.status === "Confirmed" && (
-      <Button
-        size="sm"
-        onClick={() => updateStatus(a.id, "Completed", "Marked completed")}
-      >
-        <CheckCircle className="w-3 h-3 mr-1" />
-        Complete
-      </Button>
-    )}
-
-    {/* Allow cancelling anytime before completed */}
-    <Button
-      size="sm"
-      variant="destructive"
-      onClick={() => updateStatus(a.id, "Cancelled", "Cancelled")}
-    >
-      <XCircle className="w-3 h-3 mr-1" />
-      Cancel
-    </Button>
-  </>
-)}
-
-
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setSelectedAppointment(a)}
-                        >
-                          Details
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            ) : null}
           </div>
         </>
       )}
