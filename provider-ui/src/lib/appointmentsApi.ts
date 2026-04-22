@@ -48,7 +48,7 @@ export async function rescheduleStaffAppointment(
   appointmentId: string,
   body: { startTime: string; localDateTime: string }
 ) {
-  return apiFetch<{ ok: boolean }>(`/api/staff/appointments/${appointmentId}/reschedule`, {
+  return apiFetch<{ ok: boolean; appointment: Appointment }>(`/api/staff/appointments/${appointmentId}/reschedule`, {
     method: "PATCH",
     body: JSON.stringify(body),
   });

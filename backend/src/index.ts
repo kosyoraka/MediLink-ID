@@ -5264,12 +5264,31 @@ app.patch("/api/staff/appointments/:id/reschedule", requireStaffAuth, async (req
       return res.status(409).json({ message: "That appointment time is not available" });
     }
 
-    await pool.query(
+    const updatedResult = await pool.query(
       `
-      UPDATE appointments
+      UPDATE appointments a
       SET start_time = $1::timestamptz
-      WHERE id = $2::uuid
-        AND staff_id = $3::uuid
+      FROM patients p
+      LEFT JOIN patient_profiles pp ON pp.patient_id = p.id
+      LEFT JOIN hospitals h ON h.id = a.hospital_id
+      WHERE a.id = $2::uuid
+        AND a.staff_id = $3::uuid
+        AND p.id = a.patient_id
+      RETURNING
+        a.id,
+        a.patient_id,
+        COALESCE(
+          NULLIF(TRIM(pp.first_name || ' ' || pp.last_name), ''),
+          p.email,
+          'Patient'
+        ) AS patient_name,
+        a.start_time,
+        a.type,
+        a.specialty,
+        a.status,
+        a.notes,
+        a.provider_name,
+        h.name AS hospital_name
       `,
       [nextStartTime, appointmentId, staffId]
     );
@@ -5294,7 +5313,26 @@ app.patch("/api/staff/appointments/:id/reschedule", requireStaffAuth, async (req
       body: `${providerDisplayName} has rescheduled your appointment to ${requestedLabel}.`,
     });
 
-    return res.json({ ok: true });
+    const updated = updatedResult.rows[0];
+
+    return res.json({
+      ok: true,
+      appointment: {
+        id: String(updated.id),
+        patientId: String(updated.patient_id),
+        patientName: updated.patient_name,
+        patientPhoto: null,
+        startTime: new Date(updated.start_time).toISOString(),
+        type: updated.specialty,
+        appointmentType: updated.specialty,
+        visitMode: updated.type,
+        durationMinutes: getAppointmentDurationMinutes(updated.specialty),
+        status: updated.status,
+        notes: updated.notes ?? "",
+        providerName: updated.provider_name ?? null,
+        hospitalName: updated.hospital_name ?? null,
+      },
+    });
   } catch (err: any) {
     console.error("PATCH /api/staff/appointments/:id/reschedule error:", err);
     return res.status(500).json({ message: err?.message || "Failed to reschedule appointment" });

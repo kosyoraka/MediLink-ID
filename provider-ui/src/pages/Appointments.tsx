@@ -6,6 +6,8 @@ import {
   CheckCircle,
   XCircle,
   RefreshCw,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
@@ -120,6 +122,21 @@ export function Appointments({ onNavigate }: AppointmentsProps) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+    needsAttention: true,
+    upcoming: true,
+    past: false,
+  });
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
+    "pending-confirmations": true,
+    today: true,
+    "this-week": true,
+    "next-week": false,
+    later: false,
+    yesterday: true,
+    "last-week": false,
+    "last-month": false,
+  });
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -198,8 +215,10 @@ export function Appointments({ onNavigate }: AppointmentsProps) {
     const lastMonthStart = startOfMonth(lastMonthDate);
     const lastMonthEnd = endOfMonth(lastMonthDate);
 
+    const needsAttentionIds = new Set(pendingConfirmations.map((appointment) => appointment.id));
+
     const upcomingBase = filteredAppointments
-      .filter((appointment) => !isPastAppointment(appointment))
+      .filter((appointment) => !isPastAppointment(appointment) && !needsAttentionIds.has(appointment.id))
       .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
 
     const pastBase = filteredAppointments
@@ -303,7 +322,7 @@ export function Appointments({ onNavigate }: AppointmentsProps) {
       upcomingGroups,
       pastGroups,
     };
-  }, [filteredAppointments]);
+  }, [filteredAppointments, pendingConfirmations]);
 
   const updateStatus = async (
     id: string,
@@ -333,6 +352,14 @@ export function Appointments({ onNavigate }: AppointmentsProps) {
     } finally {
       setRefreshing(false);
     }
+  };
+
+  const toggleSection = (key: string) => {
+    setOpenSections((current) => ({ ...current, [key]: !current[key] }));
+  };
+
+  const toggleGroup = (key: string) => {
+    setOpenGroups((current) => ({ ...current, [key]: !current[key] }));
   };
 
   const renderAppointmentCard = (a: Appointment, isPastSection = false) => {
@@ -428,44 +455,63 @@ export function Appointments({ onNavigate }: AppointmentsProps) {
   const renderGroupedSection = (
     title: string,
     groups: Array<{ key: string; label: string; items: Appointment[] }>,
-    options?: { defaultOpen?: boolean; past?: boolean }
+    options?: { sectionKey: string; past?: boolean }
   ) => {
     if (groups.length === 0) return null;
 
     const totalCount = groups.reduce((sum, group) => sum + group.items.length, 0);
+    const isSectionOpen = openSections[options?.sectionKey || ""] ?? false;
 
     return (
-      <details
-        open={options?.defaultOpen}
-        className="rounded-2xl border border-gray-200 bg-white"
-      >
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-4 text-sm font-medium text-gray-900">
-          <span>{title}</span>
+      <div className="rounded-2xl border border-gray-200 bg-white">
+        <button
+          type="button"
+          onClick={() => toggleSection(options?.sectionKey || "")}
+          className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left text-sm font-medium text-gray-900"
+        >
+          <span className="flex items-center gap-2">
+            {isSectionOpen ? <ChevronDown className="h-4 w-4 text-gray-500" /> : <ChevronRight className="h-4 w-4 text-gray-500" />}
+            {title}
+          </span>
           <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-600">
             {totalCount}
           </span>
-        </summary>
+        </button>
 
-        <div className="space-y-4 border-t border-gray-100 px-4 py-4">
-          {groups.map((group, index) => (
-            <details
-              key={group.key}
-              open={index === 0 && !options?.past}
-              className="rounded-xl border border-gray-200 bg-gray-50"
-            >
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm text-gray-900">
-                <span>{group.label}</span>
-                <span className="rounded-full bg-white px-2.5 py-1 text-xs text-gray-600">
-                  {group.items.length}
-                </span>
-              </summary>
-              <div className="space-y-4 border-t border-gray-200 px-3 py-3">
-                {group.items.map((appointment) => renderAppointmentCard(appointment, Boolean(options?.past)))}
-              </div>
-            </details>
-          ))}
-        </div>
-      </details>
+        {isSectionOpen ? (
+          <div className="space-y-4 border-t border-gray-100 px-4 py-4">
+            {groups.map((group) => {
+              const isGroupOpen = openGroups[group.key] ?? false;
+              return (
+                <div
+                  key={group.key}
+                  className="rounded-xl border border-gray-200 bg-gray-50"
+                >
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(group.key)}
+                    className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm text-gray-900"
+                  >
+                    <span className="flex items-center gap-2">
+                      {isGroupOpen ? <ChevronDown className="h-4 w-4 text-gray-500" /> : <ChevronRight className="h-4 w-4 text-gray-500" />}
+                      {group.label}
+                    </span>
+                    <span className="rounded-full bg-white px-2.5 py-1 text-xs text-gray-600">
+                      {group.items.length}
+                    </span>
+                  </button>
+
+                  {isGroupOpen ? (
+                    <div className="space-y-4 border-t border-gray-200 px-3 py-3">
+                      {group.items.map((appointment) => renderAppointmentCard(appointment, Boolean(options?.past)))}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+      </div>
     );
   };
 
@@ -549,15 +595,15 @@ export function Appointments({ onNavigate }: AppointmentsProps) {
               pendingConfirmations.length > 0
                 ? [{ key: "pending-confirmations", label: "Pending Confirmations", items: pendingConfirmations }]
                 : [],
-              { defaultOpen: true }
+              { sectionKey: "needsAttention" }
             )}
 
             {renderGroupedSection("Upcoming", groupedAppointments.upcomingGroups, {
-              defaultOpen: true,
+              sectionKey: "upcoming",
             })}
 
             {renderGroupedSection("Past", groupedAppointments.pastGroups, {
-              defaultOpen: false,
+              sectionKey: "past",
               past: true,
             })}
           </div>
@@ -577,8 +623,12 @@ export function Appointments({ onNavigate }: AppointmentsProps) {
             );
             setSelectedAppointment(null);
           }}
-          onRescheduled={async () => {
-            await loadAppointments(true);
+          onRescheduled={(updatedAppointment) => {
+            setAppointments((current) =>
+              current.map((appointment) =>
+                appointment.id === updatedAppointment.id ? updatedAppointment : appointment
+              )
+            );
             toast.success("Appointment rescheduled");
             setSelectedAppointment(null);
           }}

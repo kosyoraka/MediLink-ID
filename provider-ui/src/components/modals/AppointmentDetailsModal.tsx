@@ -16,7 +16,7 @@ interface AppointmentDetailsModalProps {
   open: boolean;
   onClose: () => void;
   onComplete: () => void;
-  onRescheduled?: () => void;
+  onRescheduled?: (appointment: Appointment) => void;
 }
 
 function formatPrettyDate(iso: string) {
@@ -121,11 +121,13 @@ export function AppointmentDetailsModal({
     try {
       setRescheduling(true);
       setError("");
-      await rescheduleStaffAppointment(appointment.id, {
+      const result = await rescheduleStaffAppointment(appointment.id, {
         startTime: new Date(rescheduleSlot).toISOString(),
         localDateTime: rescheduleSlot,
       });
-      onRescheduled?.();
+      if (result.appointment) {
+        onRescheduled?.(result.appointment);
+      }
       onClose();
     } catch (e: any) {
       setError(e?.message || "Failed to reschedule appointment");
