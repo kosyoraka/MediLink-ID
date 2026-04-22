@@ -331,6 +331,9 @@ export const api = {
     status: "upcoming" | "today" | "completed" | "cancelled" | "all" = "upcoming"
   ) => request<{ appointments: PatientAppointment[] }>(`/api/patient/appointments?status=${status}`),
   listMyNotifications: () => request<{ notifications: PatientNotification[] }>("/api/patient/notifications"),
+  markMyNotificationsRead: () => request<{ ok: boolean }>("/api/patient/notifications/read", {
+    method: "POST",
+  }),
 
   listMyRecords: (params: {
     category?: string;

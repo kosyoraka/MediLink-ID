@@ -27,7 +27,17 @@ export default function Notifications({ onBack, onNavigate }: NotificationsProps
     (async () => {
       try {
         const data = await api.listMyNotifications();
-        if (!cancelled) setNotifications(data.notifications || []);
+        if (!cancelled) {
+          setNotifications(data.notifications || []);
+        }
+        await api.markMyNotificationsRead();
+        if (!cancelled) {
+          setNotifications((current) =>
+            current.map((item) =>
+              item.id.startsWith("patient-emergency-access:") ? { ...item, unread: false } : item
+            )
+          );
+        }
       } catch (e) {
         console.error("PATIENT NOTIFICATIONS FETCH ERROR:", e);
         if (!cancelled) setNotifications([]);

@@ -2841,6 +2841,7 @@ app.get("/api/patient/notifications", requirePatientAuth, async (req: any, res) 
           id,
           access_result,
           user_agent,
+          read_at,
           accessed_at
         FROM emergency_access_logs
         WHERE patient_id = $1::uuid
@@ -2900,15 +2901,12 @@ app.get("/api/patient/notifications", requirePatientAuth, async (req: any, res) 
         };
       }),
       ...emergencyAccessResult.rows.map((row) => {
-        const accessedAt = new Date(row.accessed_at);
-        const isRecent = Date.now() - accessedAt.getTime() < 1000 * 60 * 60 * 12;
-
         return {
           id: `patient-emergency-access:${row.id}`,
           title: row.access_result === "revoked" ? "Emergency ID access blocked" : "Your Emergency ID was accessed",
           detail: "Emergency responder view opened",
           isoDate: row.accessed_at,
-          unread: isRecent,
+          unread: !row.read_at,
         };
       }),
     ]
@@ -2919,6 +2917,27 @@ app.get("/api/patient/notifications", requirePatientAuth, async (req: any, res) 
   } catch (e: any) {
     console.error("GET /api/patient/notifications error:", e);
     return res.status(500).json({ message: e?.message || "Failed to load notifications" });
+  }
+});
+
+app.post("/api/patient/notifications/read", requirePatientAuth, async (req: any, res) => {
+  try {
+    const patientId = req.patientId as string;
+
+    await pool.query(
+      `
+      UPDATE emergency_access_logs
+      SET read_at = NOW()
+      WHERE patient_id = $1::uuid
+        AND read_at IS NULL
+      `,
+      [patientId]
+    );
+
+    return res.json({ ok: true });
+  } catch (e: any) {
+    console.error("POST /api/patient/notifications/read error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to mark notifications as read" });
   }
 });
 

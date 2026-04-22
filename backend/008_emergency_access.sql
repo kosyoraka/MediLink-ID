@@ -6,8 +6,12 @@ CREATE TABLE IF NOT EXISTS emergency_access_logs (
   access_result TEXT NOT NULL DEFAULT 'success' CHECK (access_result IN ('success', 'revoked')),
   ip_address TEXT,
   user_agent TEXT,
+  read_at TIMESTAMPTZ,
   accessed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE emergency_access_logs
+  ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ;
 
 CREATE INDEX IF NOT EXISTS idx_emergency_access_logs_patient_id
   ON emergency_access_logs (patient_id, accessed_at DESC);
