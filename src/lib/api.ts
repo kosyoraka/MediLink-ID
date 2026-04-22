@@ -238,6 +238,7 @@ export type PatientEmergencyProfile = {
   emergency_contact_phone: string | null;
   dnr_status: string | null;
   living_will: string | null;
+  emergency_access_code_set?: boolean;
   updated_at: string | null;
 };
 

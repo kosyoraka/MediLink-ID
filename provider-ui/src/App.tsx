@@ -33,6 +33,8 @@ function App() {
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [patientDetailsContext, setPatientDetailsContext] = useState<{ medicationId?: string; medicationChangeRequestId?: string } | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
+  const emergencyToken = new URLSearchParams(window.location.search).get("emergencyToken");
+  const emergencyReturnTo = new URLSearchParams(window.location.search).get("returnTo");
 
   // ✅ Auto-auth if staff exists (localStorage remember-me OR sessionStorage)
   useEffect(() => {
@@ -100,6 +102,36 @@ function App() {
       cancelled = true;
     };
   }, [isAuthenticated, currentPage]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!isAuthenticated || !emergencyToken || !emergencyReturnTo) {
+      return;
+    }
+
+    (async () => {
+      try {
+        const data = await apiFetch<{ accessTicket: string }>("/api/staff/emergency-access-ticket", {
+          method: "POST",
+          body: JSON.stringify({ emergencyToken }),
+        });
+
+        if (cancelled) return;
+
+        const separator = emergencyReturnTo.includes("?") ? "&" : "?";
+        window.location.replace(
+          `${emergencyReturnTo}${separator}staffAccessTicket=${encodeURIComponent(data.accessTicket)}`
+        );
+      } catch (error) {
+        console.error("EMERGENCY RESPONDER REDIRECT ERROR:", error);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, emergencyToken, emergencyReturnTo]);
 
   const handleLogin = () => {
     setIsAuthenticated(true);

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { API_BASE } from "@/config/api";
 
 type EmergencyPublicResponse = {
@@ -8,7 +8,6 @@ type EmergencyPublicResponse = {
   last_name: string | null;
   dob: string | null;
   health_card: string | null;
-
   share_personal_info: boolean;
   share_blood_type: boolean;
   share_allergies: boolean;
@@ -16,7 +15,6 @@ type EmergencyPublicResponse = {
   share_current_medications: boolean;
   share_emergency_contacts: boolean;
   share_advance_directives: boolean;
-
   blood_type: string | null;
   allergies: string | null;
   medical_conditions: string | null;
@@ -28,52 +26,185 @@ type EmergencyPublicResponse = {
   living_will: string | null;
 };
 
+type AccessMode = "patient_code" | "staff_ticket" | "patient_session";
+
+function getPatientToken() {
+  return (
+    localStorage.getItem("patient_token") ||
+    localStorage.getItem("patientToken") ||
+    localStorage.getItem("token") ||
+    null
+  );
+}
+
+function getProviderOrigin() {
+  const { protocol, hostname } = window.location;
+  if (hostname === "localhost" || hostname === "127.0.0.1") {
+    return `${protocol}//${hostname}:5174`;
+  }
+  if (hostname === "medilinkid.com" || hostname === "www.medilinkid.com") {
+    return `${protocol}//provider.medilinkid.com`;
+  }
+  if (hostname.startsWith("provider.")) {
+    return `${protocol}//${hostname}`;
+  }
+  return `${protocol}//provider.${hostname}`;
+}
+
 export default function EmergencyPublic({ token }: { token: string }) {
   const [data, setData] = useState<EmergencyPublicResponse | null>(null);
   const [err, setErr] = useState("");
-  //const res = await fetch(`${API_BASE}/api/emergency/${token}`, { cache: "no-store" });
+  const [accessCode, setAccessCode] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [initializing, setInitializing] = useState(true);
 
+  const searchParams = useMemo(() => new URLSearchParams(window.location.search), []);
+  const staffAccessTicket = searchParams.get("staffAccessTicket");
 
-  useEffect(() => {
-  (async () => {
+  const requestAccess = async (mode: AccessMode, options?: { patientCode?: string; staffTicket?: string }) => {
+    setSubmitting(true);
+    setErr("");
+
     try {
-      const res = await fetch(`${API_BASE}/api/emergency/by-token/${token}`);
+      const tokenValue = getPatientToken();
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+
+      if (mode === "patient_session" && tokenValue) {
+        headers.Authorization = `Bearer ${tokenValue}`;
+      }
+
+      const res = await fetch(`${API_BASE}/api/emergency/access`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          token,
+          accessMethod: mode,
+          patientCode: options?.patientCode,
+          staffAccessTicket: options?.staffTicket,
+        }),
+      });
+
       const json = await res.json();
       if (!res.ok) throw new Error(json?.message || "Failed to load emergency profile");
+
       setData(json);
+      setErr("");
+
+      if (options?.staffTicket) {
+        const cleanUrl = `${window.location.origin}/e/${token}`;
+        window.history.replaceState({}, "", cleanUrl);
+      }
     } catch (e: any) {
       setErr(e?.message || "Failed to load");
+      setData(null);
+    } finally {
+      setSubmitting(false);
     }
-  })();
-}, [token]);
+  };
 
+  useEffect(() => {
+    let cancelled = false;
 
-  if (err) {
-    return (
-      <div className="min-h-screen bg-gray-50 p-6">
-        <h1 className="text-xl text-gray-900 mb-2">Emergency Profile</h1>
-        <p className="text-red-600">{err}</p>
-      </div>
-    );
-  }
+    (async () => {
+      try {
+        const patientToken = getPatientToken();
+        if (staffAccessTicket) {
+          await requestAccess("staff_ticket", { staffTicket: staffAccessTicket });
+          return;
+        }
+
+        if (patientToken) {
+          await requestAccess("patient_session");
+          return;
+        }
+      } finally {
+        if (!cancelled) setInitializing(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [staffAccessTicket, token]);
+
+  const fullName = [data?.first_name, data?.last_name].filter(Boolean).join(" ") || "—";
+  const showPersonalInfo = Boolean(data?.first_name || data?.last_name || data?.dob || data?.health_card);
+
+  const formatDOB = (dob?: string | null) => {
+    if (!dob) return "—";
+    const d = new Date(dob);
+    return d.toLocaleDateString("en-CA");
+  };
+
+  const continueWithProviderLogin = () => {
+    const providerOrigin = getProviderOrigin();
+    const returnTo = `${window.location.origin}/e/${token}`;
+    window.location.href = `${providerOrigin}/?emergencyToken=${encodeURIComponent(token)}&returnTo=${encodeURIComponent(returnTo)}`;
+  };
+
+  const submitPatientCode = async () => {
+    await requestAccess("patient_code", { patientCode: accessCode.trim() });
+  };
 
   if (!data) {
     return (
       <div className="min-h-screen bg-gray-50 p-6">
-        <h1 className="text-xl text-gray-900 mb-2">Emergency Profile</h1>
-        <p className="text-gray-600">Loading…</p>
+        <h1 className="text-xl text-gray-900 mb-2">Emergency Access</h1>
+        <p className="text-sm text-gray-600 mb-6">
+          Enter the patient emergency access code or continue with MediLink provider sign-in.
+        </p>
+
+        {(initializing || submitting) && (
+          <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4 text-gray-600">
+            Verifying access…
+          </div>
+        )}
+
+        {!initializing && err ? (
+          <div className="bg-red-50 rounded-xl border border-red-200 p-4 mb-4 text-red-700">{err}</div>
+        ) : null}
+
+        {!initializing ? (
+          <div className="space-y-4">
+            <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+              <p className="text-sm text-gray-900">Family / Friends Access</p>
+              <input
+                type="password"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={6}
+                value={accessCode}
+                onChange={(e) => setAccessCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                placeholder="Enter patient access code"
+                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-gray-900 outline-none focus:border-teal-500"
+              />
+              <button
+                type="button"
+                onClick={submitPatientCode}
+                className="w-full rounded-xl bg-teal-600 px-4 py-3 text-white"
+                disabled={submitting}
+              >
+                Continue with Access Code
+              </button>
+            </div>
+
+            <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+              <p className="text-sm text-gray-900">Emergency Responder / Provider Access</p>
+              <button
+                type="button"
+                onClick={continueWithProviderLogin}
+                className="w-full rounded-xl border border-gray-200 px-4 py-3 text-gray-900"
+              >
+                Continue with MediLink Provider Sign-In
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
     );
   }
-
-  const fullName = [data.first_name, data.last_name].filter(Boolean).join(" ") || "—";
-  const showPersonalInfo = Boolean(data.first_name || data.last_name || data.dob || data.health_card);
-  const formatDOB = (dob?: string | null) => {
-  if (!dob) return "—";
-  const d = new Date(dob);
-  return d.toLocaleDateString("en-CA"); // YYYY-MM-DD
-};
-
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">
@@ -138,9 +269,7 @@ export default function EmergencyPublic({ token }: { token: string }) {
         )}
       </div>
 
-      <p className="text-xs text-gray-400 mt-6">
-        MediLink emergency view • Token-based access
-      </p>
+      <p className="text-xs text-gray-400 mt-6">MediLink emergency view • Protected emergency access</p>
     </div>
   );
 }

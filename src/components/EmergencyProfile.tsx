@@ -53,6 +53,7 @@ type EmergencyProfileApi = {
 
   dnr_status: string | null;
   living_will: string | null;
+  emergency_access_code_set?: boolean;
 
   updated_at: string | null;
 };
@@ -103,6 +104,9 @@ export default function EmergencyProfile({ onBack }: EmergencyProfileProps) {
   const [livingWill, setLivingWill] = useState<string>('');
 
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
+  const [emergencyAccessCode, setEmergencyAccessCode] = useState("");
+  const [accessCodeSet, setAccessCodeSet] = useState(false);
+  const [savingAccessCode, setSavingAccessCode] = useState(false);
 
   // Format DOB to show full date + age
   const formatDOBWithAge = (dobStr: string | null) => {
@@ -201,6 +205,7 @@ export default function EmergencyProfile({ onBack }: EmergencyProfileProps) {
 
         setDnrStatus(data.dnr_status ?? '');
         setLivingWill(data.living_will ?? '');
+        setAccessCodeSet(!!data.emergency_access_code_set);
 
         setUpdatedAt(data.updated_at ?? null);
       } catch (e: any) {
@@ -274,6 +279,54 @@ export default function EmergencyProfile({ onBack }: EmergencyProfileProps) {
     const nextSettings = { ...settings, [key]: !settings[key] };
     setSettings(nextSettings);
     void persistEmergencyProfile(nextSettings);
+  };
+
+  const saveEmergencyAccessCode = async () => {
+    setError(null);
+    setSaveMsg(null);
+
+    if (!patientId) {
+      setError('No patientId found. Please sign in again.');
+      return;
+    }
+
+    if (!/^\d{4,6}$/.test(emergencyAccessCode.trim())) {
+      setError('Emergency access code must be 4 to 6 digits.');
+      return;
+    }
+
+    try {
+      setSavingAccessCode(true);
+      const token =
+        localStorage.getItem("patient_token") ||
+        localStorage.getItem("patientToken") ||
+        localStorage.getItem("token") ||
+        "";
+
+      const res = await fetch(`${API_BASE}/api/patients/${patientId}/emergency-access-code`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ code: emergencyAccessCode.trim() }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data?.message || `Failed to save emergency access code (${res.status})`);
+        return;
+      }
+
+      setAccessCodeSet(true);
+      setEmergencyAccessCode('');
+      setSaveMsg('Emergency access code saved');
+    } catch (e: any) {
+      setError(e?.message || String(e));
+    } finally {
+      setSavingAccessCode(false);
+      setTimeout(() => setSaveMsg(null), 1500);
+    }
   };
 
   // Emergency Mode view (now uses DB values, no hardcoded lists)
@@ -582,6 +635,42 @@ export default function EmergencyProfile({ onBack }: EmergencyProfileProps) {
             your health summary and emergency setup flow. This screen is only for choosing what gets shown in emergency mode.
           </p>
           {saveMsg && <p className="text-sm text-green-700 mt-3">{saveMsg}</p>}
+        </div>
+
+        <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+          <div>
+            <h3 className="text-gray-900 mb-1">Family & Friends Emergency Access Code</h3>
+            <p className="text-sm text-gray-600">
+              Set a 4 to 6 digit code trusted people can enter after scanning your Emergency ID.
+            </p>
+          </div>
+
+          <div className="rounded-xl bg-gray-50 border border-gray-200 p-4">
+            <p className="text-sm text-gray-900">
+              {accessCodeSet ? 'Emergency access code is set.' : 'No emergency access code has been set yet.'}
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <input
+              type="password"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={6}
+              value={emergencyAccessCode}
+              onChange={(e) => setEmergencyAccessCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              placeholder="Enter 4 to 6 digit code"
+              className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-gray-900 outline-none focus:border-teal-500"
+            />
+
+            <Button
+              onClick={saveEmergencyAccessCode}
+              className="w-full bg-teal-600 hover:bg-teal-700 text-white"
+              disabled={savingAccessCode}
+            >
+              {savingAccessCode ? 'Saving...' : accessCodeSet ? 'Update Emergency Access Code' : 'Save Emergency Access Code'}
+            </Button>
+          </div>
         </div>
 
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">

@@ -91,6 +91,23 @@ function signStaffToken(staff: {
   );
 }
 
+function signEmergencyStaffAccessTicket(payload: {
+  staffId: string;
+  hospitalId: string;
+  emergencyToken: string;
+}) {
+  return jwt.sign(
+    {
+      purpose: "emergency_staff_access",
+      staffId: payload.staffId,
+      hospitalId: payload.hospitalId,
+      emergencyToken: payload.emergencyToken,
+    },
+    process.env.JWT_SECRET as string,
+    { expiresIn: "10m" }
+  );
+}
+
 function getGoogleClientId() {
   const id = process.env.GOOGLE_CLIENT_ID;
   if (!id) throw new Error("Missing env var: GOOGLE_CLIENT_ID");
@@ -287,6 +304,22 @@ async function ensureEmergencyAccessSchema() {
   }
 }
 
+async function ensureEmergencyAccessSecuritySchema() {
+  const sql = await readFile(path.resolve(__dirname, "../009_emergency_access_security.sql"), "utf8");
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    try {
+      await pool.query(sql);
+      return;
+    } catch (error) {
+      if (attempt === 5) {
+        console.error("Emergency access security schema setup skipped:", error);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+    }
+  }
+}
+
 function getRequestIp(req: any) {
   const forwardedFor = req.headers["x-forwarded-for"];
   if (Array.isArray(forwardedFor)) return String(forwardedFor[0] || "").split(",")[0].trim() || null;
@@ -313,6 +346,150 @@ async function listEmergencyAccessLogs(patientId: string, limit = 10) {
     userAgent: row.user_agent ? String(row.user_agent) : null,
     accessedAt: row.accessed_at,
   }));
+}
+
+function getBearerToken(req: any) {
+  const authHeader = req.get("authorization") || "";
+  if (!authHeader.startsWith("Bearer ")) return null;
+  return authHeader.slice("Bearer ".length).trim() || null;
+}
+
+function verifyPatientSessionFromRequest(req: any) {
+  const token = getBearerToken(req);
+  if (!token) return null;
+
+  try {
+    const decoded = jwt.verify(token, getJwtSecret()) as any;
+    if (decoded?.role !== "patient" || !decoded?.id) return null;
+    return { patientId: String(decoded.id) };
+  } catch {
+    return null;
+  }
+}
+
+function verifyEmergencyStaffAccessTicket(ticket: string, emergencyToken: string) {
+  try {
+    const decoded = jwt.verify(ticket, getJwtSecret()) as any;
+    if (decoded?.purpose !== "emergency_staff_access") return null;
+    if (String(decoded.emergencyToken || "") !== emergencyToken) return null;
+    if (!decoded.staffId) return null;
+    return {
+      staffId: String(decoded.staffId),
+      hospitalId: decoded.hospitalId ? String(decoded.hospitalId) : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function loadEmergencyProfileData(patientId: string) {
+  const personal = await pool.query(
+    `SELECT
+       p.id as patient_id,
+       p.email,
+       pp.first_name,
+       pp.last_name,
+       pp.dob,
+       pp.health_card,
+       pp.blood_type,
+       pp.current_medications
+     FROM patients p
+     LEFT JOIN patient_profiles pp ON pp.patient_id = p.id
+     WHERE p.id = $1`,
+    [patientId]
+  );
+
+  if (personal.rowCount === 0) {
+    throw new Error("PATIENT_NOT_FOUND");
+  }
+
+  const emergency = await pool.query(
+    `SELECT
+       share_personal_info,
+       share_blood_type,
+       share_allergies,
+       share_medical_conditions,
+       share_current_medications,
+       share_emergency_contacts,
+       share_advance_directives,
+       emergency_contact_full_name,
+       emergency_contact_relationship,
+       emergency_contact_phone,
+       dnr_status,
+       living_will,
+       emergency_access_code_hash,
+       updated_at
+     FROM emergency_profiles
+     WHERE patient_id = $1`,
+    [patientId]
+  );
+
+  const defaults = {
+    share_personal_info: true,
+    share_blood_type: true,
+    share_allergies: true,
+    share_medical_conditions: true,
+    share_current_medications: true,
+    share_emergency_contacts: true,
+    share_advance_directives: false,
+    emergency_contact_full_name: null,
+    emergency_contact_relationship: null,
+    emergency_contact_phone: null,
+    dnr_status: null,
+    living_will: null,
+    emergency_access_code_hash: null,
+    updated_at: null,
+  };
+
+  const summaryResult = await pool.query(
+    `
+    SELECT vitals, conditions, allergies, blood_type, current_medications, emergency_contacts, advance_directives, immunizations, family_history, updated_at
+    FROM patient_health_summaries
+    WHERE patient_id = $1::uuid
+    LIMIT 1
+    `,
+    [patientId]
+  );
+
+  const summary = summaryResult.rowCount ? normalizeHealthSummaryRow(summaryResult.rows[0]) : null;
+  const pData = personal.rows[0];
+  const eData = emergency.rowCount ? emergency.rows[0] : defaults;
+  const { emergency_access_code_hash, ...safeEmergencyData } = eData;
+
+  return {
+    data: {
+      ...pData,
+      ...safeEmergencyData,
+      share_personal_info: true,
+      share_blood_type: true,
+      blood_type: summary?.bloodType ?? pData.blood_type ?? null,
+      allergies: summarizeHealthSummaryText(summary?.allergies, "allergy"),
+      medical_conditions: summarizeHealthSummaryText(summary?.conditions, "condition"),
+      current_medications:
+        Array.isArray(summary?.currentMedications) && summary.currentMedications.length > 0
+          ? summary.currentMedications.join("\n")
+          : pData.current_medications ?? null,
+      emergency_contact_full_name:
+        summary?.emergencyContacts?.[0]?.name || eData.emergency_contact_full_name || null,
+      emergency_contact_relationship:
+        summary?.emergencyContacts?.[0]?.relationship || eData.emergency_contact_relationship || null,
+      emergency_contact_phone:
+        summary?.emergencyContacts?.[0]?.phone || eData.emergency_contact_phone || null,
+      dnr_status:
+        typeof summary?.advanceDirectives?.dnrStatus === "string" && summary.advanceDirectives.dnrStatus.trim()
+          ? summary.advanceDirectives.dnrStatus
+          : eData.dnr_status,
+      living_will:
+        typeof summary?.advanceDirectives?.livingWill === "string" && summary.advanceDirectives.livingWill.trim()
+          ? summary.advanceDirectives.livingWill
+          : eData.living_will,
+      health_summary_updated_at: summary?.updatedAt || null,
+      emergency_access_code_set: Boolean(emergency_access_code_hash),
+    },
+    emergencyAccessCodeHash: emergency_access_code_hash
+      ? String(emergency_access_code_hash)
+      : null,
+  };
 }
 
 function isUuid(value: string | undefined | null) {
@@ -2081,106 +2258,13 @@ app.get("/api/patients/:patientId/emergency-profile", async (req, res) => {
   const { patientId } = req.params;
 
   try {
-    const personal = await pool.query(
-      `SELECT
-         p.id as patient_id,
-         p.email,
-         pp.first_name,
-         pp.last_name,
-         pp.dob,
-         pp.health_card,
-         pp.blood_type,
-         pp.current_medications
-       FROM patients p
-       LEFT JOIN patient_profiles pp ON pp.patient_id = p.id
-       WHERE p.id = $1`,
-      [patientId]
-    );
-
-    if (personal.rowCount === 0) {
-      return res.status(404).json({ message: "Patient not found" });
-    }
-
-    const emergency = await pool.query(
-      `SELECT
-        share_personal_info,
-         share_blood_type,
-         share_allergies,
-         share_medical_conditions,
-         share_current_medications,
-         share_emergency_contacts,
-         share_advance_directives,
-         emergency_contact_full_name,
-         emergency_contact_relationship,
-         emergency_contact_phone,
-         dnr_status,
-         living_will,
-         updated_at
-       FROM emergency_profiles
-       WHERE patient_id = $1`,
-      [patientId]
-    );
-
-    const defaults = {
-      share_personal_info: true,
-      share_blood_type: true,
-      share_allergies: true,
-      share_medical_conditions: true,
-      share_current_medications: true,
-      share_emergency_contacts: true,
-      share_advance_directives: false,
-      emergency_contact_full_name: null,
-      emergency_contact_relationship: null,
-      emergency_contact_phone: null,
-      dnr_status: null,
-      living_will: null,
-      updated_at: null,
-    };
-
-    const summaryResult = await pool.query(
-      `
-      SELECT vitals, conditions, allergies, blood_type, current_medications, emergency_contacts, advance_directives, immunizations, family_history, updated_at
-      FROM patient_health_summaries
-      WHERE patient_id = $1::uuid
-      LIMIT 1
-      `,
-      [patientId]
-    );
-
-    const summary = summaryResult.rowCount ? normalizeHealthSummaryRow(summaryResult.rows[0]) : null;
-    const pData = personal.rows[0];
-    const eData = emergency.rowCount ? emergency.rows[0] : defaults;
-
-    return res.status(200).json({
-      ...pData,
-      ...eData,
-      share_personal_info: true,
-      share_blood_type: true,
-      blood_type: summary?.bloodType ?? pData.blood_type ?? null,
-      allergies: summarizeHealthSummaryText(summary?.allergies, "allergy"),
-      medical_conditions: summarizeHealthSummaryText(summary?.conditions, "condition"),
-      current_medications:
-        Array.isArray(summary?.currentMedications) && summary.currentMedications.length > 0
-          ? summary.currentMedications.join("\n")
-          : pData.current_medications ?? null,
-      emergency_contact_full_name:
-        summary?.emergencyContacts?.[0]?.name || eData.emergency_contact_full_name || null,
-      emergency_contact_relationship:
-        summary?.emergencyContacts?.[0]?.relationship || eData.emergency_contact_relationship || null,
-      emergency_contact_phone:
-        summary?.emergencyContacts?.[0]?.phone || eData.emergency_contact_phone || null,
-      dnr_status:
-        typeof summary?.advanceDirectives?.dnrStatus === "string" && summary.advanceDirectives.dnrStatus.trim()
-          ? summary.advanceDirectives.dnrStatus
-          : eData.dnr_status,
-      living_will:
-        typeof summary?.advanceDirectives?.livingWill === "string" && summary.advanceDirectives.livingWill.trim()
-          ? summary.advanceDirectives.livingWill
-          : eData.living_will,
-      health_summary_updated_at: summary?.updatedAt || null,
-    });
+    const { data } = await loadEmergencyProfileData(patientId);
+    return res.status(200).json(data);
   } catch (e: any) {
     console.error("EMERGENCY GET ERROR:", e);
+    if (e?.message === "PATIENT_NOT_FOUND") {
+      return res.status(404).json({ message: "Patient not found" });
+    }
     return res.status(500).json({ message: e?.message || String(e), code: e?.code });
   }
 });
@@ -2293,6 +2377,57 @@ app.put("/api/patients/:patientId/emergency-profile", async (req, res) => {
   }
 });
 
+app.post("/api/patients/:patientId/emergency-access-code", requirePatientAuth, async (req: any, res) => {
+  const { patientId } = req.params;
+  const { code } = req.body ?? {};
+
+  if (!patientId) return res.status(400).json({ message: "Missing patientId" });
+  if (req.patientId !== patientId) return res.status(403).json({ message: "Forbidden" });
+
+  const trimmed = String(code || "").trim();
+  if (!/^\d{4,6}$/.test(trimmed)) {
+    return res.status(400).json({ message: "Emergency access code must be 4 to 6 digits." });
+  }
+
+  try {
+    const exists = await pool.query(`SELECT 1 FROM patients WHERE id = $1`, [patientId]);
+    if (exists.rowCount === 0) {
+      return res.status(404).json({ message: "Patient not found" });
+    }
+
+    const hash = await bcrypt.hash(trimmed, 12);
+
+    await pool.query(
+      `
+      INSERT INTO emergency_profiles (
+        id, patient_id,
+        share_personal_info, share_blood_type, share_allergies, share_medical_conditions,
+        share_current_medications, share_emergency_contacts, share_advance_directives,
+        emergency_access_code_hash,
+        updated_at
+      )
+      VALUES (
+        $1::text, $2::uuid,
+        true, true, true, true,
+        true, true, false,
+        $3,
+        NOW()
+      )
+      ON CONFLICT (patient_id)
+      DO UPDATE SET
+        emergency_access_code_hash = EXCLUDED.emergency_access_code_hash,
+        updated_at = NOW()
+      `,
+      [randomUUID(), patientId, hash]
+    );
+
+    return res.json({ ok: true, emergencyAccessCodeSet: true });
+  } catch (e: any) {
+    console.error("EMERGENCY ACCESS CODE SAVE ERROR:", e);
+    return res.status(500).json({ message: e?.message || "Failed to save emergency access code" });
+  }
+});
+
 
 /**
  * Create/Get emergency link for wallet/QR/NFC
@@ -2372,36 +2507,81 @@ app.post("/api/patients/:patientId/emergency-link/regenerate", requirePatientAut
   }
 });
 
+app.post("/api/staff/emergency-access-ticket", requireStaffAuth, async (req: any, res) => {
+  const { emergencyToken } = req.body ?? {};
+  const token = String(emergencyToken || "").trim();
+
+  if (!token) {
+    return res.status(400).json({ message: "Missing emergencyToken" });
+  }
+
+  try {
+    const link = await pool.query(
+      `
+      SELECT patient_id, revoked
+      FROM emergency_links
+      WHERE token = $1
+      LIMIT 1
+      `,
+      [token]
+    );
+
+    if (link.rowCount === 0) return res.status(404).json({ message: "Invalid emergency link" });
+    if (link.rows[0].revoked) return res.status(403).json({ message: "Emergency link revoked" });
+
+    const accessTicket = signEmergencyStaffAccessTicket({
+      staffId: String(req.staffId),
+      hospitalId: String(req.staffHospitalId || ""),
+      emergencyToken: token,
+    });
+
+    return res.json({ accessTicket });
+  } catch (e: any) {
+    console.error("STAFF EMERGENCY ACCESS TICKET ERROR:", e);
+    return res.status(500).json({ message: e?.message || "Failed to create emergency access ticket" });
+  }
+});
+
 /**
  * Public emergency fetch by token (no login)
  * GET /api/emergency/by-token/:token
  */
 app.get("/api/emergency/by-token/:token", async (req, res) => {
-  const { token } = req.params;
-  if (!token) return res.status(400).json({ message: "Missing token" });
+  return res.status(403).json({ message: "Direct public access is disabled. Use the emergency access flow." });
+});
+
+app.post("/api/emergency/access", async (req: any, res) => {
+  const { token, patientCode, staffAccessTicket, accessMethod } = req.body ?? {};
+  const emergencyToken = String(token || "").trim();
+
+  if (!emergencyToken) return res.status(400).json({ message: "Missing token" });
 
   try {
     const link = await pool.query(
-      `SELECT patient_id, revoked
-      , id
-       FROM emergency_links
-       WHERE token = $1
-       LIMIT 1`,
-      [token]
+      `
+      SELECT patient_id, revoked, id
+      FROM emergency_links
+      WHERE token = $1
+      LIMIT 1
+      `,
+      [emergencyToken]
     );
 
     if (link.rowCount === 0) return res.status(404).json({ message: "Invalid or expired link" });
-    if (link.rows[0].revoked) {
+
+    const emergencyLink = link.rows[0];
+    if (emergencyLink.revoked) {
       await pool.query(
         `
-        INSERT INTO emergency_access_logs (id, patient_id, emergency_link_id, token, access_result, ip_address, user_agent)
-        VALUES ($1, $2::uuid, $3::uuid, $4, 'revoked', $5, $6)
+        INSERT INTO emergency_access_logs (id, patient_id, emergency_link_id, token, access_result, access_method, ip_address, user_agent)
+        VALUES ($1, $2::uuid, $3::uuid, $4, 'revoked', $5, $6, $7)
         `,
         [
           randomUUID(),
-          link.rows[0].patient_id,
-          link.rows[0].id,
-          token,
+          emergencyLink.patient_id,
+          emergencyLink.id,
+          emergencyToken,
+          String(accessMethod || "unknown"),
           getRequestIp(req),
           req.get("user-agent") || null,
         ]
@@ -2409,126 +2589,62 @@ app.get("/api/emergency/by-token/:token", async (req, res) => {
       return res.status(403).json({ message: "Link revoked" });
     }
 
-    const patientId = link.rows[0].patient_id;
+    const { data, emergencyAccessCodeHash } = await loadEmergencyProfileData(String(emergencyLink.patient_id));
 
-    // Personal info
-    const personal = await pool.query(
-      `SELECT
-         p.id as patient_id,
-         p.email,
-         pp.first_name,
-         pp.last_name,
-         pp.dob,
-         pp.health_card,
-         pp.blood_type,
-         pp.current_medications
-       FROM patients p
-       LEFT JOIN patient_profiles pp ON pp.patient_id = p.id
-       WHERE p.id = $1`,
-      [patientId]
-    );
+    let resolvedAccessMethod = "unknown";
+    let staffId: string | null = null;
 
-    if (personal.rowCount === 0) return res.status(404).json({ message: "Patient not found" });
-
-    // Emergency sharing + emergency-only fields
-    const emergency = await pool.query(
-      `SELECT
-         share_personal_info,
-         share_blood_type,
-         share_allergies,
-         share_medical_conditions,
-         share_current_medications,
-         share_emergency_contacts,
-         share_advance_directives,
-         emergency_contact_full_name,
-         emergency_contact_relationship,
-         emergency_contact_phone,
-         dnr_status,
-         living_will,
-         updated_at
-       FROM emergency_profiles
-       WHERE patient_id = $1`,
-      [patientId]
-    );
-
-    const defaults = {
-      share_personal_info: true,
-      share_blood_type: true,
-      share_allergies: true,
-      share_medical_conditions: true,
-      share_current_medications: true,
-      share_emergency_contacts: true,
-      share_advance_directives: false,
-      emergency_contact_full_name: null,
-      emergency_contact_relationship: null,
-      emergency_contact_phone: null,
-      dnr_status: null,
-      living_will: null,
-      updated_at: null,
-    };
-
-    const summaryResult = await pool.query(
-      `
-      SELECT vitals, conditions, allergies, blood_type, current_medications, emergency_contacts, advance_directives, immunizations, family_history, updated_at
-      FROM patient_health_summaries
-      WHERE patient_id = $1::uuid
-      LIMIT 1
-      `,
-      [patientId]
-    );
-
-    const summary = summaryResult.rowCount ? normalizeHealthSummaryRow(summaryResult.rows[0]) : null;
-    const eData = emergency.rowCount ? emergency.rows[0] : defaults;
-    const pData = personal.rows[0];
+    if (accessMethod === "patient_session") {
+      const session = verifyPatientSessionFromRequest(req);
+      if (!session || session.patientId !== String(emergencyLink.patient_id)) {
+        return res.status(403).json({ message: "Patient session access denied" });
+      }
+      resolvedAccessMethod = "patient_session";
+    } else if (accessMethod === "patient_code") {
+      const submitted = String(patientCode || "").trim();
+      if (!submitted || !emergencyAccessCodeHash) {
+        return res.status(403).json({ message: "Invalid emergency access code" });
+      }
+      const ok = await bcrypt.compare(submitted, emergencyAccessCodeHash);
+      if (!ok) {
+        return res.status(403).json({ message: "Invalid emergency access code" });
+      }
+      resolvedAccessMethod = "patient_code";
+    } else if (accessMethod === "staff_ticket") {
+      const verified = verifyEmergencyStaffAccessTicket(String(staffAccessTicket || ""), emergencyToken);
+      if (!verified) {
+        return res.status(403).json({ message: "Responder access denied" });
+      }
+      resolvedAccessMethod = "staff_login";
+      staffId = verified.staffId;
+    } else {
+      return res.status(400).json({ message: "Unsupported access method" });
+    }
 
     await pool.query(
       `
-      INSERT INTO emergency_access_logs (id, patient_id, emergency_link_id, token, access_result, ip_address, user_agent)
-      VALUES ($1, $2::uuid, $3::uuid, $4, 'success', $5, $6)
+      INSERT INTO emergency_access_logs (id, patient_id, emergency_link_id, token, access_result, access_method, staff_id, ip_address, user_agent)
+      VALUES ($1, $2::uuid, $3::uuid, $4, 'success', $5, $6::uuid, $7, $8)
       `,
       [
         randomUUID(),
-        patientId,
-        link.rows[0].id,
-        token,
+        emergencyLink.patient_id,
+        emergencyLink.id,
+        emergencyToken,
+        resolvedAccessMethod,
+        staffId,
         getRequestIp(req),
         req.get("user-agent") || null,
       ]
     );
 
-    const personalOut = { ...pData };
-
-    return res.status(200).json({
-      ...personalOut,
-      ...eData,
-      share_personal_info: true,
-      share_blood_type: true,
-      blood_type: summary?.bloodType ?? pData.blood_type ?? null,
-      allergies: summarizeHealthSummaryText(summary?.allergies, "allergy"),
-      medical_conditions: summarizeHealthSummaryText(summary?.conditions, "condition"),
-      current_medications:
-        Array.isArray(summary?.currentMedications) && summary.currentMedications.length > 0
-          ? summary.currentMedications.join("\n")
-          : pData.current_medications ?? null,
-      emergency_contact_full_name:
-        summary?.emergencyContacts?.[0]?.name || eData.emergency_contact_full_name || null,
-      emergency_contact_relationship:
-        summary?.emergencyContacts?.[0]?.relationship || eData.emergency_contact_relationship || null,
-      emergency_contact_phone:
-        summary?.emergencyContacts?.[0]?.phone || eData.emergency_contact_phone || null,
-      dnr_status:
-        typeof summary?.advanceDirectives?.dnrStatus === "string" && summary.advanceDirectives.dnrStatus.trim()
-          ? summary.advanceDirectives.dnrStatus
-          : eData.dnr_status,
-      living_will:
-        typeof summary?.advanceDirectives?.livingWill === "string" && summary.advanceDirectives.livingWill.trim()
-          ? summary.advanceDirectives.livingWill
-          : eData.living_will,
-      health_summary_updated_at: summary?.updatedAt || null,
-    });
+    return res.json(data);
   } catch (e: any) {
-    console.error("EMERGENCY BY TOKEN ERROR:", e);
-    return res.status(500).json({ message: e?.message || String(e), code: e?.code });
+    console.error("EMERGENCY ACCESS ERROR:", e);
+    if (e?.message === "PATIENT_NOT_FOUND") {
+      return res.status(404).json({ message: "Patient not found" });
+    }
+    return res.status(500).json({ message: e?.message || "Failed to verify emergency access" });
   }
 });
 
@@ -6628,6 +6744,7 @@ async function initializeSchemas() {
   await ensureMedicationsSchema();
   await ensureConditionsSchema();
   await ensureEmergencyAccessSchema();
+  await ensureEmergencyAccessSecuritySchema();
 }
 
 function startServer() {
