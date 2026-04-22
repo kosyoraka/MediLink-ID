@@ -1,5 +1,6 @@
-import { Home, Users, Calendar, MessageSquare, FileText, Settings, Activity, Bell, X } from 'lucide-react';
+import { Home, Users, Calendar, MessageSquare, FileText, Settings, Bell, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { MedilinkIcon } from '@/components/branding/MedilinkIcon';
 
 interface SidebarProps {
   currentPage: string;
@@ -39,11 +40,9 @@ export function Sidebar({ currentPage, onNavigate, isOpen, onClose }: SidebarPro
         {/* Logo */}
         <div className="h-16 flex items-center justify-between px-6 border-b border-gray-200">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
-              <Activity className="w-6 h-6 text-white" />
-            </div>
+            <MedilinkIcon className="h-10 w-10 shrink-0" />
             <div>
-              <h1 className="font-bold text-gray-900">Medilink</h1>
+              <h1 className="font-bold text-gray-900">MediLink ID</h1>
               <p className="text-xs text-gray-600">Staff Portal</p>
             </div>
           </div>
@@ -85,7 +84,7 @@ export function Sidebar({ currentPage, onNavigate, isOpen, onClose }: SidebarPro
         {/* Footer */}
         <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-200">
           <div className="text-xs text-gray-600 text-center">
-            <p>Medilink v2.0</p>
+            <p>MediLink ID v2.0</p>
             <p className="mt-1">© 2026 All rights reserved</p>
           </div>
         </div>
