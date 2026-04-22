@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/toast";
 import { apiFetch } from "@/lib/api";
-import { MedilinkWordmark } from "@/components/branding/MedilinkWordmark";
 
 interface LoginPageProps {
   onLogin: () => void;
@@ -111,7 +110,10 @@ export function LoginPage({ onLogin, onSignUpClick }: LoginPageProps) {
       <div className="w-full max-w-md">
         <div className="bg-white rounded-2xl shadow-xl p-8">
           <div className="flex flex-col items-center mb-8">
-            <MedilinkWordmark className="mb-4 scale-90 sm:scale-100" />
+            <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mb-4">
+              <Activity className="w-10 h-10 text-white" />
+            </div>
+            <h1 className="text-2xl font-bold text-gray-900">Medilink Portal</h1>
             <p className="text-gray-600 mt-1">Hospital Staff Access</p>
           </div>
 

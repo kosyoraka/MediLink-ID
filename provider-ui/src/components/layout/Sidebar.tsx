@@ -1,6 +1,5 @@
 import { Home, Users, Calendar, MessageSquare, FileText, Settings, Activity, Bell, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { MedilinkWordmark } from '@/components/branding/MedilinkWordmark';
 
 interface SidebarProps {
   currentPage: string;
@@ -39,9 +38,14 @@ export function Sidebar({ currentPage, onNavigate, isOpen, onClose }: SidebarPro
       >
         {/* Logo */}
         <div className="h-16 flex items-center justify-between px-6 border-b border-gray-200">
-          <div className="min-w-0">
-            <MedilinkWordmark className="gap-2" />
-            <p className="mt-1 ml-[3.5rem] text-xs text-gray-600">Staff Portal</p>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
+              <Activity className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h1 className="font-bold text-gray-900">Medilink</h1>
+              <p className="text-xs text-gray-600">Staff Portal</p>
+            </div>
           </div>
           <button 
             onClick={onClose}
