@@ -108,6 +108,21 @@ function signEmergencyStaffAccessTicket(payload: {
   );
 }
 
+function signEmergencyPatientAccessTicket(payload: {
+  patientId: string;
+  emergencyToken: string;
+}) {
+  return jwt.sign(
+    {
+      purpose: "emergency_patient_access",
+      patientId: payload.patientId,
+      emergencyToken: payload.emergencyToken,
+    },
+    process.env.JWT_SECRET as string,
+    { expiresIn: "10m" }
+  );
+}
+
 function getGoogleClientId() {
   const id = process.env.GOOGLE_CLIENT_ID;
   if (!id) throw new Error("Missing env var: GOOGLE_CLIENT_ID");
@@ -376,6 +391,20 @@ function verifyEmergencyStaffAccessTicket(ticket: string, emergencyToken: string
     return {
       staffId: String(decoded.staffId),
       hospitalId: decoded.hospitalId ? String(decoded.hospitalId) : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function verifyEmergencyPatientAccessTicket(ticket: string, emergencyToken: string) {
+  try {
+    const decoded = jwt.verify(ticket, getJwtSecret()) as any;
+    if (decoded?.purpose !== "emergency_patient_access") return null;
+    if (String(decoded.emergencyToken || "") !== emergencyToken) return null;
+    if (!decoded.patientId) return null;
+    return {
+      patientId: String(decoded.patientId),
     };
   } catch {
     return null;
@@ -2464,8 +2493,12 @@ app.get("/api/patients/:patientId/emergency-link", requirePatientAuth, async (re
     }
 
     const recentAccesses = await listEmergencyAccessLogs(patientId, 10);
+    const patientAccessTicket = signEmergencyPatientAccessTicket({
+      patientId,
+      emergencyToken: token,
+    });
     const url = `${FRONTEND_BASE_URL}/e/${token}`;
-    return res.status(200).json({ token, url, recentAccesses });
+    return res.status(200).json({ token, url, recentAccesses, patientAccessTicket });
   } catch (e: any) {
     console.error("EMERGENCY LINK ERROR:", e);
     return res.status(500).json({ message: e?.message || String(e), code: e?.code });
@@ -2499,8 +2532,12 @@ app.post("/api/patients/:patientId/emergency-link/regenerate", requirePatientAut
     );
 
     const recentAccesses = await listEmergencyAccessLogs(patientId, 10);
+    const patientAccessTicket = signEmergencyPatientAccessTicket({
+      patientId,
+      emergencyToken: token,
+    });
     const url = `${FRONTEND_BASE_URL}/e/${token}`;
-    return res.status(200).json({ token, url, recentAccesses });
+    return res.status(200).json({ token, url, recentAccesses, patientAccessTicket });
   } catch (e: any) {
     console.error("EMERGENCY LINK ERROR:", e);
     return res.status(500).json({ message: e?.message || String(e), code: e?.code });
@@ -2551,7 +2588,7 @@ app.get("/api/emergency/by-token/:token", async (req, res) => {
 });
 
 app.post("/api/emergency/access", async (req: any, res) => {
-  const { token, patientCode, staffAccessTicket, accessMethod } = req.body ?? {};
+  const { token, patientCode, staffAccessTicket, patientAccessTicket, accessMethod } = req.body ?? {};
   const emergencyToken = String(token || "").trim();
 
   if (!emergencyToken) return res.status(400).json({ message: "Missing token" });
@@ -2610,6 +2647,12 @@ app.post("/api/emergency/access", async (req: any, res) => {
         return res.status(403).json({ message: "Invalid emergency access code" });
       }
       resolvedAccessMethod = "patient_code";
+    } else if (accessMethod === "patient_ticket") {
+      const verified = verifyEmergencyPatientAccessTicket(String(patientAccessTicket || ""), emergencyToken);
+      if (!verified || verified.patientId !== String(emergencyLink.patient_id)) {
+        return res.status(403).json({ message: "Patient access denied" });
+      }
+      resolvedAccessMethod = "patient_session";
     } else if (accessMethod === "staff_ticket") {
       const verified = verifyEmergencyStaffAccessTicket(String(staffAccessTicket || ""), emergencyToken);
       if (!verified) {

@@ -26,7 +26,7 @@ type EmergencyPublicResponse = {
   living_will: string | null;
 };
 
-type AccessMode = "patient_code" | "staff_ticket" | "patient_session";
+type AccessMode = "patient_code" | "staff_ticket" | "patient_session" | "patient_ticket";
 
 function getPatientToken() {
   return (
@@ -64,8 +64,12 @@ export default function EmergencyPublic({ token }: { token: string }) {
 
   const searchParams = useMemo(() => new URLSearchParams(window.location.search), []);
   const staffAccessTicket = searchParams.get("staffAccessTicket");
+  const patientAccessTicket = searchParams.get("patientAccessTicket");
 
-  const requestAccess = async (mode: AccessMode, options?: { patientCode?: string; staffTicket?: string }) => {
+  const requestAccess = async (
+    mode: AccessMode,
+    options?: { patientCode?: string; staffTicket?: string; patientTicket?: string }
+  ) => {
     setSubmitting(true);
     setErr("");
 
@@ -87,6 +91,7 @@ export default function EmergencyPublic({ token }: { token: string }) {
           accessMethod: mode,
           patientCode: options?.patientCode,
           staffAccessTicket: options?.staffTicket,
+          patientAccessTicket: options?.patientTicket,
         }),
       });
 
@@ -96,7 +101,7 @@ export default function EmergencyPublic({ token }: { token: string }) {
       setData(json);
       setErr("");
 
-      if (options?.staffTicket) {
+      if (options?.staffTicket || options?.patientTicket) {
         const cleanUrl = `${window.location.origin}/e/${token}`;
         window.history.replaceState({}, "", cleanUrl);
       }
@@ -114,6 +119,11 @@ export default function EmergencyPublic({ token }: { token: string }) {
     (async () => {
       try {
         const patientToken = getPatientToken();
+        if (patientAccessTicket) {
+          await requestAccess("patient_ticket", { patientTicket: patientAccessTicket });
+          return;
+        }
+
         if (staffAccessTicket) {
           await requestAccess("staff_ticket", { staffTicket: staffAccessTicket });
           return;
@@ -131,7 +141,7 @@ export default function EmergencyPublic({ token }: { token: string }) {
     return () => {
       cancelled = true;
     };
-  }, [staffAccessTicket, token]);
+  }, [patientAccessTicket, staffAccessTicket, token]);
 
   const fullName = [data?.first_name, data?.last_name].filter(Boolean).join(" ") || "—";
   const showPersonalInfo = Boolean(data?.first_name || data?.last_name || data?.dob || data?.health_card);

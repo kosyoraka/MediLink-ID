@@ -56,6 +56,7 @@ type EmergencyLinkResponse = {
   token: string;
   url: string;
   recentAccesses?: EmergencyAccessLog[];
+  patientAccessTicket?: string;
 };
 
 type EmergencyAccessLog = {
@@ -81,6 +82,7 @@ export default function Dashboard({
   const [walletLoading, setWalletLoading] = useState(false);
   const [walletError, setWalletError] = useState('');
   const [emergencyUrl, setEmergencyUrl] = useState('');
+  const [patientAccessUrl, setPatientAccessUrl] = useState('');
   const [recentEmergencyAccesses, setRecentEmergencyAccesses] = useState<EmergencyAccessLog[]>([]);
   const [copied, setCopied] = useState(false);
   const [appointments, setAppointments] = useState<PatientAppointment[]>([]);
@@ -284,11 +286,17 @@ export default function Dashboard({
       }
 
       setEmergencyUrl(`${window.location.origin}/e/${data.token}`);
+      setPatientAccessUrl(
+        data.patientAccessTicket
+          ? `${window.location.origin}/e/${data.token}?patientAccessTicket=${encodeURIComponent(data.patientAccessTicket)}`
+          : `${window.location.origin}/e/${data.token}`
+      );
       setRecentEmergencyAccesses(Array.isArray(data.recentAccesses) ? data.recentAccesses : []);
 
     } catch (e: any) {
       setWalletError(e?.message || 'Failed to create emergency link');
       setEmergencyUrl('');
+      setPatientAccessUrl('');
       setRecentEmergencyAccesses([]);
     } finally {
       setWalletLoading(false);
@@ -306,16 +314,17 @@ export default function Dashboard({
   };
 
   const copyLink = async () => {
-    if (!emergencyUrl) return;
+    const linkToCopy = patientAccessUrl || emergencyUrl;
+    if (!linkToCopy) return;
 
     try {
-      await navigator.clipboard.writeText(emergencyUrl);
+      await navigator.clipboard.writeText(linkToCopy);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
       // Fallback for older Safari
       const el = document.createElement('textarea');
-      el.value = emergencyUrl;
+      el.value = linkToCopy;
       document.body.appendChild(el);
       el.select();
       document.execCommand('copy');
@@ -326,8 +335,9 @@ export default function Dashboard({
   };
 
   const openLink = () => {
-    if (!emergencyUrl) return;
-    window.open(emergencyUrl, '_blank', 'noopener,noreferrer');
+    const linkToOpen = patientAccessUrl || emergencyUrl;
+    if (!linkToOpen) return;
+    window.open(linkToOpen, '_blank', 'noopener,noreferrer');
   };
   const formatDOB = (dob?: string | null) => {
   if (!dob) return "—";
