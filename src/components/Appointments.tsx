@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Calendar as CalendarIcon, MapPin, Plus, Video, ChevronRight } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, type AppointmentAvailabilitySlot } from "@/lib/api";
 
 type AppointmentTab = "upcoming" | "past";
 
 type ApiAppointment = {
   id: string;
   doctorName: string;
+  staffId?: string | null;
   specialty: string | null; // currently used as appointment type (Consultation/Lab Test/etc)
   startTime: string;
+  durationMinutes?: number;
   type: "in-person" | "virtual" | "phone" | string; // visit mode (we’ll split cleanly later)
   locationName: string | null;
   address: string | null;
@@ -38,6 +40,15 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000";
 
 
 const APPT_TYPES = ["Consultation", "Check-up", "Follow-up", "Lab Test"] as const;
+
+function toDateInputValue(date: Date) {
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+}
+
+function formatDurationLabel(durationMinutes?: number) {
+  if (!durationMinutes) return "";
+  return durationMinutes === 60 ? "60 minutes" : `${durationMinutes} minutes`;
+}
 
 function formatWhen(iso: string) {
   const d = new Date(iso);
@@ -115,15 +126,25 @@ export default function Appointments() {
   const [selectedApptType, setSelectedApptType] = useState<string>("");
   const [providerId, setProviderId] = useState<string>(""); // hospital id
   const [staffId, setStaffId] = useState<string>(""); // staff id
-  const [dateTimeLocal, setDateTimeLocal] = useState<string>("");
+  const [selectedDate, setSelectedDate] = useState<string>("");
+  const [selectedSlot, setSelectedSlot] = useState<string>("");
+  const [availableSlots, setAvailableSlots] = useState<AppointmentAvailabilitySlot[]>([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [availabilityDuration, setAvailabilityDuration] = useState<number | null>(null);
+  const [availabilityError, setAvailabilityError] = useState<string>("");
+  const [rescheduleTarget, setRescheduleTarget] = useState<ApiAppointment | null>(null);
+  const [rescheduleDate, setRescheduleDate] = useState<string>("");
+  const [rescheduleSlot, setRescheduleSlot] = useState<string>("");
+  const [rescheduleReason, setRescheduleReason] = useState<string>("");
+  const [rescheduleSlots, setRescheduleSlots] = useState<AppointmentAvailabilitySlot[]>([]);
+  const [rescheduleDuration, setRescheduleDuration] = useState<number | null>(null);
+  const [rescheduleLoading, setRescheduleLoading] = useState(false);
+  const [rescheduleSubmitting, setRescheduleSubmitting] = useState(false);
+  const [rescheduleError, setRescheduleError] = useState<string>("");
 
   const [selectedVisitMode, setSelectedVisitMode] = useState<"in-person" | "virtual" | "phone">(
   "in-person"
   );
-
-
-  // NEW (we’ll make UI for this next) — keep default for now
-  const [visitMode, setVisitMode] = useState<"in-person" | "virtual" | "phone">("in-person");
   const [notes, setNotes] = useState<string>("");
 
   const selectedProvider = useMemo(
@@ -212,8 +233,10 @@ setAppointments(
   rows.map((r: any) => ({
     id: r.id,
     doctorName: r.providerName ?? "Provider",     // ✅ staff name
+    staffId: r.staffId ?? null,
     specialty: r.appointmentType ?? null,         // ✅ type label
     startTime: r.startTime,
+    durationMinutes: r.durationMinutes ?? null,
     type: r.visitMode,                            // ✅ in-person/virtual/phone
 
     locationName: r.hospitalName ?? null,         // ✅ hospital name now shows
@@ -323,6 +346,78 @@ setAppointments(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [providerId]);
 
+  useEffect(() => {
+    setSelectedSlot("");
+    setAvailableSlots([]);
+    setAvailabilityError("");
+    setAvailabilityDuration(null);
+
+    if (!staffId || !selectedApptType || !selectedDate) return;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        setSlotsLoading(true);
+        const data = await api.getMyAppointmentAvailability({
+          staffId,
+          date: selectedDate,
+          appointmentType: selectedApptType,
+        });
+        if (cancelled) return;
+        setAvailableSlots(data.slots || []);
+        setAvailabilityDuration(data.durationMinutes ?? null);
+      } catch (e: any) {
+        if (cancelled) return;
+        setAvailableSlots([]);
+        setAvailabilityDuration(null);
+        setAvailabilityError(e?.message || "Failed to load available times");
+      } finally {
+        if (!cancelled) setSlotsLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [staffId, selectedApptType, selectedDate]);
+
+  useEffect(() => {
+    if (!rescheduleTarget || !rescheduleDate || !rescheduleTarget.staffId) {
+      setRescheduleSlots([]);
+      setRescheduleDuration(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        setRescheduleLoading(true);
+        setRescheduleError("");
+        const data = await api.getMyAppointmentAvailability({
+          staffId: String(rescheduleTarget.staffId || ""),
+          date: rescheduleDate,
+          appointmentType: rescheduleTarget.specialty || "Consultation",
+        });
+        if (cancelled) return;
+        setRescheduleSlots(data.slots || []);
+        setRescheduleDuration(data.durationMinutes ?? null);
+      } catch (e: any) {
+        if (cancelled) return;
+        setRescheduleSlots([]);
+        setRescheduleDuration(null);
+        setRescheduleError(e?.message || "Failed to load available times");
+      } finally {
+        if (!cancelled) setRescheduleLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [rescheduleTarget, rescheduleDate]);
+
   const filteredAppointments = useMemo(() => {
     return appointments
       .map((a) => ({ ...a, _tab: getTabForAppointment(a) }))
@@ -346,8 +441,12 @@ setAppointments(
     setProviderId("");
     setStaffId("");
     setStaff([]);
-    setDateTimeLocal("");
-    setVisitMode("in-person");
+    setSelectedDate("");
+    setSelectedSlot("");
+    setAvailableSlots([]);
+    setAvailabilityDuration(null);
+    setAvailabilityError("");
+    setSelectedVisitMode("in-person");
     setNotes("");
   }
 
@@ -355,12 +454,10 @@ setAppointments(
     if (!selectedApptType) return alert("Choose appointment type.");
     if (!providerId) return alert("Choose a provider/hospital.");
     if (!staffId) return alert("Choose staff.");
-    if (!dateTimeLocal) return alert("Pick date & time.");
+    if (!selectedDate) return alert("Pick a date.");
+    if (!selectedSlot) return alert("Choose an available time.");
 
-    const startTimeIso = new Date(dateTimeLocal).toISOString();
-
-    const locationName = selectedProvider?.name ?? null;
-    const address = null;
+    const startTimeIso = new Date(selectedSlot).toISOString();
 
     const token =
       localStorage.getItem("patient_token") ||
@@ -384,6 +481,7 @@ setAppointments(
   hospitalId: providerId,
   staffId,
   startTime: startTimeIso,
+  localDateTime: selectedSlot,
   appointmentType: selectedApptType,
   visitMode: selectedVisitMode, // now includes phone because you did option B
   notes: notes || null,
@@ -410,6 +508,42 @@ setAppointments(
     } catch (e) {
       console.error("Create appointment failed:", e);
       alert("Failed to create appointment");
+    }
+  }
+
+  function openRescheduleRequest(appointment: ApiAppointment) {
+    setRescheduleTarget(appointment);
+    setRescheduleDate(toDateInputValue(new Date(appointment.startTime)));
+    setRescheduleSlot("");
+    setRescheduleReason("");
+    setRescheduleError("");
+    setRescheduleSlots([]);
+    setRescheduleDuration(appointment.durationMinutes ?? null);
+  }
+
+  async function submitRescheduleRequest() {
+    if (!rescheduleTarget) return;
+    if (!rescheduleSlot) {
+      setRescheduleError("Choose an available time.");
+      return;
+    }
+
+    try {
+      setRescheduleSubmitting(true);
+      setRescheduleError("");
+      await api.requestAppointmentReschedule(rescheduleTarget.id, {
+        startTime: new Date(rescheduleSlot).toISOString(),
+        localDateTime: rescheduleSlot,
+        reason: rescheduleReason.trim() || undefined,
+      });
+      alert("Reschedule request sent to your provider.");
+      setRescheduleTarget(null);
+      setRescheduleSlot("");
+      setRescheduleReason("");
+    } catch (e: any) {
+      setRescheduleError(e?.message || "Failed to send reschedule request");
+    } finally {
+      setRescheduleSubmitting(false);
     }
   }
 
@@ -506,14 +640,65 @@ setAppointments(
             )}
           </div>
 
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <label className="block text-sm text-gray-600 mb-2">Pick a date & time</label>
-            <input
-              type="datetime-local"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-              value={dateTimeLocal}
-              onChange={(e) => setDateTimeLocal(e.target.value)}
-            />
+          <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-4">
+            <div>
+              <label className="block text-sm text-gray-600 mb-2">Pick a date</label>
+              <input
+                type="date"
+                min={toDateInputValue(new Date())}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <label className="block text-sm text-gray-600">Available times</label>
+                {availabilityDuration ? (
+                  <span className="text-xs text-gray-500">
+                    {formatDurationLabel(availabilityDuration)} • 6:00 AM - 6:00 PM
+                  </span>
+                ) : null}
+              </div>
+
+              {!selectedDate || !staffId || !selectedApptType ? (
+                <div className="rounded-lg border border-dashed border-gray-200 px-3 py-4 text-sm text-gray-500">
+                  Choose appointment type, provider, staff, and date to see available slots.
+                </div>
+              ) : slotsLoading ? (
+                <div className="rounded-lg border border-gray-200 px-3 py-4 text-sm text-gray-500">
+                  Loading available times…
+                </div>
+              ) : availabilityError ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-4 text-sm text-red-700">
+                  {availabilityError}
+                </div>
+              ) : availableSlots.filter((slot) => slot.available).length === 0 ? (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-4 text-sm text-amber-800">
+                  No open time slots are available for that day.
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {availableSlots
+                    .filter((slot) => slot.available)
+                    .map((slot) => (
+                      <button
+                        key={slot.localDateTime}
+                        type="button"
+                        onClick={() => setSelectedSlot(slot.localDateTime)}
+                        className={`rounded-lg border px-3 py-2 text-sm transition-colors ${
+                          selectedSlot === slot.localDateTime
+                            ? "border-teal-600 bg-teal-50 text-teal-700"
+                            : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
+                        }`}
+                      >
+                        {slot.label}
+                      </button>
+                    ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="bg-white rounded-xl border border-gray-200 p-4">
@@ -535,7 +720,8 @@ setAppointments(
               !selectedApptType ||
               !providerId ||
               !staffId ||
-              !dateTimeLocal
+              !selectedDate ||
+              !selectedSlot
             }
             className="w-full bg-teal-600 hover:bg-teal-700 disabled:bg-gray-300 text-white rounded-xl py-3 font-medium transition-colors"
           >
@@ -677,7 +863,7 @@ setAppointments(
 
                   <button
                     className="bg-white border border-gray-200 hover:border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700"
-                    onClick={() => alert("Reschedule coming next.")}
+                    onClick={() => openRescheduleRequest(a)}
                   >
                     Reschedule
                   </button>
@@ -702,6 +888,132 @@ setAppointments(
           </div>
         )}
       </div>
+
+      {rescheduleTarget
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[9999] flex items-end justify-center bg-black/40 p-4 sm:items-center"
+              role="dialog"
+              aria-modal="true"
+              onClick={() => setRescheduleTarget(null)}
+            >
+              <div
+                className="w-full max-w-md overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="flex items-start justify-between border-b border-gray-100 p-4">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal-600">
+                      Reschedule Request
+                    </p>
+                    <h3 className="mt-1 text-gray-900">{rescheduleTarget.specialty || "Appointment"}</h3>
+                    <p className="text-sm text-gray-500">{rescheduleTarget.doctorName}</p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setRescheduleTarget(null)}
+                    className="rounded-lg p-2 text-gray-600 hover:bg-gray-100"
+                    aria-label="Cancel"
+                  >
+                    Cancel
+                  </button>
+                </div>
+
+                <div className="space-y-4 p-4">
+                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                    <p className="text-sm text-gray-600">Current appointment</p>
+                    <p className="mt-2 font-medium text-gray-900">
+                      {formatWhen(rescheduleTarget.startTime).date} at {formatWhen(rescheduleTarget.startTime).time}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-4">
+                    <div>
+                      <label className="block text-sm text-gray-600 mb-2">Preferred new date</label>
+                      <input
+                        type="date"
+                        min={toDateInputValue(new Date())}
+                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                        value={rescheduleDate}
+                        onChange={(event) => {
+                          setRescheduleDate(event.target.value);
+                          setRescheduleSlot("");
+                        }}
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between gap-3 mb-2">
+                        <label className="block text-sm text-gray-600">Available times</label>
+                        {rescheduleDuration ? (
+                          <span className="text-xs text-gray-500">
+                            {formatDurationLabel(rescheduleDuration)} • 6:00 AM - 6:00 PM
+                          </span>
+                        ) : null}
+                      </div>
+
+                      {rescheduleLoading ? (
+                        <div className="rounded-lg border border-gray-200 px-3 py-4 text-sm text-gray-500">
+                          Loading available times…
+                        </div>
+                      ) : rescheduleSlots.filter((slot) => slot.available).length === 0 ? (
+                        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-4 text-sm text-amber-800">
+                          No open time slots are available for that day.
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                          {rescheduleSlots
+                            .filter((slot) => slot.available)
+                            .map((slot) => (
+                              <button
+                                key={slot.localDateTime}
+                                type="button"
+                                onClick={() => setRescheduleSlot(slot.localDateTime)}
+                                className={`rounded-lg border px-3 py-2 text-sm transition-colors ${
+                                  rescheduleSlot === slot.localDateTime
+                                    ? "border-teal-600 bg-teal-50 text-teal-700"
+                                    : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
+                                }`}
+                              >
+                                {slot.label}
+                              </button>
+                            ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-sm text-gray-600 mb-2">Reason for rescheduling</label>
+                      <textarea
+                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm min-h-[96px]"
+                        value={rescheduleReason}
+                        onChange={(event) => setRescheduleReason(event.target.value)}
+                        placeholder="Tell your provider why you need a new time."
+                      />
+                    </div>
+
+                    {rescheduleError ? (
+                      <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-700">
+                        {rescheduleError}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={submitRescheduleRequest}
+                    disabled={rescheduleSubmitting || !rescheduleSlot}
+                    className="w-full rounded-xl bg-teal-600 px-4 py-3 text-sm font-medium text-white hover:bg-teal-700 disabled:bg-gray-300"
+                  >
+                    {rescheduleSubmitting ? "Sending request…" : "Send Reschedule Request"}
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
 
       {selectedSummary
         ? createPortal(

@@ -54,6 +54,7 @@ export type AppointmentType =
   | "Checkup";
 
 export type AppointmentStatus =
+  | "Scheduled"
   | "Pending"
   | "Confirmed"
   | "Completed"
@@ -64,16 +65,14 @@ export interface Appointment {
   patientId: string;
   patientName: string;
   patientPhoto: string | null;
-
-  // ✅ Single source of truth
-  dateTimeISO: string;
-
-  // DB is text, so don’t restrict it
+  startTime: string;
   type: string;
-
-  // status is also text in DB, keep it flexible
+  appointmentType?: string;
+  visitMode?: string;
+  providerName?: string | null;
+  hospitalName?: string | null;
+  durationMinutes?: number | null;
   status: string;
-
   notes: string;
 }
 

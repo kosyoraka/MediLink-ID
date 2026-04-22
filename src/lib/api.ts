@@ -85,8 +85,29 @@ export type PatientAppointment = {
   appointmentType: string; // currently from appointments.specialty
   visitMode: string; // currently from appointments.type (in-person/virtual/phone)
   startTime: string; // ISO
+  durationMinutes?: number;
   status: string;
   notes: string;
+};
+
+export type AppointmentAvailabilitySlot = {
+  localDateTime: string;
+  localTime: string;
+  label: string;
+  available: boolean;
+  blockedByAppointmentId?: string | null;
+};
+
+export type AppointmentAvailabilityResponse = {
+  date: string;
+  appointmentType: string;
+  durationMinutes: number;
+  workingHours: {
+    start: string;
+    end: string;
+    label: string;
+  };
+  slots: AppointmentAvailabilitySlot[];
 };
 
 export type PatientNotification = {
@@ -331,6 +352,25 @@ export const api = {
   listMyAppointments: (
     status: "upcoming" | "today" | "completed" | "cancelled" | "all" = "upcoming"
   ) => request<{ appointments: PatientAppointment[] }>(`/api/patient/appointments?status=${status}`),
+  getMyAppointmentAvailability: (params: {
+    staffId: string;
+    date: string;
+    appointmentType: string;
+  }) =>
+    request<AppointmentAvailabilityResponse>(
+      `/api/patient/appointments/availability?staffId=${encodeURIComponent(params.staffId)}&date=${encodeURIComponent(
+        params.date
+      )}&appointmentType=${encodeURIComponent(params.appointmentType)}`
+    ),
+  requestAppointmentReschedule: (appointmentId: string, body: {
+    startTime: string;
+    localDateTime: string;
+    reason?: string;
+  }) =>
+    request<{ ok: boolean }>(`/api/patient/appointments/${appointmentId}/reschedule-request`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   listMyNotifications: () => request<{ notifications: PatientNotification[] }>("/api/patient/notifications"),
   markMyNotificationsRead: () => request<{ ok: boolean }>("/api/patient/notifications/read", {
     method: "POST",

@@ -384,6 +384,11 @@ export function Appointments({ onNavigate }: AppointmentsProps) {
             );
             setSelectedAppointment(null);
           }}
+          onRescheduled={async () => {
+            await loadAppointments(true);
+            toast.success("Appointment rescheduled");
+            setSelectedAppointment(null);
+          }}
         />
       )}
     </div>

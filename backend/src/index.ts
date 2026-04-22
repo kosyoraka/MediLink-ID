@@ -61,6 +61,234 @@ function getJwtSecret() {
   return s;
 }
 
+const SCHEDULING_TIME_ZONE = "America/Toronto";
+const PROVIDER_DAY_START_MINUTES = 6 * 60;
+const PROVIDER_DAY_END_MINUTES = 18 * 60;
+const APPOINTMENT_SLOT_MINUTES = 15;
+
+const APPOINTMENT_DURATION_MINUTES: Record<string, number> = {
+  consultation: 45,
+  "check-up": 30,
+  checkup: 30,
+  "follow-up": 15,
+  "lab test": 30,
+  surgery: 60,
+  "virtual visit": 20,
+};
+
+function getAppointmentDurationMinutes(appointmentType: string) {
+  const normalized = String(appointmentType || "")
+    .trim()
+    .toLowerCase();
+  return APPOINTMENT_DURATION_MINUTES[normalized] ?? 30;
+}
+
+function parseLocalDateTimeInput(value: unknown) {
+  const raw = String(value || "").trim();
+  const match = raw.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})$/);
+  if (!match) return null;
+
+  const [, date, hh, mm] = match;
+  const hour = Number(hh);
+  const minute = Number(mm);
+  if (!Number.isInteger(hour) || !Number.isInteger(minute)) return null;
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+
+  return {
+    date,
+    hour,
+    minute,
+    minutesOfDay: hour * 60 + minute,
+  };
+}
+
+function isWithinSchedulingWindow(minutesOfDay: number, durationMinutes: number) {
+  return (
+    minutesOfDay >= PROVIDER_DAY_START_MINUTES &&
+    minutesOfDay + durationMinutes <= PROVIDER_DAY_END_MINUTES &&
+    minutesOfDay % APPOINTMENT_SLOT_MINUTES === 0
+  );
+}
+
+function formatMinutesAsLabel(totalMinutes: number) {
+  const hour24 = Math.floor(totalMinutes / 60);
+  const minute = totalMinutes % 60;
+  const suffix = hour24 >= 12 ? "PM" : "AM";
+  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+  return `${hour12}:${String(minute).padStart(2, "0")} ${suffix}`;
+}
+
+function buildAvailableSlotTemplates(durationMinutes: number) {
+  const lastStart = PROVIDER_DAY_END_MINUTES - durationMinutes;
+  const slots: Array<{ minutesOfDay: number; localTime: string; label: string }> = [];
+
+  for (let minutes = PROVIDER_DAY_START_MINUTES; minutes <= lastStart; minutes += APPOINTMENT_SLOT_MINUTES) {
+    const hour = Math.floor(minutes / 60);
+    const minute = minutes % 60;
+    slots.push({
+      minutesOfDay: minutes,
+      localTime: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
+      label: formatMinutesAsLabel(minutes),
+    });
+  }
+
+  return slots;
+}
+
+function intervalsOverlap(startA: number, endA: number, startB: number, endB: number) {
+  return startA < endB && endA > startB;
+}
+
+async function getBookedIntervalsForStaffOnDate(
+  staffId: string,
+  localDate: string,
+  excludeAppointmentId?: string
+) {
+  const params: string[] = [staffId, localDate];
+  const excludeSql = excludeAppointmentId
+    ? `AND a.id <> $3::uuid`
+    : "";
+
+  if (excludeAppointmentId) params.push(excludeAppointmentId);
+
+  const result = await pool.query(
+    `
+    SELECT
+      a.id,
+      a.specialty,
+      (
+        EXTRACT(HOUR FROM (a.start_time AT TIME ZONE '${SCHEDULING_TIME_ZONE}'))::int * 60 +
+        EXTRACT(MINUTE FROM (a.start_time AT TIME ZONE '${SCHEDULING_TIME_ZONE}'))::int
+      ) AS start_minutes
+    FROM appointments a
+    WHERE a.staff_id = $1::uuid
+      AND (a.start_time AT TIME ZONE '${SCHEDULING_TIME_ZONE}')::date = $2::date
+      AND a.status NOT IN ('Cancelled', 'Completed')
+      ${excludeSql}
+    ORDER BY a.start_time ASC
+    `,
+    params
+  );
+
+  return result.rows.map((row) => {
+    const startMinutes = Number(row.start_minutes || 0);
+    const durationMinutes = getAppointmentDurationMinutes(row.specialty);
+    return {
+      id: String(row.id),
+      startMinutes,
+      endMinutes: startMinutes + durationMinutes,
+      durationMinutes,
+    };
+  });
+}
+
+async function getAvailableSlotsForStaffOnDate(
+  staffId: string,
+  localDate: string,
+  appointmentType: string,
+  excludeAppointmentId?: string
+) {
+  const durationMinutes = getAppointmentDurationMinutes(appointmentType);
+  const bookedIntervals = await getBookedIntervalsForStaffOnDate(staffId, localDate, excludeAppointmentId);
+
+  const slots = buildAvailableSlotTemplates(durationMinutes).map((slot) => {
+    const blockedBy = bookedIntervals.find((interval) =>
+      intervalsOverlap(
+        slot.minutesOfDay,
+        slot.minutesOfDay + durationMinutes,
+        interval.startMinutes,
+        interval.endMinutes
+      )
+    );
+
+    return {
+      localDateTime: `${localDate}T${slot.localTime}`,
+      localTime: slot.localTime,
+      label: slot.label,
+      available: !blockedBy,
+      blockedByAppointmentId: blockedBy?.id ?? null,
+    };
+  });
+
+  return {
+    durationMinutes,
+    slots,
+  };
+}
+
+async function getOrCreateConversation(patientId: string, providerId: string, staffId: string) {
+  const existing = await pool.query(
+    `
+    SELECT id
+    FROM message_conversations
+    WHERE patient_id = $1::uuid
+      AND provider_id = $2::uuid
+      AND staff_id = $3::uuid
+    ORDER BY updated_at DESC NULLS LAST, created_at DESC
+    LIMIT 1
+    `,
+    [patientId, providerId, staffId]
+  );
+
+  if ((existing.rowCount ?? 0) > 0) {
+    return String(existing.rows[0].id);
+  }
+
+  const created = await pool.query(
+    `
+    INSERT INTO message_conversations (patient_id, provider_id, staff_id, created_at, updated_at)
+    VALUES ($1::uuid, $2::uuid, $3::uuid, NOW(), NOW())
+    RETURNING id
+    `,
+    [patientId, providerId, staffId]
+  );
+
+  return String(created.rows[0].id);
+}
+
+async function addConversationMessage(input: {
+  patientId: string;
+  providerId: string;
+  staffId: string;
+  senderType: "patient" | "staff" | "system";
+  body: string;
+  senderPatientId?: string;
+  senderStaffId?: string;
+}) {
+  const conversationId = await getOrCreateConversation(input.patientId, input.providerId, input.staffId);
+
+  await pool.query(
+    `
+    INSERT INTO message_items (
+      conversation_id,
+      sender_type,
+      sender_patient_id,
+      sender_staff_id,
+      body
+    )
+    VALUES ($1::uuid, $2, $3::uuid, $4::uuid, $5)
+    `,
+    [
+      conversationId,
+      input.senderType,
+      input.senderPatientId ?? null,
+      input.senderStaffId ?? null,
+      input.body,
+    ]
+  );
+
+  await pool.query(
+    `
+    UPDATE message_conversations
+    SET updated_at = NOW()
+    WHERE id = $1::uuid
+    `,
+    [conversationId]
+  );
+
+  return conversationId;
+}
+
 
 
 function signPatientToken(patient: { id: string; email: string }) {
@@ -3510,6 +3738,7 @@ app.get("/api/patient/notifications", requirePatientAuth, async (req: any, res) 
         else if (body.includes("resolved the medication change request")) title = "Medication change updated";
         else if (body.includes("fulfilled the medical record request")) title = "Records are ready";
         else if (body.startsWith("New health concern added:")) title = "New condition added";
+        else if (body.includes("has rescheduled your appointment")) title = "Appointment rescheduled";
 
         if (hospitalName && title.startsWith("New message from")) {
           detail = `${hospitalName} • ${detail}`;
@@ -3930,6 +4159,7 @@ app.get("/api/staff/notifications", requireStaffAuth, async (req: any, res) => {
         else if (body.startsWith("Medication change request for")) title = "Medication change request";
         else if (body.startsWith("Medical record request for")) title = "Medical record request";
         else if (body.startsWith("Refill request for")) title = "Refill request";
+        else if (body.startsWith("Appointment reschedule request for")) title = "Appointment reschedule request";
 
         return {
           id: `staff-message:${row.id}`,
@@ -4356,6 +4586,7 @@ const mapped = result.rows.map((r) => ({
   appointmentType: r.specialty,   // "Consultation" etc
   visitMode: r.type,              // "in-person" | "virtual" | "phone"
   startTime: r.start_time,
+  durationMinutes: getAppointmentDurationMinutes(r.specialty),
   status: r.status,
   notes: r.notes ?? "",
 }));
@@ -4496,6 +4727,67 @@ app.get("/api/patient/provider-staff", async (req, res) => {
 // POST create appointment to a specific provider
 // POST /api/patient/appointments
 
+app.get("/api/patient/appointments/availability", requirePatientAuth, async (req: any, res) => {
+  try {
+    const patientId = (req.patientId as string) || (req.user?.id as string);
+    const staffId = String(req.query.staffId || "").trim();
+    const appointmentType = String(req.query.appointmentType || "").trim();
+    const localDate = String(req.query.date || "").trim();
+
+    if (!patientId) return res.status(401).json({ message: "Unauthorized" });
+    if (!staffId || !appointmentType || !localDate) {
+      return res.status(400).json({ message: "Missing staffId, appointmentType, or date" });
+    }
+
+    const staffRes = await pool.query(
+      `
+      SELECT s.id, s.hospital_id
+      FROM staff_accounts s
+      WHERE s.id = $1::uuid
+      LIMIT 1
+      `,
+      [staffId]
+    );
+
+    if ((staffRes.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: "Staff member not found" });
+    }
+
+    const access = await pool.query(
+      `
+      SELECT 1
+      FROM patient_provider_connections
+      WHERE patient_id = $1::uuid
+        AND provider_id = $2::uuid
+        AND disconnected_at IS NULL
+      LIMIT 1
+      `,
+      [patientId, staffRes.rows[0].hospital_id]
+    );
+
+    if ((access.rowCount ?? 0) === 0) {
+      return res.status(403).json({ message: "You are not connected to this provider" });
+    }
+
+    const availability = await getAvailableSlotsForStaffOnDate(staffId, localDate, appointmentType);
+
+    return res.json({
+      date: localDate,
+      appointmentType,
+      durationMinutes: availability.durationMinutes,
+      workingHours: {
+        start: "06:00",
+        end: "18:00",
+        label: "6:00 AM - 6:00 PM",
+      },
+      slots: availability.slots,
+    });
+  } catch (err: any) {
+    console.error("GET /api/patient/appointments/availability error:", err);
+    return res.status(500).json({ message: err?.message || "Failed to load appointment availability" });
+  }
+});
+
 // POST book appointment (patient)
 // POST /api/patient/appointments
 // POST /api/patient/appointments
@@ -4518,14 +4810,15 @@ app.post("/api/patient/appointments", requirePatientAuth, async (req, res) => {
     hospitalId,     // connected provider (hospital) id
     staffId,        // chosen staff_accounts.id
     startTime,      // ISO string
+    localDateTime,  // YYYY-MM-DDTHH:mm in patient UI
     appointmentType, // "Consultation" | "Lab Test" | etc (TEMP stored in specialty)
     visitMode,      // "in-person" | "virtual" | "phone" (TEMP stored in type)
     notes,
   } = req.body ?? {};
 
-  if (!hospitalId || !staffId || !startTime || !appointmentType || !visitMode) {
+  if (!hospitalId || !staffId || !startTime || !localDateTime || !appointmentType || !visitMode) {
     return res.status(400).json({
-      message: "Missing hospitalId, staffId, startTime, appointmentType, or visitMode",
+      message: "Missing hospitalId, staffId, startTime, localDateTime, appointmentType, or visitMode",
     });
   }
 
@@ -4569,6 +4862,22 @@ app.post("/api/patient/appointments", requirePatientAuth, async (req, res) => {
       return res.status(403).json({ message: "Selected staff does not belong to this provider" });
     }
 
+    const parsedLocal = parseLocalDateTimeInput(localDateTime);
+    if (!parsedLocal) {
+      return res.status(400).json({ message: "Invalid appointment date/time" });
+    }
+
+    const durationMinutes = getAppointmentDurationMinutes(appointmentType);
+    if (!isWithinSchedulingWindow(parsedLocal.minutesOfDay, durationMinutes)) {
+      return res.status(400).json({ message: "Appointments must be scheduled between 6:00 AM and 6:00 PM" });
+    }
+
+    const availability = await getAvailableSlotsForStaffOnDate(staffId, parsedLocal.date, appointmentType);
+    const requestedSlot = availability.slots.find((slot) => slot.localDateTime === localDateTime);
+    if (!requestedSlot?.available) {
+      return res.status(409).json({ message: "That appointment time is no longer available" });
+    }
+
     // 3) Insert appointment
     const id = randomUUID();
 
@@ -4608,6 +4917,105 @@ app.post("/api/patient/appointments", requirePatientAuth, async (req, res) => {
   }
 });
 
+app.post("/api/patient/appointments/:id/reschedule-request", requirePatientAuth, async (req: any, res) => {
+  const patientId = (req.patientId as string) || (req.user?.id as string);
+  const appointmentId = req.params.id as string;
+  const requestedStartTime = String(req.body?.startTime || "").trim();
+  const requestedLocalDateTime = String(req.body?.localDateTime || "").trim();
+  const reason = String(req.body?.reason || "").trim();
+
+  if (!patientId) return res.status(401).json({ message: "Unauthorized" });
+  if (!requestedStartTime || !requestedLocalDateTime) {
+    return res.status(400).json({ message: "Missing requested appointment time" });
+  }
+
+  try {
+    const appointmentResult = await pool.query(
+      `
+      SELECT
+        a.id,
+        a.patient_id,
+        a.staff_id,
+        a.hospital_id,
+        a.provider_name,
+        a.specialty,
+        a.start_time,
+        a.status
+      FROM appointments a
+      WHERE a.id = $1::uuid
+        AND a.patient_id = $2::uuid
+      LIMIT 1
+      `,
+      [appointmentId, patientId]
+    );
+
+    if ((appointmentResult.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: "Appointment not found" });
+    }
+
+    const appointment = appointmentResult.rows[0];
+    if (["Cancelled", "Completed"].includes(String(appointment.status))) {
+      return res.status(400).json({ message: "This appointment can no longer be rescheduled" });
+    }
+
+    const parsedLocal = parseLocalDateTimeInput(requestedLocalDateTime);
+    if (!parsedLocal) {
+      return res.status(400).json({ message: "Invalid requested date/time" });
+    }
+
+    const durationMinutes = getAppointmentDurationMinutes(appointment.specialty);
+    if (!isWithinSchedulingWindow(parsedLocal.minutesOfDay, durationMinutes)) {
+      return res.status(400).json({ message: "Appointments must be scheduled between 6:00 AM and 6:00 PM" });
+    }
+
+    const availability = await getAvailableSlotsForStaffOnDate(
+      String(appointment.staff_id),
+      parsedLocal.date,
+      appointment.specialty,
+      appointmentId
+    );
+    const requestedSlot = availability.slots.find((slot) => slot.localDateTime === requestedLocalDateTime);
+    if (!requestedSlot?.available) {
+      return res.status(409).json({ message: "That requested time is not available" });
+    }
+
+    const currentStart = new Date(appointment.start_time);
+    const requestedDate = new Date(requestedStartTime);
+    const currentLabel = currentStart.toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+    const requestedLabel = requestedDate.toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+
+    const messageBody = reason
+      ? `Appointment reschedule request for ${appointment.specialty}: currently ${currentLabel}, requesting ${requestedLabel}. Reason: ${reason}`
+      : `Appointment reschedule request for ${appointment.specialty}: currently ${currentLabel}, requesting ${requestedLabel}.`;
+
+    await addConversationMessage({
+      patientId,
+      providerId: String(appointment.hospital_id),
+      staffId: String(appointment.staff_id),
+      senderType: "patient",
+      senderPatientId: patientId,
+      body: messageBody,
+    });
+
+    return res.json({ ok: true });
+  } catch (err: any) {
+    console.error("POST /api/patient/appointments/:id/reschedule-request error:", err);
+    return res.status(500).json({ message: err?.message || "Failed to send reschedule request" });
+  }
+});
+
 
 
 
@@ -4640,6 +5048,7 @@ app.get("/api/staff/appointments", requireStaffAuth, async (req: any, res) => {
         ) AS patient_name,
         a.start_time,
         a.type,
+        a.specialty,
         a.status,
         a.notes,
         a.provider_name,
@@ -4667,10 +5076,12 @@ app.get("/api/staff/appointments", requireStaffAuth, async (req: any, res) => {
       patientName: row.patient_name,
       patientPhoto: null,
       startTime: new Date(row.start_time).toISOString(),
-      type: row.type,       // mode
+      type: row.specialty,  // appointment type label for existing provider UI
+      visitMode: row.type,
+      appointmentType: row.specialty,
+      durationMinutes: getAppointmentDurationMinutes(row.specialty),
       status: row.status,
       notes: row.notes ?? "",
-      appointmentType: row.type,
       providerName: row.provider_name ?? null,
       hospitalName: row.hospital_name ?? null,
      };
@@ -4724,6 +5135,140 @@ app.patch("/api/staff/appointments/:id/status", requireStaffAuth, async (req: an
   } catch (err: any) {
     console.error("PATCH /api/staff/appointments/:id/status error:", err);
     return res.status(500).json({ message: err?.message || "Failed to update status" });
+  }
+});
+
+app.get("/api/staff/appointments/availability", requireStaffAuth, async (req: any, res) => {
+  try {
+    const staffId = req.staffId as string;
+    const appointmentType = String(req.query.appointmentType || "").trim();
+    const localDate = String(req.query.date || "").trim();
+    const excludeAppointmentId = String(req.query.excludeAppointmentId || "").trim() || undefined;
+
+    if (!staffId) return res.status(401).json({ message: "Unauthorized" });
+    if (!appointmentType || !localDate) {
+      return res.status(400).json({ message: "Missing appointmentType or date" });
+    }
+
+    const availability = await getAvailableSlotsForStaffOnDate(
+      staffId,
+      localDate,
+      appointmentType,
+      excludeAppointmentId
+    );
+
+    return res.json({
+      date: localDate,
+      appointmentType,
+      durationMinutes: availability.durationMinutes,
+      workingHours: {
+        start: "06:00",
+        end: "18:00",
+        label: "6:00 AM - 6:00 PM",
+      },
+      slots: availability.slots,
+    });
+  } catch (err: any) {
+    console.error("GET /api/staff/appointments/availability error:", err);
+    return res.status(500).json({ message: err?.message || "Failed to load availability" });
+  }
+});
+
+app.patch("/api/staff/appointments/:id/reschedule", requireStaffAuth, async (req: any, res) => {
+  const staffId = req.staffId as string;
+  const appointmentId = req.params.id as string;
+  const nextStartTime = String(req.body?.startTime || "").trim();
+  const localDateTime = String(req.body?.localDateTime || "").trim();
+
+  if (!staffId) return res.status(401).json({ message: "Unauthorized" });
+  if (!nextStartTime || !localDateTime) {
+    return res.status(400).json({ message: "Missing appointment time" });
+  }
+
+  try {
+    const appointmentResult = await pool.query(
+      `
+      SELECT
+        a.id,
+        a.patient_id,
+        a.staff_id,
+        a.hospital_id,
+        a.provider_name,
+        a.specialty,
+        a.start_time,
+        a.status
+      FROM appointments a
+      WHERE a.id = $1::uuid
+        AND a.staff_id = $2::uuid
+      LIMIT 1
+      `,
+      [appointmentId, staffId]
+    );
+
+    if ((appointmentResult.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: "Appointment not found" });
+    }
+
+    const appointment = appointmentResult.rows[0];
+    if (["Cancelled", "Completed"].includes(String(appointment.status))) {
+      return res.status(400).json({ message: "This appointment can no longer be rescheduled" });
+    }
+
+    const parsedLocal = parseLocalDateTimeInput(localDateTime);
+    if (!parsedLocal) {
+      return res.status(400).json({ message: "Invalid appointment date/time" });
+    }
+
+    const durationMinutes = getAppointmentDurationMinutes(appointment.specialty);
+    if (!isWithinSchedulingWindow(parsedLocal.minutesOfDay, durationMinutes)) {
+      return res.status(400).json({ message: "Appointments must be scheduled between 6:00 AM and 6:00 PM" });
+    }
+
+    const availability = await getAvailableSlotsForStaffOnDate(
+      staffId,
+      parsedLocal.date,
+      appointment.specialty,
+      appointmentId
+    );
+    const requestedSlot = availability.slots.find((slot) => slot.localDateTime === localDateTime);
+    if (!requestedSlot?.available) {
+      return res.status(409).json({ message: "That appointment time is not available" });
+    }
+
+    await pool.query(
+      `
+      UPDATE appointments
+      SET start_time = $1::timestamptz
+      WHERE id = $2::uuid
+        AND staff_id = $3::uuid
+      `,
+      [nextStartTime, appointmentId, staffId]
+    );
+
+    const requestedDate = new Date(nextStartTime);
+    const requestedLabel = requestedDate.toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+
+    const providerDisplayName = String(appointment.provider_name || "your provider").trim();
+
+    await addConversationMessage({
+      patientId: String(appointment.patient_id),
+      providerId: String(appointment.hospital_id),
+      staffId,
+      senderType: "staff",
+      senderStaffId: staffId,
+      body: `${providerDisplayName} has rescheduled your appointment to ${requestedLabel}.`,
+    });
+
+    return res.json({ ok: true });
+  } catch (err: any) {
+    console.error("PATCH /api/staff/appointments/:id/reschedule error:", err);
+    return res.status(500).json({ message: err?.message || "Failed to reschedule appointment" });
   }
 });
 

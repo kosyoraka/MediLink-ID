@@ -14,3 +14,42 @@ export async function setAppointmentStatus(
     body: JSON.stringify({ status }),
   });
 }
+
+export async function getStaffAppointmentAvailability(params: {
+  date: string;
+  appointmentType: string;
+  excludeAppointmentId?: string;
+}) {
+  const qs = new URLSearchParams({
+    date: params.date,
+    appointmentType: params.appointmentType,
+  });
+  if (params.excludeAppointmentId) qs.set("excludeAppointmentId", params.excludeAppointmentId);
+
+  return apiFetch<{
+    date: string;
+    appointmentType: string;
+    durationMinutes: number;
+    workingHours: {
+      start: string;
+      end: string;
+      label: string;
+    };
+    slots: Array<{
+      localDateTime: string;
+      localTime: string;
+      label: string;
+      available: boolean;
+    }>;
+  }>(`/api/staff/appointments/availability?${qs.toString()}`, { method: "GET" });
+}
+
+export async function rescheduleStaffAppointment(
+  appointmentId: string,
+  body: { startTime: string; localDateTime: string }
+) {
+  return apiFetch<{ ok: boolean }>(`/api/staff/appointments/${appointmentId}/reschedule`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
