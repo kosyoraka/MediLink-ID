@@ -33,6 +33,9 @@ function getPatientToken() {
     localStorage.getItem("patient_token") ||
     localStorage.getItem("patientToken") ||
     localStorage.getItem("token") ||
+    sessionStorage.getItem("patient_token") ||
+    sessionStorage.getItem("patientToken") ||
+    sessionStorage.getItem("token") ||
     null
   );
 }
@@ -57,6 +60,7 @@ export default function EmergencyPublic({ token }: { token: string }) {
   const [accessCode, setAccessCode] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [initializing, setInitializing] = useState(true);
+  const hasPatientSession = Boolean(getPatientToken());
 
   const searchParams = useMemo(() => new URLSearchParams(window.location.search), []);
   const staffAccessTicket = searchParams.get("staffAccessTicket");
@@ -169,6 +173,17 @@ export default function EmergencyPublic({ token }: { token: string }) {
         {!initializing ? (
           <div className="space-y-4">
             <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+              {hasPatientSession ? (
+                <button
+                  type="button"
+                  onClick={() => requestAccess("patient_session")}
+                  className="w-full rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-teal-700"
+                  disabled={submitting}
+                >
+                  Continue as Logged-In Patient
+                </button>
+              ) : null}
+
               <p className="text-sm text-gray-900">Family / Friends Access</p>
               <input
                 type="password"
