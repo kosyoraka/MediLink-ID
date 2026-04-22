@@ -28,6 +28,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { API_BASE } from "@/config/api";
 import { api, type PatientAppointment } from "@/lib/api";
 import { fetchHealthTasks, getTaskTimeLabel, type HealthTask } from "@/lib/healthTasks";
+import medilinkCircle from '@/assets/medilink-circle.png';
 import {
   getUnreadCount,
 } from "@/lib/notifications";
@@ -592,6 +593,12 @@ export default function Dashboard({
                   size={190}
                   level="H"
                   includeMargin
+                  imageSettings={{
+                    src: medilinkCircle,
+                    height: 40,
+                    width: 40,
+                    excavate: true,
+                  }}
                 />
                 <p className="text-xs text-gray-500 text-center">
                   Scan to open the emergency responder view
