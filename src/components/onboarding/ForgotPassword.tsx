@@ -15,6 +15,7 @@ export default function ForgotPassword({ initialEmail = '', onBack, onComplete }
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [submitted, setSubmitted] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,6 +37,7 @@ export default function ForgotPassword({ initialEmail = '', onBack, onComplete }
       }
 
       setMessage(data?.message || 'If an account exists, a reset email has been sent.');
+      setSubmitted(true);
       onComplete(email);
     } catch (err: any) {
       setError(err?.message || 'Unable to send password reset email');
@@ -72,27 +74,46 @@ export default function ForgotPassword({ initialEmail = '', onBack, onComplete }
           </div>
         )}
 
-        <div>
-          <label htmlFor="forgot-email" className="block text-gray-700 mb-2">
-            Email
-          </label>
-          <Input
-            id="forgot-email"
-            type="email"
-            placeholder="your.email@example.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
-        </div>
+        {!submitted ? (
+          <>
+            <div>
+              <label htmlFor="forgot-email" className="block text-gray-700 mb-2">
+                Email
+              </label>
+              <Input
+                id="forgot-email"
+                type="email"
+                placeholder="your.email@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
 
-        <Button
-          type="submit"
-          disabled={!email || loading}
-          className="w-full bg-teal-600 hover:bg-teal-700 text-white h-12"
-        >
-          {loading ? 'Sending...' : 'Send Reset Link'}
-        </Button>
+            <Button
+              type="submit"
+              disabled={!email || loading}
+              className="w-full bg-teal-600 hover:bg-teal-700 text-white h-12"
+            >
+              {loading ? 'Sending...' : 'Send Reset Link'}
+            </Button>
+          </>
+        ) : (
+          <>
+            <div className="rounded-md border border-teal-100 bg-teal-50 px-4 py-3 text-sm text-teal-700">
+              Check your inbox for a password reset link. If you do not see it soon, check spam or promotions.
+            </div>
+
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full h-12"
+              onClick={onBack}
+            >
+              Back to Sign In
+            </Button>
+          </>
+        )}
       </form>
     </div>
   );

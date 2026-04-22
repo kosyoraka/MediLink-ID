@@ -40,7 +40,7 @@ export default function VerifyEmail({
           iconClass: 'text-amber-600',
           iconWrapClass: 'bg-amber-100',
           title: 'Verification link needs attention',
-          body: 'This verification link is invalid, expired, or could not be completed. You can request a fresh email below.',
+          body: 'This verification link is invalid, expired, or has already been used. You can request a fresh verification email below.',
         };
       default:
         return {
@@ -48,7 +48,7 @@ export default function VerifyEmail({
           iconClass: 'text-teal-600',
           iconWrapClass: 'bg-teal-100',
           title: 'Check your email',
-          body: 'We sent a verification link to your inbox. Click the link in that email to activate your account.',
+          body: 'We sent a verification link to your inbox. Open that email and click the link to activate your account before signing in.',
         };
     }
   }, [status]);
@@ -101,6 +101,12 @@ export default function VerifyEmail({
         {email && <p className="text-center text-gray-900 mb-3">{email}</p>}
         <p className="text-center text-gray-600 mb-8 max-w-md">{view.body}</p>
 
+        {status === 'pending' && (
+          <div className="w-full max-w-sm rounded-md border border-teal-100 bg-teal-50 px-4 py-3 text-sm text-teal-700 mb-4">
+            Tip: if you do not see the email in a minute, check spam or promotions first.
+          </div>
+        )}
+
         {feedback && (
           <div className="w-full max-w-sm rounded-md border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700 mb-4">
             {feedback}
@@ -118,20 +124,26 @@ export default function VerifyEmail({
             Continue to Sign In
           </Button>
         ) : (
-          <Button
-            onClick={handleResend}
-            disabled={resending}
-            className="w-full max-w-sm bg-teal-600 hover:bg-teal-700 text-white h-12 mb-4"
-          >
-            {resending ? (
-              <>
-                <RefreshCw className="w-4 h-4 animate-spin" />
-                Sending...
-              </>
-            ) : (
-              'Resend Verification Email'
-            )}
-          </Button>
+          <>
+            <Button
+              onClick={handleResend}
+              disabled={resending}
+              className="w-full max-w-sm bg-teal-600 hover:bg-teal-700 text-white h-12 mb-4"
+            >
+              {resending ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  Sending...
+                </>
+              ) : (
+                'Resend Verification Email'
+              )}
+            </Button>
+
+            <p className="text-center text-sm text-gray-500 max-w-sm mb-4">
+              We will always send the newest verification link. Older links may stop working once a fresh one is issued.
+            </p>
+          </>
         )}
 
         {status !== 'verified' && (

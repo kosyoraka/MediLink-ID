@@ -19,48 +19,48 @@ export default function SignIn({ onSignIn, onRequireVerification, onForgotPasswo
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [googleError, setGoogleError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
+    e.preventDefault();
 
-  if (!email || !password) return;
+    if (!email || !password) return;
 
-  try {
-  
-    const res = await fetch(`${API_BASE_URL}/api/auth/signin`, {
+    try {
+      setFormError(null);
 
-    //const res = await fetch("/api/auth/signin", {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    });
+      const res = await fetch(`${API_BASE_URL}/api/auth/signin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
 
-    const data = await res.json();
+      const data = await res.json();
 
-    if (!res.ok) {
-      if (res.status === 403 && data?.code === 'EMAIL_NOT_VERIFIED') {
-        localStorage.setItem('email', email);
-        onRequireVerification(email);
-        return;
+      if (!res.ok) {
+        if (res.status === 403 && data?.code === 'EMAIL_NOT_VERIFIED') {
+          localStorage.setItem('email', email);
+          onRequireVerification(email);
+          return;
+        }
+        throw new Error(data?.message || 'Sign in failed');
       }
-      throw new Error(data?.message || 'Sign in failed');
+
+      localStorage.setItem('patientId', data.id);
+      localStorage.setItem('email', data.email);
+      localStorage.setItem('patient_token', data.token);
+
+      onSignIn({
+        email: data.email,
+        name: '',
+        healthCard: '',
+        dob: '',
+        connectedProviders: [],
+      });
+    } catch (err: any) {
+      setFormError(err?.message || 'Unable to sign in');
     }
-
-    localStorage.setItem('patientId', data.id);
-    localStorage.setItem('email', data.email);
-    localStorage.setItem('patient_token', data.token);
-
-    onSignIn({
-      email: data.email,
-      name: '',
-      healthCard: '',
-      dob: '',
-      connectedProviders: [],
-    });
-  } catch (err: any) {
-    alert(err.message || 'Unable to sign in');
-  }
-};
+  };
 
   const handleGoogleSuccess = async (credentialResponse: CredentialResponse) => {
     const credential = credentialResponse.credential;
@@ -109,6 +109,12 @@ export default function SignIn({ onSignIn, onRequireVerification, onForgotPasswo
       <p className="text-gray-600 mb-8">Sign in to access your health records</p>
 
       <form onSubmit={handleSubmit} className="space-y-6">
+        {formError && (
+          <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {formError}
+          </div>
+        )}
+
         <div>
           <label htmlFor="email" className="block text-gray-700 mb-2">
             Email

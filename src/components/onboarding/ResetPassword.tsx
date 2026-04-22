@@ -17,9 +17,20 @@ export default function ResetPassword({ token, onBack, onComplete }: ResetPasswo
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [completed, setCompleted] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!token) {
+      setError('This password reset link is missing or incomplete. Please request a fresh reset email.');
+      return;
+    }
+
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters long.');
+      return;
+    }
 
     if (password !== confirmPassword) {
       setError('Passwords do not match.');
@@ -43,7 +54,7 @@ export default function ResetPassword({ token, onBack, onComplete }: ResetPasswo
       }
 
       setMessage(data?.message || 'Your password has been updated.');
-      onComplete();
+      setCompleted(true);
     } catch (err: any) {
       setError(err?.message || 'Unable to reset password');
     } finally {
@@ -79,50 +90,63 @@ export default function ResetPassword({ token, onBack, onComplete }: ResetPasswo
           </div>
         )}
 
-        <div>
-          <label htmlFor="new-password" className="block text-gray-700 mb-2">
-            New password
-          </label>
-          <div className="relative">
-            <Input
-              id="new-password"
-              type={showPassword ? 'text' : 'password'}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Create a strong password"
-              required
-            />
-            <button
-              type="button"
-              onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500"
+        {!completed ? (
+          <>
+            <div>
+              <label htmlFor="new-password" className="block text-gray-700 mb-2">
+                New password
+              </label>
+              <div className="relative">
+                <Input
+                  id="new-password"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Create a strong password"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500"
+                >
+                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
+              </div>
+              <p className="mt-2 text-sm text-gray-500">Use at least 8 characters.</p>
+            </div>
+
+            <div>
+              <label htmlFor="confirm-password" className="block text-gray-700 mb-2">
+                Confirm password
+              </label>
+              <Input
+                id="confirm-password"
+                type={showPassword ? 'text' : 'password'}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Repeat your new password"
+                required
+              />
+            </div>
+
+            <Button
+              type="submit"
+              disabled={!token || !password || !confirmPassword || loading}
+              className="w-full bg-teal-600 hover:bg-teal-700 text-white h-12"
             >
-              {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-            </button>
-          </div>
-        </div>
-
-        <div>
-          <label htmlFor="confirm-password" className="block text-gray-700 mb-2">
-            Confirm password
-          </label>
-          <Input
-            id="confirm-password"
-            type={showPassword ? 'text' : 'password'}
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            placeholder="Repeat your new password"
-            required
-          />
-        </div>
-
-        <Button
-          type="submit"
-          disabled={!token || !password || !confirmPassword || loading}
-          className="w-full bg-teal-600 hover:bg-teal-700 text-white h-12"
-        >
-          {loading ? 'Updating...' : 'Update Password'}
-        </Button>
+              {loading ? 'Updating...' : 'Update Password'}
+            </Button>
+          </>
+        ) : (
+          <Button
+            type="button"
+            className="w-full bg-teal-600 hover:bg-teal-700 text-white h-12"
+            onClick={onComplete}
+          >
+            Continue to Sign In
+          </Button>
+        )}
       </form>
     </div>
   );
