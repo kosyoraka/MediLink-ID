@@ -67,7 +67,7 @@ export default function EmergencyPublic({ token }: { token: string }) {
   }
 
   const fullName = [data.first_name, data.last_name].filter(Boolean).join(" ") || "—";
-  const showPersonalInfo = data.share_personal_info && (data.first_name || data.last_name || data.dob || data.health_card);
+  const showPersonalInfo = Boolean(data.first_name || data.last_name || data.dob || data.health_card);
   const formatDOB = (dob?: string | null) => {
   if (!dob) return "—";
   const d = new Date(dob);

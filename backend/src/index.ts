@@ -2154,6 +2154,8 @@ app.get("/api/patients/:patientId/emergency-profile", async (req, res) => {
     return res.status(200).json({
       ...pData,
       ...eData,
+      share_personal_info: true,
+      share_blood_type: true,
       blood_type: summary?.bloodType ?? pData.blood_type ?? null,
       allergies: summarizeHealthSummaryText(summary?.allergies, "allergy"),
       medical_conditions: summarizeHealthSummaryText(summary?.conditions, "condition"),
@@ -2262,9 +2264,8 @@ app.put("/api/patients/:patientId/emergency-profile", async (req, res) => {
         randomUUID(), // $1 -> emergency_profiles.id (TEXT column, UUID string is fine)
         patientId,    // $2 -> emergency_profiles.patient_id (UUID)
 
-        //!!sharePersonalInfo,        // $3
         true,                       // $3 always share personal info
-        !!shareBloodType,           // $4
+        true,                       // $4 always share blood type
         !!shareAllergies,           // $5
         !!(shareMedicalConditions ?? shareChronicConditions),   // $6
         !!shareCurrentMedications,  // $7
@@ -2495,21 +2496,13 @@ app.get("/api/emergency/by-token/:token", async (req, res) => {
       ]
     );
 
-    // Respect toggles: if share_personal_info is false, blank personal fields
-    const personalOut = eData.share_personal_info
-      ? { ...pData }
-      : {
-          ...pData,
-          first_name: null,
-          last_name: null,
-          dob: null,
-          health_card: null,
-          email: null,
-        };
+    const personalOut = { ...pData };
 
     return res.status(200).json({
       ...personalOut,
       ...eData,
+      share_personal_info: true,
+      share_blood_type: true,
       blood_type: summary?.bloodType ?? pData.blood_type ?? null,
       allergies: summarizeHealthSummaryText(summary?.allergies, "allergy"),
       medical_conditions: summarizeHealthSummaryText(summary?.conditions, "condition"),

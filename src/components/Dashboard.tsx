@@ -566,11 +566,6 @@ export default function Dashboard({
           {/* Success */}
           {!walletLoading && !walletError && emergencyUrl && (
             <>
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900">
-                <span className="font-semibold text-amber-950">Only share in emergencies.</span>{" "}
-                Anyone with this QR code can open the emergency responder view until you generate a new one.
-              </div>
-
               {/* Emergency URL card */}
               <div className="bg-teal-50 border border-teal-200 rounded-xl p-4">
                 <div className="flex items-center gap-2 mb-2">

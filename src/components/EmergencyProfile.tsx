@@ -180,8 +180,8 @@ export default function EmergencyProfile({ onBack }: EmergencyProfileProps) {
 
         // Toggles
         setSettings({
-          personalInfo: !!data.share_personal_info,
-          bloodType: !!data.share_blood_type,
+          personalInfo: true,
+          bloodType: true,
           allergies: !!data.share_allergies,
           conditions: !!data.share_medical_conditions,
           medications: !!data.share_current_medications,
@@ -226,8 +226,8 @@ export default function EmergencyProfile({ onBack }: EmergencyProfileProps) {
       setSaving(true);
 
       const payload = {
-        sharePersonalInfo: nextSettings.personalInfo,
-        shareBloodType: nextSettings.bloodType,
+        sharePersonalInfo: true,
+        shareBloodType: true,
         shareAllergies: nextSettings.allergies,
         shareMedicalConditions: nextSettings.conditions,
         shareCurrentMedications: nextSettings.medications,
@@ -547,8 +547,8 @@ export default function EmergencyProfile({ onBack }: EmergencyProfileProps) {
 
           <div className="divide-y divide-gray-200">
             {[
-              { key: 'personalInfo' as const, icon: User, label: 'Personal Information', desc: 'Name, DOB, Health Card' },
-              { key: 'bloodType' as const, icon: Droplet, label: 'Blood Type', desc: 'For transfusions' },
+              { key: 'personalInfo' as const, icon: User, label: 'Personal Information', desc: 'Name, DOB, Health Card', locked: true },
+              { key: 'bloodType' as const, icon: Droplet, label: 'Blood Type', desc: 'For transfusions', locked: true },
               { key: 'allergies' as const, icon: AlertTriangle, label: 'Allergies', desc: 'Drug and environmental' },
               { key: 'conditions' as const, icon: FileText, label: 'Medical Conditions', desc: 'Chronic conditions' },
               { key: 'medications' as const, icon: Pill, label: 'Current Medications', desc: 'All active prescriptions' },
@@ -565,7 +565,9 @@ export default function EmergencyProfile({ onBack }: EmergencyProfileProps) {
                 </div>
                 <Switch
                 checked={settings[item.key]}
+                disabled={!!item.locked}
                 onCheckedChange={() => {
+                  if (item.locked) return;
                   toggleSetting(item.key);
                   }}
                   />
