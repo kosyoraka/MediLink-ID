@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
 import { Activity, Eye, EyeOff } from "lucide-react";
-import { GoogleLogin, type CredentialResponse } from "@react-oauth/google";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/toast";
@@ -36,7 +35,6 @@ function readLastEmail(): string {
 }
 
 export function LoginPage({ onLogin, onSignUpClick }: LoginPageProps) {
-  const hasGoogleClientId = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
@@ -104,30 +102,6 @@ export function LoginPage({ onLogin, onSignUpClick }: LoginPageProps) {
       toast.error(err?.message || "Invalid credentials. Please try again.");
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const handleGoogleSuccess = async (credentialResponse: CredentialResponse) => {
-    const credential = credentialResponse.credential;
-    if (!credential) {
-      toast.error("Google did not return a credential");
-      return;
-    }
-
-    try {
-      const data = await apiFetch<{
-        token: string;
-        staff: StaffDTO;
-      }>("/api/staff/auth/google", {
-        method: "POST",
-        body: JSON.stringify({ credential }),
-      });
-
-      storeAuth(data.token, data.staff);
-      toast.success("Google login successful");
-      onLogin();
-    } catch (err: any) {
-      toast.error(err?.message || "Unable to sign in with Google");
     }
   };
 
@@ -206,20 +180,6 @@ export function LoginPage({ onLogin, onSignUpClick }: LoginPageProps) {
               {isLoading ? "Signing in..." : "Sign In"}
             </Button>
           </form>
-
-          {hasGoogleClientId ? (
-            <div className="my-4 flex justify-center">
-              <GoogleLogin
-                onSuccess={handleGoogleSuccess}
-                onError={() => toast.error("Google sign-in was cancelled or failed")}
-                useOneTap={false}
-                text="signin_with"
-                shape="pill"
-                theme="outline"
-                size="large"
-              />
-            </div>
-          ) : null}
 
           <div className="mt-6 text-center">
             <p className="text-sm text-gray-600">

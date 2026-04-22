@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { GoogleLogin, type CredentialResponse } from "@react-oauth/google";
 import {
   Activity,
   Hospital,
@@ -43,7 +42,6 @@ type SignInResponse = {
 };
 
 export function SignUpPage({ onSignUp, onBackToLogin }: SignUpPageProps) {
-  const hasGoogleClientId = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID);
   // hospital → info → verify
   const [step, setStep] = useState<"provider" | "info" | "verify">("provider");
   const [isLoading, setIsLoading] = useState(false);
@@ -203,45 +201,6 @@ export function SignUpPage({ onSignUp, onBackToLogin }: SignUpPageProps) {
       setStep("verify");
     } catch (err: any) {
       toast.error(err?.message || "Signup failed. Please try again.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleGoogleStaffSignup = async (credentialResponse: CredentialResponse) => {
-    const credential = credentialResponse.credential;
-    if (!credential) {
-      toast.error("Google did not return a credential");
-      return;
-    }
-
-    if (!selectedHospital || !formData.fullName.trim() || !formData.role.trim()) {
-      toast.error("Hospital, full name, and role are required for Google staff signup");
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const login = await apiFetch<SignInResponse>("/api/staff/auth/google", {
-        method: "POST",
-        body: JSON.stringify({
-          credential,
-          hospitalId: selectedHospital.id,
-          fullName: formData.fullName.trim(),
-          role: formData.role.trim(),
-          phone: formData.phone.trim() || null,
-        }),
-      });
-
-      localStorage.setItem("medilink_token", login.token);
-      localStorage.setItem("medilink_staff", JSON.stringify(login.staff));
-      sessionStorage.removeItem("medilink_token");
-      sessionStorage.removeItem("medilink_staff_session");
-
-      toast.success("Google account connected successfully!");
-      onSignUp();
-    } catch (err: any) {
-      toast.error(err?.message || "Google staff signup failed");
     } finally {
       setIsLoading(false);
     }
@@ -569,20 +528,6 @@ export function SignUpPage({ onSignUp, onBackToLogin }: SignUpPageProps) {
                 {isLoading ? "Sending code..." : "Continue to Email Verification"}
               </Button>
             </form>
-
-            {hasGoogleClientId ? (
-              <div className="my-4 flex justify-center">
-                <GoogleLogin
-                  onSuccess={handleGoogleStaffSignup}
-                  onError={() => toast.error("Google sign-up was cancelled or failed")}
-                  useOneTap={false}
-                  text="signup_with"
-                  shape="pill"
-                  theme="outline"
-                  size="large"
-                />
-              </div>
-            ) : null}
 
             <div className="mt-6 text-center">
               <button
