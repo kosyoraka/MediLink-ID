@@ -12,7 +12,7 @@ export function MedilinkIcon({ className = "h-12 w-12" }: MedilinkIconProps) {
       aria-label="Medilink ID logo"
       style={{
         backgroundImage: `url(${medilinkLogo})`,
-        backgroundSize: "auto 100%",
+        backgroundSize: "278% 100%",
         backgroundPosition: "left center",
       }}
     />
