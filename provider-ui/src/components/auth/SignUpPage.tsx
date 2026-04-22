@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "@/components/ui/toast";
 import { apiFetch } from "@/lib/api";
+import { MedilinkWordmark } from "@/components/branding/MedilinkWordmark";
 
 interface SignUpPageProps {
   onSignUp: () => void;
@@ -379,9 +380,7 @@ export function SignUpPage({ onSignUp, onBackToLogin }: SignUpPageProps) {
             </div>
 
             <div className="flex flex-col items-center mb-6">
-              <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mb-4">
-                <Activity className="w-10 h-10 text-white" />
-              </div>
+              <MedilinkWordmark className="mb-4 scale-90 sm:scale-100" />
               <h1 className="text-2xl font-bold text-gray-900">Create Account</h1>
               <p className="text-gray-600 mt-1">Join the Medilink Staff Portal</p>
             </div>
