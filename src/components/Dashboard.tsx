@@ -19,6 +19,7 @@ import {
   X,      // ✅ close icon for modal
   ExternalLink,
   Copy,
+  RefreshCw,
 } from 'lucide-react';
 
 import { Button } from './ui/button';
@@ -54,6 +55,15 @@ type ProfileResponse = {
 type EmergencyLinkResponse = {
   token: string;
   url: string;
+  recentAccesses?: EmergencyAccessLog[];
+};
+
+type EmergencyAccessLog = {
+  id: string;
+  accessResult: "success" | "revoked" | string;
+  ipAddress: string | null;
+  userAgent: string | null;
+  accessedAt: string;
 };
 
 export default function Dashboard({
@@ -71,6 +81,7 @@ export default function Dashboard({
   const [walletLoading, setWalletLoading] = useState(false);
   const [walletError, setWalletError] = useState('');
   const [emergencyUrl, setEmergencyUrl] = useState('');
+  const [recentEmergencyAccesses, setRecentEmergencyAccesses] = useState<EmergencyAccessLog[]>([]);
   const [copied, setCopied] = useState(false);
   const [appointments, setAppointments] = useState<PatientAppointment[]>([]);
   const [healthTasks, setHealthTasks] = useState<HealthTask[]>([]);
@@ -211,37 +222,87 @@ export default function Dashboard({
     window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, "_blank", "noopener,noreferrer");
   };
 
-  // ✅ Fetch emergency link + open modal
-  const openWalletModal = async () => {
+  const getPatientAuthHeaders = () => {
+    const token =
+      localStorage.getItem("patient_token") ||
+      localStorage.getItem("patientToken") ||
+      localStorage.getItem("token") ||
+      "";
+
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
+  const describeAccessDevice = (userAgent?: string | null) => {
+    const value = String(userAgent || "").toLowerCase();
+    if (!value) return "Unknown device";
+    if (value.includes("edg")) return "Microsoft Edge";
+    if (value.includes("chrome") && !value.includes("edg")) return value.includes("mobile") ? "Chrome on mobile" : "Google Chrome";
+    if (value.includes("safari") && !value.includes("chrome")) return value.includes("mobile") || value.includes("iphone") ? "Mobile Safari" : "Safari";
+    if (value.includes("firefox")) return "Firefox";
+    if (value.includes("iphone")) return "iPhone browser";
+    if (value.includes("android")) return "Android browser";
+    return "Browser access";
+  };
+
+  const formatEmergencyAccessTime = (iso: string) => {
+    const value = new Date(iso);
+    if (Number.isNaN(value.getTime())) return "Unknown time";
+    return value.toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  };
+
+  const loadEmergencyLink = async (mode: 'current' | 'regenerate') => {
     const patientId = localStorage.getItem('patientId');
     if (!patientId) {
-      setWalletError('You must be signed in to create a Wallet emergency link.');
-      setIsWalletModalOpen(true);
+      setWalletError('You must be signed in to create an Emergency ID QR code.');
       return;
     }
 
     setWalletError('');
     setCopied(false);
     setWalletLoading(true);
-    setIsWalletModalOpen(true);
 
     try {
-      const res = await fetch(`${API_BASE}/api/patients/${patientId}/emergency-link`);
+      const res = await fetch(
+        `${API_BASE}/api/patients/${patientId}/emergency-link${mode === 'regenerate' ? '/regenerate' : ''}`,
+        {
+          method: mode === 'regenerate' ? 'POST' : 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            ...getPatientAuthHeaders(),
+          },
+        }
+      );
       const data = (await res.json()) as EmergencyLinkResponse;
 
       if (!res.ok) {
         throw new Error((data as any)?.message || 'Failed to create emergency link');
       }
 
-      const origin = window.location.origin; // e.g. http://localhost:5173
-      setEmergencyUrl(`${origin}/e/${data.token}`);
+      setEmergencyUrl(`${window.location.origin}/e/${data.token}`);
+      setRecentEmergencyAccesses(Array.isArray(data.recentAccesses) ? data.recentAccesses : []);
 
     } catch (e: any) {
       setWalletError(e?.message || 'Failed to create emergency link');
       setEmergencyUrl('');
+      setRecentEmergencyAccesses([]);
     } finally {
       setWalletLoading(false);
     }
+  };
+
+  // ✅ Fetch emergency link + open modal
+  const openWalletModal = async () => {
+    setIsWalletModalOpen(true);
+    await loadEmergencyLink('current');
+  };
+
+  const regenerateEmergencyQr = async () => {
+    await loadEmergencyLink('regenerate');
   };
 
   const copyLink = async () => {
@@ -505,6 +566,11 @@ export default function Dashboard({
           {/* Success */}
           {!walletLoading && !walletError && emergencyUrl && (
             <>
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900">
+                <span className="font-semibold text-amber-950">Only share in emergencies.</span>{" "}
+                Anyone with this QR code can open the emergency responder view until you generate a new one.
+              </div>
+
               {/* Emergency URL card */}
               <div className="bg-teal-50 border border-teal-200 rounded-xl p-4">
                 <div className="flex items-center gap-2 mb-2">
@@ -543,12 +609,44 @@ export default function Dashboard({
                 </Button>
               </div>
 
+              <Button
+                onClick={regenerateEmergencyQr}
+                variant="outline"
+                className="w-full"
+                disabled={walletLoading}
+              >
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Generate New Emergency ID QR Code
+              </Button>
+
+              <div className="bg-white border border-gray-200 rounded-xl p-4">
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <div>
+                    <p className="text-sm text-gray-900">Recent Emergency Access</p>
+                    <p className="text-xs text-gray-500">See when your Emergency ID was opened.</p>
+                  </div>
+                </div>
+
+                {recentEmergencyAccesses.length === 0 ? (
+                  <p className="text-sm text-gray-500">No emergency access events yet.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {recentEmergencyAccesses.map((item) => (
+                      <div key={item.id} className="rounded-xl border border-gray-100 bg-gray-50 p-3">
+                        <p className="text-sm text-gray-900">
+                          {item.accessResult === 'revoked' ? 'Blocked access attempt' : 'Emergency ID viewed'}
+                        </p>
+                        <p className="mt-1 text-xs text-gray-500">{describeAccessDevice(item.userAgent)}</p>
+                        <p className="mt-2 text-xs text-gray-400">{formatEmergencyAccessTime(item.accessedAt)}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               {/* Footer note */}
               <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-xs text-gray-600">
-                 <span className="font-semibold text-gray-800">
-    Add to Apple Wallet
-  </span>{" "}
-  — coming soon
+                <span className="font-semibold text-gray-800">Add to Apple Wallet</span> — coming soon
               </div>
             </>
           )}

@@ -271,6 +271,50 @@ async function ensureConditionsSchema() {
   }
 }
 
+async function ensureEmergencyAccessSchema() {
+  const sql = await readFile(path.resolve(__dirname, "../008_emergency_access.sql"), "utf8");
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    try {
+      await pool.query(sql);
+      return;
+    } catch (error) {
+      if (attempt === 5) {
+        console.error("Emergency access schema setup skipped:", error);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+    }
+  }
+}
+
+function getRequestIp(req: any) {
+  const forwardedFor = req.headers["x-forwarded-for"];
+  if (Array.isArray(forwardedFor)) return String(forwardedFor[0] || "").split(",")[0].trim() || null;
+  if (typeof forwardedFor === "string") return forwardedFor.split(",")[0].trim() || null;
+  return req.ip || req.socket?.remoteAddress || null;
+}
+
+async function listEmergencyAccessLogs(patientId: string, limit = 10) {
+  const result = await pool.query(
+    `
+    SELECT id, access_result, ip_address, user_agent, accessed_at
+    FROM emergency_access_logs
+    WHERE patient_id = $1::uuid
+    ORDER BY accessed_at DESC
+    LIMIT $2
+    `,
+    [patientId, limit]
+  );
+
+  return result.rows.map((row) => ({
+    id: String(row.id),
+    accessResult: String(row.access_result || "success"),
+    ipAddress: row.ip_address ? String(row.ip_address) : null,
+    userAgent: row.user_agent ? String(row.user_agent) : null,
+    accessedAt: row.accessed_at,
+  }));
+}
+
 function isUuid(value: string | undefined | null) {
   return Boolean(value && uuidRegex.test(String(value)));
 }
@@ -2253,9 +2297,10 @@ app.put("/api/patients/:patientId/emergency-profile", async (req, res) => {
  * Create/Get emergency link for wallet/QR/NFC
  * GET /api/patients/:patientId/emergency-link
  */
-app.get("/api/patients/:patientId/emergency-link", async (req, res) => {
+app.get("/api/patients/:patientId/emergency-link", requirePatientAuth, async (req: any, res) => {
   const { patientId } = req.params;
   if (!patientId) return res.status(400).json({ message: "Missing patientId" });
+  if (req.patientId !== patientId) return res.status(403).json({ message: "Forbidden" });
 
   try {
     const exists = await pool.query(`SELECT 1 FROM patients WHERE id = $1`, [patientId]);
@@ -2282,8 +2327,44 @@ app.get("/api/patients/:patientId/emergency-link", async (req, res) => {
       );
     }
 
+    const recentAccesses = await listEmergencyAccessLogs(patientId, 10);
     const url = `${FRONTEND_BASE_URL}/e/${token}`;
-    return res.status(200).json({ token, url });
+    return res.status(200).json({ token, url, recentAccesses });
+  } catch (e: any) {
+    console.error("EMERGENCY LINK ERROR:", e);
+    return res.status(500).json({ message: e?.message || String(e), code: e?.code });
+  }
+});
+
+app.post("/api/patients/:patientId/emergency-link/regenerate", requirePatientAuth, async (req: any, res) => {
+  const { patientId } = req.params;
+  if (!patientId) return res.status(400).json({ message: "Missing patientId" });
+  if (req.patientId !== patientId) return res.status(403).json({ message: "Forbidden" });
+
+  try {
+    const exists = await pool.query(`SELECT 1 FROM patients WHERE id = $1`, [patientId]);
+    if (exists.rowCount === 0) return res.status(404).json({ message: "Patient not found" });
+
+    await pool.query(
+      `
+      UPDATE emergency_links
+      SET revoked = true
+      WHERE patient_id = $1::uuid
+        AND revoked = false
+      `,
+      [patientId]
+    );
+
+    const token = makeUrlSafeToken();
+    await pool.query(
+      `INSERT INTO emergency_links (id, patient_id, token)
+       VALUES ($1, $2, $3)`,
+      [randomUUID(), patientId, token]
+    );
+
+    const recentAccesses = await listEmergencyAccessLogs(patientId, 10);
+    const url = `${FRONTEND_BASE_URL}/e/${token}`;
+    return res.status(200).json({ token, url, recentAccesses });
   } catch (e: any) {
     console.error("EMERGENCY LINK ERROR:", e);
     return res.status(500).json({ message: e?.message || String(e), code: e?.code });
@@ -2301,6 +2382,7 @@ app.get("/api/emergency/by-token/:token", async (req, res) => {
   try {
     const link = await pool.query(
       `SELECT patient_id, revoked
+      , id
        FROM emergency_links
        WHERE token = $1
        LIMIT 1`,
@@ -2308,7 +2390,23 @@ app.get("/api/emergency/by-token/:token", async (req, res) => {
     );
 
     if (link.rowCount === 0) return res.status(404).json({ message: "Invalid or expired link" });
-    if (link.rows[0].revoked) return res.status(403).json({ message: "Link revoked" });
+    if (link.rows[0].revoked) {
+      await pool.query(
+        `
+        INSERT INTO emergency_access_logs (id, patient_id, emergency_link_id, token, access_result, ip_address, user_agent)
+        VALUES ($1, $2::uuid, $3::uuid, $4, 'revoked', $5, $6)
+        `,
+        [
+          randomUUID(),
+          link.rows[0].patient_id,
+          link.rows[0].id,
+          token,
+          getRequestIp(req),
+          req.get("user-agent") || null,
+        ]
+      );
+      return res.status(403).json({ message: "Link revoked" });
+    }
 
     const patientId = link.rows[0].patient_id;
 
@@ -2381,6 +2479,21 @@ app.get("/api/emergency/by-token/:token", async (req, res) => {
     const summary = summaryResult.rowCount ? normalizeHealthSummaryRow(summaryResult.rows[0]) : null;
     const eData = emergency.rowCount ? emergency.rows[0] : defaults;
     const pData = personal.rows[0];
+
+    await pool.query(
+      `
+      INSERT INTO emergency_access_logs (id, patient_id, emergency_link_id, token, access_result, ip_address, user_agent)
+      VALUES ($1, $2::uuid, $3::uuid, $4, 'success', $5, $6)
+      `,
+      [
+        randomUUID(),
+        patientId,
+        link.rows[0].id,
+        token,
+        getRequestIp(req),
+        req.get("user-agent") || null,
+      ]
+    );
 
     // Respect toggles: if share_personal_info is false, blank personal fields
     const personalOut = eData.share_personal_info
@@ -2691,7 +2804,7 @@ app.get("/api/patient/notifications", requirePatientAuth, async (req: any, res) 
   try {
     const patientId = req.patientId as string;
 
-    const [appointmentResult, messageResult] = await Promise.all([
+    const [appointmentResult, messageResult, emergencyAccessResult] = await Promise.all([
       pool.query(
         `
         SELECT
@@ -2726,6 +2839,20 @@ app.get("/api/patient/notifications", requirePatientAuth, async (req: any, res) 
           AND mi.sender_type = 'staff'
         ORDER BY mi.created_at DESC
         LIMIT 150
+        `,
+        [patientId]
+      ),
+      pool.query(
+        `
+        SELECT
+          id,
+          access_result,
+          user_agent,
+          accessed_at
+        FROM emergency_access_logs
+        WHERE patient_id = $1::uuid
+        ORDER BY accessed_at DESC
+        LIMIT 50
         `,
         [patientId]
       ),
@@ -2777,6 +2904,18 @@ app.get("/api/patient/notifications", requirePatientAuth, async (req: any, res) 
           isoDate: row.created_at,
           unread,
           screen: "messages",
+        };
+      }),
+      ...emergencyAccessResult.rows.map((row) => {
+        const accessedAt = new Date(row.accessed_at);
+        const isRecent = Date.now() - accessedAt.getTime() < 1000 * 60 * 60 * 12;
+
+        return {
+          id: `patient-emergency-access:${row.id}`,
+          title: row.access_result === "revoked" ? "Emergency ID access blocked" : "Your Emergency ID was accessed",
+          detail: "Emergency responder view opened",
+          isoDate: row.accessed_at,
+          unread: isRecent,
         };
       }),
     ]
@@ -6476,6 +6615,7 @@ async function initializeSchemas() {
   await ensureHealthSummarySchema();
   await ensureMedicationsSchema();
   await ensureConditionsSchema();
+  await ensureEmergencyAccessSchema();
 }
 
 function startServer() {

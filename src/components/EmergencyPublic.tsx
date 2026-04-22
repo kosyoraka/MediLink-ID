@@ -67,6 +67,7 @@ export default function EmergencyPublic({ token }: { token: string }) {
   }
 
   const fullName = [data.first_name, data.last_name].filter(Boolean).join(" ") || "—";
+  const showPersonalInfo = data.share_personal_info && (data.first_name || data.last_name || data.dob || data.health_card);
   const formatDOB = (dob?: string | null) => {
   if (!dob) return "—";
   const d = new Date(dob);
@@ -78,12 +79,14 @@ export default function EmergencyPublic({ token }: { token: string }) {
     <div className="min-h-screen bg-gray-50 p-6">
       <h1 className="text-xl text-gray-900 mb-4">Emergency Profile</h1>
 
-      <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-2">
-        <div className="text-sm text-gray-500">Patient</div>
-        <div className="text-gray-900">{fullName}</div>
-        <div className="text-sm text-gray-600">DOB: {formatDOB(data.dob)}</div>
-        <div className="text-sm text-gray-600">Health Card: {data.health_card || "—"}</div>
-      </div>
+      {showPersonalInfo ? (
+        <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-2">
+          <div className="text-sm text-gray-500">Patient</div>
+          <div className="text-gray-900">{fullName}</div>
+          <div className="text-sm text-gray-600">DOB: {formatDOB(data.dob)}</div>
+          <div className="text-sm text-gray-600">Health Card: {data.health_card || "—"}</div>
+        </div>
+      ) : null}
 
       <div className="mt-4 space-y-3">
         {data.share_blood_type && (

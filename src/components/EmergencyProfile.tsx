@@ -226,7 +226,7 @@ export default function EmergencyProfile({ onBack }: EmergencyProfileProps) {
       setSaving(true);
 
       const payload = {
-        sharePersonalInfo: true,
+        sharePersonalInfo: nextSettings.personalInfo,
         shareBloodType: nextSettings.bloodType,
         shareAllergies: nextSettings.allergies,
         shareMedicalConditions: nextSettings.conditions,
@@ -547,7 +547,7 @@ export default function EmergencyProfile({ onBack }: EmergencyProfileProps) {
 
           <div className="divide-y divide-gray-200">
             {[
-              { key: 'personalInfo', icon: User, label: 'Personal Information', desc: 'Name, DOB, Health Card', locked: true },
+              { key: 'personalInfo' as const, icon: User, label: 'Personal Information', desc: 'Name, DOB, Health Card' },
               { key: 'bloodType' as const, icon: Droplet, label: 'Blood Type', desc: 'For transfusions' },
               { key: 'allergies' as const, icon: AlertTriangle, label: 'Allergies', desc: 'Drug and environmental' },
               { key: 'conditions' as const, icon: FileText, label: 'Medical Conditions', desc: 'Chronic conditions' },
@@ -564,10 +564,8 @@ export default function EmergencyProfile({ onBack }: EmergencyProfileProps) {
                   <p className="text-sm text-gray-500">{item.desc}</p>
                 </div>
                 <Switch
-                checked={item.key === 'personalInfo' ? true : settings[item.key]}
-                disabled={item.key === 'personalInfo'}
+                checked={settings[item.key]}
                 onCheckedChange={() => {
-                  if (item.key === 'personalInfo') return;
                   toggleSetting(item.key);
                   }}
                   />
