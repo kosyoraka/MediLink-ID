@@ -4,7 +4,7 @@ import express from "express";
 import cors from "cors";
 import bcrypt from "bcrypt";
 import { pool } from "./db";
-import { randomUUID, randomBytes } from "crypto";
+import { randomUUID, randomBytes, createHash } from "crypto";
 import { readFile } from "fs/promises";
 import path from "path";
 import aiRouter from './ai';
@@ -229,6 +229,201 @@ function getFrontendBaseUrl() {
   }
 
   return "http://localhost:5173";
+}
+
+function hashToken(token: string) {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+function generateSecureToken() {
+  return randomBytes(32).toString("hex");
+}
+
+function getPatientVerificationUrl(token: string) {
+  return `${getFrontendBaseUrl()}/?mode=verify-email&token=${encodeURIComponent(token)}`;
+}
+
+function getPatientResetPasswordUrl(token: string) {
+  return `${getFrontendBaseUrl()}/?mode=reset-password&token=${encodeURIComponent(token)}`;
+}
+
+function getEmailSender() {
+  return process.env.EMAIL_FROM?.trim() || "MediLink ID <no-reply@medilinkid.com>";
+}
+
+async function sendTransactionalEmail(input: {
+  to: string;
+  subject: string;
+  html: string;
+  text: string;
+}) {
+  const resendApiKey = process.env.RESEND_API_KEY?.trim();
+
+  if (!resendApiKey) {
+    console.warn("RESEND_API_KEY is not configured. Email delivery skipped.");
+    console.info("EMAIL PREVIEW:", {
+      to: input.to,
+      subject: input.subject,
+      text: input.text,
+    });
+    return { delivered: false, provider: "console" as const };
+  }
+
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${resendApiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: getEmailSender(),
+      to: [input.to],
+      subject: input.subject,
+      html: input.html,
+      text: input.text,
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(`Resend email failed (${response.status}): ${body || response.statusText}`);
+  }
+
+  return { delivered: true, provider: "resend" as const };
+}
+
+async function createPatientEmailVerification(patientId: string) {
+  const token = generateSecureToken();
+  const tokenHash = hashToken(token);
+
+  await pool.query(
+    `
+    UPDATE patient_email_verifications
+    SET used_at = NOW()
+    WHERE patient_id = $1::uuid
+      AND used_at IS NULL
+    `,
+    [patientId]
+  );
+
+  await pool.query(
+    `
+    INSERT INTO patient_email_verifications (
+      patient_id,
+      token_hash,
+      expires_at
+    )
+    VALUES ($1::uuid, $2, NOW() + interval '24 hours')
+    `,
+    [patientId, tokenHash]
+  );
+
+  return token;
+}
+
+async function createPatientPasswordReset(patientId: string) {
+  const token = generateSecureToken();
+  const tokenHash = hashToken(token);
+
+  await pool.query(
+    `
+    UPDATE patient_password_resets
+    SET used_at = NOW()
+    WHERE patient_id = $1::uuid
+      AND used_at IS NULL
+    `,
+    [patientId]
+  );
+
+  await pool.query(
+    `
+    INSERT INTO patient_password_resets (
+      patient_id,
+      token_hash,
+      expires_at
+    )
+    VALUES ($1::uuid, $2, NOW() + interval '1 hour')
+    `,
+    [patientId, tokenHash]
+  );
+
+  return token;
+}
+
+async function sendPatientVerificationEmail(email: string, token: string) {
+  const verificationUrl = getPatientVerificationUrl(token);
+
+  return sendTransactionalEmail({
+    to: email,
+    subject: "Verify your MediLink ID email",
+    html: `
+      <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #0f172a;">
+        <h2>Verify your MediLink ID email</h2>
+        <p>Thanks for creating your MediLink ID account.</p>
+        <p>Please confirm your email address to activate your patient account.</p>
+        <p>
+          <a href="${verificationUrl}" style="display:inline-block;padding:12px 20px;background:#0f766e;color:#ffffff;text-decoration:none;border-radius:8px;">
+            Verify email
+          </a>
+        </p>
+        <p>If the button does not work, copy and paste this link into your browser:</p>
+        <p>${verificationUrl}</p>
+        <p>This link expires in 24 hours.</p>
+      </div>
+    `,
+    text: [
+      "Verify your MediLink ID email",
+      "",
+      "Please confirm your email address to activate your patient account.",
+      verificationUrl,
+      "",
+      "This link expires in 24 hours.",
+    ].join("\n"),
+  });
+}
+
+async function sendPatientPasswordResetEmail(email: string, token: string) {
+  const resetUrl = getPatientResetPasswordUrl(token);
+
+  return sendTransactionalEmail({
+    to: email,
+    subject: "Reset your MediLink ID password",
+    html: `
+      <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #0f172a;">
+        <h2>Reset your MediLink ID password</h2>
+        <p>We received a request to reset your password.</p>
+        <p>
+          <a href="${resetUrl}" style="display:inline-block;padding:12px 20px;background:#0f766e;color:#ffffff;text-decoration:none;border-radius:8px;">
+            Reset password
+          </a>
+        </p>
+        <p>If you did not request this, you can safely ignore this email.</p>
+        <p>${resetUrl}</p>
+        <p>This link expires in 1 hour.</p>
+      </div>
+    `,
+    text: [
+      "Reset your MediLink ID password",
+      "",
+      "We received a request to reset your password.",
+      resetUrl,
+      "",
+      "If you did not request this, you can safely ignore this email.",
+      "This link expires in 1 hour.",
+    ].join("\n"),
+  });
+}
+
+async function markPatientEmailVerified(patientId: string) {
+  await pool.query(
+    `
+    UPDATE patients
+    SET email_verified = true,
+        email_verified_at = COALESCE(email_verified_at, NOW())
+    WHERE id = $1::uuid
+    `,
+    [patientId]
+  );
 }
 
 async function ensureDocumentsSchema() {
@@ -1302,8 +1497,8 @@ app.post("/api/auth/signup", async (req, res) => {
 
   // 1) create patient account
   const result = await pool.query(
-    `INSERT INTO patients (id, email, password_hash, terms_accepted_at)
-     VALUES ($1, $2, $3, NOW())
+    `INSERT INTO patients (id, email, password_hash, terms_accepted_at, email_verified)
+     VALUES ($1, $2, $3, NOW(), false)
      RETURNING id, email`,
     [id, emailNorm, passwordHash]
   );
@@ -1438,13 +1633,20 @@ await pool.query(
     );
   }
 
-  //return res.status(201).json(result.rows[0]); // { id, email }
   const created = result.rows[0]; // { id, email }
-  const token = signPatientToken({ id: created.id, email: created.email });
+  const verificationToken = await createPatientEmailVerification(created.id);
+  let emailDelivery = "sent";
+  try {
+    await sendPatientVerificationEmail(created.email, verificationToken);
+  } catch (emailError) {
+    emailDelivery = "retry_required";
+    console.error("PATIENT VERIFICATION EMAIL SEND ERROR:", emailError);
+  }
 
   return res.status(201).json({
-    ...created, // keeps {id, email} exactly the same
-    token,      // adds token (new)
+    ...created,
+    requiresEmailVerification: true,
+    emailDelivery,
   });
 
 } catch (e: any) {
@@ -1532,8 +1734,8 @@ app.post("/api/auth/google", async (req, res) => {
 
       await pool.query(
         `
-        INSERT INTO patients (id, email, password_hash, terms_accepted_at)
-        VALUES ($1, $2, $3, NOW())
+        INSERT INTO patients (id, email, password_hash, terms_accepted_at, email_verified, email_verified_at)
+        VALUES ($1, $2, $3, NOW(), true, NOW())
         `,
         [patientId, patientEmail, passwordHash]
       );
@@ -1560,6 +1762,8 @@ app.post("/api/auth/google", async (req, res) => {
         await ensurePatientHospitalConnection(patientId, hospitalId);
       }
     }
+
+    await markPatientEmailVerified(patientId);
 
     // Link Google identity (idempotent)
     await pool.query(
@@ -1625,7 +1829,7 @@ app.post("/api/auth/signin", async (req, res) => {
   try {
     const result = await pool.query(
       `
-      SELECT id, email, password_hash
+      SELECT id, email, password_hash, email_verified
       FROM patients
       WHERE email = $1
       LIMIT 1
@@ -1644,6 +1848,13 @@ app.post("/api/auth/signin", async (req, res) => {
       return res.status(401).json({ message: "Invalid email or password" });
     }
 
+    if (!user.email_verified) {
+      return res.status(403).json({
+        message: "Please verify your email before signing in",
+        code: "EMAIL_NOT_VERIFIED",
+      });
+    }
+
     const token = signPatientToken({ id: user.id, email: user.email });
 
     return res.status(200).json({
@@ -1657,6 +1868,260 @@ app.post("/api/auth/signin", async (req, res) => {
       message: e?.message || String(e),
       code: e?.code,
     });
+  }
+});
+
+app.post("/api/auth/resend-verification", async (req, res) => {
+  const emailNorm = String(req.body?.email ?? "").trim().toLowerCase();
+
+  if (!emailNorm) {
+    return res.status(400).json({ message: "Missing email" });
+  }
+
+  try {
+    const patientResult = await pool.query(
+      `
+      SELECT id, email, email_verified
+      FROM patients
+      WHERE email = $1
+      LIMIT 1
+      `,
+      [emailNorm]
+    );
+
+    if ((patientResult.rowCount ?? 0) > 0) {
+      const patient = patientResult.rows[0];
+
+      if (!patient.email_verified) {
+        const verificationToken = await createPatientEmailVerification(patient.id);
+        try {
+          await sendPatientVerificationEmail(patient.email, verificationToken);
+        } catch (emailError) {
+          console.error("PATIENT RESEND VERIFICATION EMAIL SEND ERROR:", emailError);
+        }
+      }
+    }
+
+    return res.status(200).json({
+      ok: true,
+      message: "If an account exists for that email, a verification email has been sent.",
+    });
+  } catch (e: any) {
+    console.error("PATIENT RESEND VERIFICATION ERROR:", e);
+    return res.status(500).json({
+      message: e?.message || "Unable to resend verification email",
+      code: e?.code,
+    });
+  }
+});
+
+app.post("/api/auth/forgot-password", async (req, res) => {
+  const emailNorm = String(req.body?.email ?? "").trim().toLowerCase();
+
+  if (!emailNorm) {
+    return res.status(400).json({ message: "Missing email" });
+  }
+
+  try {
+    const patientResult = await pool.query(
+      `
+      SELECT id, email
+      FROM patients
+      WHERE email = $1
+      LIMIT 1
+      `,
+      [emailNorm]
+    );
+
+    if ((patientResult.rowCount ?? 0) > 0) {
+      const patient = patientResult.rows[0];
+      const resetToken = await createPatientPasswordReset(patient.id);
+      try {
+        await sendPatientPasswordResetEmail(patient.email, resetToken);
+      } catch (emailError) {
+        console.error("PATIENT RESET EMAIL SEND ERROR:", emailError);
+      }
+    }
+
+    return res.status(200).json({
+      ok: true,
+      message: "If an account exists for that email, a password reset email has been sent.",
+    });
+  } catch (e: any) {
+    console.error("PATIENT FORGOT PASSWORD ERROR:", e);
+    return res.status(500).json({
+      message: e?.message || "Unable to start password reset",
+      code: e?.code,
+    });
+  }
+});
+
+app.post("/api/auth/reset-password", async (req, res) => {
+  const token = String(req.body?.token ?? "").trim();
+  const password = String(req.body?.password ?? "");
+
+  if (!token || !password) {
+    return res.status(400).json({ message: "Missing token or password" });
+  }
+
+  if (password.length < 8) {
+    return res.status(400).json({ message: "Password must be at least 8 characters" });
+  }
+
+  try {
+    const tokenHash = hashToken(token);
+    const resetResult = await pool.query(
+      `
+      SELECT id, patient_id, expires_at, used_at
+      FROM patient_password_resets
+      WHERE token_hash = $1
+      LIMIT 1
+      `,
+      [tokenHash]
+    );
+
+    if ((resetResult.rowCount ?? 0) === 0) {
+      return res.status(400).json({ message: "Invalid or expired reset link" });
+    }
+
+    const reset = resetResult.rows[0];
+    if (reset.used_at || new Date(reset.expires_at).getTime() < Date.now()) {
+      return res.status(400).json({ message: "Invalid or expired reset link" });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+
+    await pool.query(
+      `
+      UPDATE patients
+      SET password_hash = $2
+      WHERE id = $1::uuid
+      `,
+      [reset.patient_id, passwordHash]
+    );
+
+    await pool.query(
+      `
+      UPDATE patient_password_resets
+      SET used_at = NOW()
+      WHERE id = $1::uuid
+      `,
+      [reset.id]
+    );
+
+    return res.status(200).json({
+      ok: true,
+      message: "Your password has been updated. You can now sign in.",
+    });
+  } catch (e: any) {
+    console.error("PATIENT RESET PASSWORD ERROR:", e);
+    return res.status(500).json({
+      message: e?.message || "Unable to reset password",
+      code: e?.code,
+    });
+  }
+});
+
+app.post("/api/auth/verify-email", async (req, res) => {
+  const token = String(req.body?.token ?? "").trim();
+
+  if (!token) {
+    return res.status(400).json({ message: "Missing verification token" });
+  }
+
+  try {
+    const tokenHash = hashToken(token);
+    const verificationResult = await pool.query(
+      `
+      SELECT pev.id, pev.patient_id, pev.expires_at, pev.used_at, p.email
+      FROM patient_email_verifications pev
+      JOIN patients p ON p.id = pev.patient_id
+      WHERE pev.token_hash = $1
+      LIMIT 1
+      `,
+      [tokenHash]
+    );
+
+    if ((verificationResult.rowCount ?? 0) === 0) {
+      return res.status(400).json({ message: "Invalid or expired verification link" });
+    }
+
+    const verification = verificationResult.rows[0];
+    if (verification.used_at || new Date(verification.expires_at).getTime() < Date.now()) {
+      return res.status(400).json({ message: "Invalid or expired verification link" });
+    }
+
+    await markPatientEmailVerified(verification.patient_id);
+
+    await pool.query(
+      `
+      UPDATE patient_email_verifications
+      SET used_at = NOW()
+      WHERE id = $1::uuid
+      `,
+      [verification.id]
+    );
+
+    return res.status(200).json({
+      ok: true,
+      email: verification.email,
+      message: "Email verified successfully",
+    });
+  } catch (e: any) {
+    console.error("PATIENT VERIFY EMAIL ERROR:", e);
+    return res.status(500).json({
+      message: e?.message || "Unable to verify email",
+      code: e?.code,
+    });
+  }
+});
+
+app.get("/api/auth/verify-email", async (req, res) => {
+  const token = String(req.query?.token ?? "").trim();
+  const frontendBase = getFrontendBaseUrl();
+
+  if (!token) {
+    return res.redirect(`${frontendBase}/?mode=verify-email&status=invalid`);
+  }
+
+  try {
+    const tokenHash = hashToken(token);
+    const verificationResult = await pool.query(
+      `
+      SELECT pev.id, pev.patient_id, pev.expires_at, pev.used_at, p.email
+      FROM patient_email_verifications pev
+      JOIN patients p ON p.id = pev.patient_id
+      WHERE pev.token_hash = $1
+      LIMIT 1
+      `,
+      [tokenHash]
+    );
+
+    if ((verificationResult.rowCount ?? 0) === 0) {
+      return res.redirect(`${frontendBase}/?mode=verify-email&status=invalid`);
+    }
+
+    const verification = verificationResult.rows[0];
+    if (verification.used_at || new Date(verification.expires_at).getTime() < Date.now()) {
+      return res.redirect(`${frontendBase}/?mode=verify-email&status=expired&email=${encodeURIComponent(verification.email)}`);
+    }
+
+    await markPatientEmailVerified(verification.patient_id);
+    await pool.query(
+      `
+      UPDATE patient_email_verifications
+      SET used_at = NOW()
+      WHERE id = $1::uuid
+      `,
+      [verification.id]
+    );
+
+    return res.redirect(
+      `${frontendBase}/?mode=verify-email&status=verified&email=${encodeURIComponent(verification.email)}`
+    );
+  } catch (e) {
+    console.error("PATIENT VERIFY EMAIL REDIRECT ERROR:", e);
+    return res.redirect(`${frontendBase}/?mode=verify-email&status=error`);
   }
 });
 

@@ -6,12 +6,14 @@ import { Input } from '../ui/input';
 
 interface SignInProps {
   onSignIn: (userData: { email: string; name: string; healthCard: string; dob: string; connectedProviders: string[] }) => void;
+  onRequireVerification: (email: string) => void;
+  onForgotPassword: () => void;
   onBack: () => void;
   onGoToSignUp: () => void;
 }
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4000";
 
-export default function SignIn({ onSignIn, onBack, onGoToSignUp }: SignInProps) {
+export default function SignIn({ onSignIn, onRequireVerification, onForgotPassword, onBack, onGoToSignUp }: SignInProps) {
   const hasGoogleClientId = Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -36,6 +38,11 @@ export default function SignIn({ onSignIn, onBack, onGoToSignUp }: SignInProps) 
     const data = await res.json();
 
     if (!res.ok) {
+      if (res.status === 403 && data?.code === 'EMAIL_NOT_VERIFIED') {
+        localStorage.setItem('email', email);
+        onRequireVerification(email);
+        return;
+      }
       throw new Error(data?.message || 'Sign in failed');
     }
 
@@ -147,7 +154,7 @@ export default function SignIn({ onSignIn, onBack, onGoToSignUp }: SignInProps) 
           <button
             type="button"
             className="text-sm text-teal-600 hover:text-teal-700"
-            onClick={() => alert('Forgot password flow is coming soon')}
+            onClick={onForgotPassword}
           >
             Forgot password?
           </button>

@@ -4,6 +4,8 @@ import WelcomeLanding from './components/onboarding/WelcomeLanding';
 import SignIn from './components/onboarding/SignIn';
 import SignUp from './components/onboarding/SignUp';
 import VerifyEmail from './components/onboarding/VerifyEmail';
+import ForgotPassword from './components/onboarding/ForgotPassword';
+import ResetPassword from './components/onboarding/ResetPassword';
 import ProfileSetup from './components/onboarding/ProfileSetup';
 import ConnectProviders from './components/onboarding/ConnectProviders';
 import Authorization from './components/onboarding/Authorization';
@@ -36,6 +38,8 @@ type Screen =
   | 'signin'
   | 'signup'
   | 'verify-email'
+  | 'forgot-password'
+  | 'reset-password'
   | 'profile-setup'
   | 'connect-providers'
   | 'authorization'
@@ -68,6 +72,8 @@ export default function App() {
   const [activeNav, setActiveNav] = useState<NavItem>('home');
 
   const [userEmail, setUserEmail] = useState('');
+  const [verificationStatus, setVerificationStatus] = useState<'pending' | 'verified' | 'expired' | 'invalid' | 'error'>('pending');
+  const [resetToken, setResetToken] = useState('');
   const [userName, setUserName] = useState('');
   const [userHealthCard, setUserHealthCard] = useState('');
   const [userDOB, setUserDOB] = useState('');
@@ -246,6 +252,59 @@ export default function App() {
   useEffect(() => {
     if (emergencyToken) return;
 
+    const params = new URLSearchParams(window.location.search);
+    const mode = params.get('mode');
+    const token = params.get('token');
+    const status = params.get('status');
+    const email = params.get('email');
+
+    if (email) {
+      setUserEmail(email);
+    }
+
+    if (mode === 'verify-email') {
+      if (status === 'verified' || status === 'expired' || status === 'invalid' || status === 'error') {
+        setVerificationStatus(status);
+        setCurrentScreen('verify-email');
+        return;
+      }
+
+      if (token) {
+        void (async () => {
+          try {
+            const res = await fetch(`${API_BASE}/api/auth/verify-email`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ token }),
+            });
+            const data = await res.json().catch(() => null);
+            setUserEmail(data?.email || email || '');
+            setVerificationStatus(res.ok ? 'verified' : 'invalid');
+          } catch (error) {
+            console.error('Inline verify-email failed:', error);
+            setVerificationStatus('error');
+          } finally {
+            window.history.replaceState({}, '', '/?mode=verify-email');
+            setCurrentScreen('verify-email');
+          }
+        })();
+        return;
+      }
+
+      setVerificationStatus('pending');
+      setCurrentScreen('verify-email');
+      return;
+    }
+
+    if (mode === 'reset-password' && token) {
+      setResetToken(token);
+      setCurrentScreen('reset-password');
+    }
+  }, [emergencyToken]);
+
+  useEffect(() => {
+    if (emergencyToken) return;
+
     const token = localStorage.getItem('patient_token');
     const email = localStorage.getItem('email');
     const patientId = localStorage.getItem('patientId');
@@ -280,6 +339,12 @@ export default function App() {
             onSignIn={(userData) => {
               void syncOnboardingState(userData.email);
             }}
+            onRequireVerification={(email) => {
+              setUserEmail(email);
+              setVerificationStatus('pending');
+              handleNavigation('verify-email');
+            }}
+            onForgotPassword={() => handleNavigation('forgot-password')}
             onBack={() => handleNavigation('welcome')}
             onGoToSignUp={() => handleNavigation('signup')}
           />
@@ -291,13 +356,51 @@ export default function App() {
             onBack={() => handleNavigation('welcome')}
             onGoToSignIn={() => handleNavigation('signin')}
             onSignUp={(email, prefill) => {
-              void syncOnboardingState(email, prefill);
+              setUserEmail(email);
+              setProfilePrefill({
+                firstName: prefill?.firstName || '',
+                lastName: prefill?.lastName || '',
+              });
+              setVerificationStatus('pending');
+              handleNavigation('verify-email');
             }}
           />
         );
 
       case 'verify-email':
-        return <VerifyEmail email={userEmail} onVerified={() => handleNavigation('profile-setup')} />;
+        return (
+          <VerifyEmail
+            email={userEmail}
+            status={verificationStatus}
+            onBack={() => handleNavigation('signin')}
+            onContinue={() => handleNavigation('signin')}
+            onResendComplete={() => setVerificationStatus('pending')}
+          />
+        );
+
+      case 'forgot-password':
+        return (
+          <ForgotPassword
+            initialEmail={userEmail}
+            onBack={() => handleNavigation('signin')}
+            onComplete={(email) => {
+              setUserEmail(email);
+            }}
+          />
+        );
+
+      case 'reset-password':
+        return (
+          <ResetPassword
+            token={resetToken}
+            onBack={() => handleNavigation('signin')}
+            onComplete={() => {
+              setResetToken('');
+              window.history.replaceState({}, '', '/');
+              handleNavigation('signin');
+            }}
+          />
+        );
 
       case 'profile-setup':
         return (

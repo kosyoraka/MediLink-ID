@@ -72,9 +72,6 @@ export default function SignUp({ onBack, onGoToSignIn, onSignUp }: SignUpProps) 
 
       // optional but handy
       localStorage.setItem('email', data.email);
-      
-      // ✅ add this (required for Connected Providers)
-      localStorage.setItem('patient_token', data.token);
 
       // continue your existing app flow
       onSignUp(data.email);
