@@ -118,6 +118,31 @@ function formatMinutesAsLabel(totalMinutes: number) {
   return `${hour12}:${String(minute).padStart(2, "0")} ${suffix}`;
 }
 
+function getCurrentSchedulingDateTimeParts() {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: SCHEDULING_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+
+  const parts = formatter.formatToParts(new Date());
+  const readPart = (type: string) => parts.find((part) => part.type === type)?.value || "00";
+  const year = readPart("year");
+  const month = readPart("month");
+  const day = readPart("day");
+  const hour = Number(readPart("hour"));
+  const minute = Number(readPart("minute"));
+
+  return {
+    localDate: `${year}-${month}-${day}`,
+    minutesOfDay: hour * 60 + minute,
+  };
+}
+
 function buildAvailableSlotTemplates(durationMinutes: number) {
   const lastStart = PROVIDER_DAY_END_MINUTES - durationMinutes;
   const slots: Array<{ minutesOfDay: number; localTime: string; label: string }> = [];
@@ -190,6 +215,7 @@ async function getAvailableSlotsForStaffOnDate(
 ) {
   const durationMinutes = getAppointmentDurationMinutes(appointmentType);
   const bookedIntervals = await getBookedIntervalsForStaffOnDate(staffId, localDate, excludeAppointmentId);
+  const currentSchedulingDateTime = getCurrentSchedulingDateTimeParts();
 
   const slots = buildAvailableSlotTemplates(durationMinutes).map((slot) => {
     const blockedBy = bookedIntervals.find((interval) =>
@@ -200,12 +226,15 @@ async function getAvailableSlotsForStaffOnDate(
         interval.endMinutes
       )
     );
+    const hasAlreadyPassed =
+      localDate === currentSchedulingDateTime.localDate &&
+      slot.minutesOfDay <= currentSchedulingDateTime.minutesOfDay;
 
     return {
       localDateTime: `${localDate}T${slot.localTime}`,
       localTime: slot.localTime,
       label: slot.label,
-      available: !blockedBy,
+      available: !blockedBy && !hasAlreadyPassed,
       blockedByAppointmentId: blockedBy?.id ?? null,
     };
   });
