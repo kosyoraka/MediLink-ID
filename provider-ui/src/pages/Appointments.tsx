@@ -67,6 +67,48 @@ function isPastAppointment(appointment: Appointment) {
   return ts < Date.now();
 }
 
+function startOfDay(date: Date) {
+  const next = new Date(date);
+  next.setHours(0, 0, 0, 0);
+  return next;
+}
+
+function endOfDay(date: Date) {
+  const next = new Date(date);
+  next.setHours(23, 59, 59, 999);
+  return next;
+}
+
+function addDays(date: Date, amount: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + amount);
+  return next;
+}
+
+function startOfWeek(date: Date) {
+  const next = startOfDay(date);
+  const day = next.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  next.setDate(next.getDate() + diff);
+  return next;
+}
+
+function endOfWeek(date: Date) {
+  return endOfDay(addDays(startOfWeek(date), 6));
+}
+
+function startOfMonth(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function endOfMonth(date: Date) {
+  return endOfDay(new Date(date.getFullYear(), date.getMonth() + 1, 0));
+}
+
+function getMonthLabel(date: Date) {
+  return date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+}
+
 /* ---------- component ---------- */
 
 export function Appointments({ onNavigate }: AppointmentsProps) {
@@ -140,15 +182,127 @@ export function Appointments({ onNavigate }: AppointmentsProps) {
   );
 
   const groupedAppointments = useMemo(() => {
-    const upcoming = filteredAppointments
+    const now = new Date();
+    const todayStart = startOfDay(now);
+    const todayEnd = endOfDay(now);
+    const weekStart = startOfWeek(now);
+    const weekEnd = endOfWeek(now);
+    const nextWeekStart = startOfDay(addDays(weekEnd, 1));
+    const nextWeekEnd = endOfWeek(nextWeekStart);
+    const monthEnd = endOfMonth(now);
+    const yesterdayStart = startOfDay(addDays(now, -1));
+    const yesterdayEnd = endOfDay(addDays(now, -1));
+    const lastWeekEnd = endOfDay(addDays(weekStart, -1));
+    const lastWeekStart = startOfWeek(lastWeekEnd);
+    const lastMonthDate = addDays(startOfMonth(now), -1);
+    const lastMonthStart = startOfMonth(lastMonthDate);
+    const lastMonthEnd = endOfMonth(lastMonthDate);
+
+    const upcomingBase = filteredAppointments
       .filter((appointment) => !isPastAppointment(appointment))
       .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
 
-    const past = filteredAppointments
+    const pastBase = filteredAppointments
       .filter((appointment) => isPastAppointment(appointment))
       .sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime());
 
-    return { upcoming, past };
+    const upcomingGroups = [
+      {
+        key: "today",
+        label: "Today",
+        items: upcomingBase.filter((appointment) => {
+          const ts = new Date(appointment.startTime).getTime();
+          return ts >= todayStart.getTime() && ts <= todayEnd.getTime();
+        }),
+      },
+      {
+        key: "this-week",
+        label: "This Week",
+        items: upcomingBase.filter((appointment) => {
+          const ts = new Date(appointment.startTime).getTime();
+          return ts > todayEnd.getTime() && ts >= weekStart.getTime() && ts <= weekEnd.getTime();
+        }),
+      },
+      {
+        key: "next-week",
+        label: "Next Week",
+        items: upcomingBase.filter((appointment) => {
+          const ts = new Date(appointment.startTime).getTime();
+          return ts >= nextWeekStart.getTime() && ts <= nextWeekEnd.getTime();
+        }),
+      },
+      {
+        key: "later",
+        label: "Later",
+        items: upcomingBase.filter((appointment) => {
+          const ts = new Date(appointment.startTime).getTime();
+          return ts > nextWeekEnd.getTime();
+        }),
+      },
+    ].filter((group) => group.items.length > 0);
+
+    const olderMap = new Map<string, Appointment[]>();
+    pastBase.forEach((appointment) => {
+      const date = new Date(appointment.startTime);
+      const ts = date.getTime();
+
+      if (ts >= yesterdayStart.getTime() && ts <= yesterdayEnd.getTime()) return;
+      if (ts >= lastWeekStart.getTime() && ts <= lastWeekEnd.getTime()) return;
+      if (ts >= lastMonthStart.getTime() && ts <= lastMonthEnd.getTime()) return;
+
+      const key = `${date.getFullYear()}-${date.getMonth()}`;
+      const bucket = olderMap.get(key) || [];
+      bucket.push(appointment);
+      olderMap.set(key, bucket);
+    });
+
+    const olderGroups = Array.from(olderMap.entries())
+      .sort((a, b) => {
+        const [aYear, aMonth] = a[0].split("-").map(Number);
+        const [bYear, bMonth] = b[0].split("-").map(Number);
+        return new Date(bYear, bMonth).getTime() - new Date(aYear, aMonth).getTime();
+      })
+      .map(([key, items]) => {
+        const [year, month] = key.split("-").map(Number);
+        return {
+          key: `older-${key}`,
+          label: getMonthLabel(new Date(year, month, 1)),
+          items: items.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()),
+        };
+      });
+
+    const pastGroups = [
+      {
+        key: "yesterday",
+        label: "Yesterday",
+        items: pastBase.filter((appointment) => {
+          const ts = new Date(appointment.startTime).getTime();
+          return ts >= yesterdayStart.getTime() && ts <= yesterdayEnd.getTime();
+        }),
+      },
+      {
+        key: "last-week",
+        label: "Last Week",
+        items: pastBase.filter((appointment) => {
+          const ts = new Date(appointment.startTime).getTime();
+          return ts >= lastWeekStart.getTime() && ts <= lastWeekEnd.getTime();
+        }),
+      },
+      {
+        key: "last-month",
+        label: "Last Month",
+        items: pastBase.filter((appointment) => {
+          const ts = new Date(appointment.startTime).getTime();
+          return ts >= lastMonthStart.getTime() && ts <= lastMonthEnd.getTime();
+        }),
+      },
+      ...olderGroups,
+    ].filter((group) => group.items.length > 0);
+
+    return {
+      upcomingGroups,
+      pastGroups,
+    };
   }, [filteredAppointments]);
 
   const updateStatus = async (
@@ -179,6 +333,140 @@ export function Appointments({ onNavigate }: AppointmentsProps) {
     } finally {
       setRefreshing(false);
     }
+  };
+
+  const renderAppointmentCard = (a: Appointment, isPastSection = false) => {
+    const initials =
+      (a.patientName || "Patient")
+        .split(" ")
+        .map((n) => n[0])
+        .join("")
+        .slice(0, 2)
+        .toUpperCase() || "P";
+
+    return (
+      <Card key={a.id}>
+        <CardContent className="p-6">
+          <div className="flex flex-col lg:flex-row gap-4">
+            <div className="flex items-center gap-4 flex-1">
+              <div className="w-14 h-14 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-semibold text-lg">
+                {initials}
+              </div>
+
+              <div>
+                <h3 className="font-semibold text-gray-900">
+                  {a.patientName}
+                </h3>
+                <div className="flex items-center gap-2 mt-1 text-sm text-gray-600">
+                  <Calendar className="w-3 h-3" />
+                  <span>{formatPrettyDate(a.startTime)}</span>
+                  <span className="text-gray-400">•</span>
+                  <Clock className="w-3 h-3" />
+                  <span>{formatPrettyTime(a.startTime)}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div className="text-sm">
+                <p className="text-gray-600">Type</p>
+                <p className="font-medium">{a.type}</p>
+              </div>
+              <Badge variant={getStatusColor(a.status)}>
+                {a.status}
+              </Badge>
+            </div>
+
+            <div className="flex gap-2">
+              {!isPastSection && a.status !== "Completed" && a.status !== "Cancelled" && (
+                <>
+                  {a.status !== "Confirmed" && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => updateStatus(a.id, "Confirmed", "Appointment confirmed")}
+                    >
+                      Confirm
+                    </Button>
+                  )}
+
+                  {a.status === "Confirmed" && (
+                    <Button
+                      size="sm"
+                      onClick={() => updateStatus(a.id, "Completed", "Marked completed")}
+                    >
+                      <CheckCircle className="w-3 h-3 mr-1" />
+                      Complete
+                    </Button>
+                  )}
+
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => updateStatus(a.id, "Cancelled", "Cancelled")}
+                  >
+                    <XCircle className="w-3 h-3 mr-1" />
+                    Cancel
+                  </Button>
+                </>
+              )}
+
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setSelectedAppointment(a)}
+              >
+                Details
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  const renderGroupedSection = (
+    title: string,
+    groups: Array<{ key: string; label: string; items: Appointment[] }>,
+    options?: { defaultOpen?: boolean; past?: boolean }
+  ) => {
+    if (groups.length === 0) return null;
+
+    const totalCount = groups.reduce((sum, group) => sum + group.items.length, 0);
+
+    return (
+      <details
+        open={options?.defaultOpen}
+        className="rounded-2xl border border-gray-200 bg-white"
+      >
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-4 text-sm font-medium text-gray-900">
+          <span>{title}</span>
+          <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-600">
+            {totalCount}
+          </span>
+        </summary>
+
+        <div className="space-y-4 border-t border-gray-100 px-4 py-4">
+          {groups.map((group, index) => (
+            <details
+              key={group.key}
+              open={index === 0 && !options?.past}
+              className="rounded-xl border border-gray-200 bg-gray-50"
+            >
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm text-gray-900">
+                <span>{group.label}</span>
+                <span className="rounded-full bg-white px-2.5 py-1 text-xs text-gray-600">
+                  {group.items.length}
+                </span>
+              </summary>
+              <div className="space-y-4 border-t border-gray-200 px-3 py-3">
+                {group.items.map((appointment) => renderAppointmentCard(appointment, Boolean(options?.past)))}
+              </div>
+            </details>
+          ))}
+        </div>
+      </details>
+    );
   };
 
   return (
@@ -251,204 +539,27 @@ export function Appointments({ onNavigate }: AppointmentsProps) {
 
       {!loading && !error && (
         <>
-          {pendingConfirmations.length > 0 ? (
-            <Card>
-              <CardContent className="p-4">
-                <div className="mb-3 flex items-center gap-2">
-                  <Clock className="h-4 w-4 text-gray-500" />
-                  <h3 className="text-gray-900">Pending Confirmations</h3>
-                </div>
-
-                <div className="space-y-3">
-                  {pendingConfirmations.map((a) => (
-                    <div key={`pending-${a.id}`} className="rounded-lg border border-gray-200 bg-gray-50 p-3">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                          <p className="text-sm font-medium text-gray-900">{a.patientName}</p>
-                          <p className="mt-1 text-xs text-gray-600">
-                            {formatPrettyDate(a.startTime)} • {formatPrettyTime(a.startTime)} • {a.type}
-                          </p>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <Badge variant={getStatusColor(a.status)}>{a.status}</Badge>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => updateStatus(a.id, "Confirmed", "Appointment confirmed")}
-                          >
-                            Confirm
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          ) : null}
-
           <div className="text-sm text-gray-600">
             Showing {filteredAppointments.length} appointments
           </div>
 
           <div className="space-y-6">
-            {groupedAppointments.upcoming.length > 0 ? (
-              <div className="space-y-4">
-                <div className="text-sm font-medium text-gray-900">Upcoming</div>
-                {groupedAppointments.upcoming.map((a) => {
-                  const initials =
-                    (a.patientName || "Patient")
-                      .split(" ")
-                      .map((n) => n[0])
-                      .join("")
-                      .slice(0, 2)
-                      .toUpperCase() || "P";
+            {renderGroupedSection(
+              "Needs Attention",
+              pendingConfirmations.length > 0
+                ? [{ key: "pending-confirmations", label: "Pending Confirmations", items: pendingConfirmations }]
+                : [],
+              { defaultOpen: true }
+            )}
 
-                  return (
-                    <Card key={a.id}>
-                      <CardContent className="p-6">
-                        <div className="flex flex-col lg:flex-row gap-4">
-                          <div className="flex items-center gap-4 flex-1">
-                            <div className="w-14 h-14 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-semibold text-lg">
-                              {initials}
-                            </div>
+            {renderGroupedSection("Upcoming", groupedAppointments.upcomingGroups, {
+              defaultOpen: true,
+            })}
 
-                            <div>
-                              <h3 className="font-semibold text-gray-900">
-                                {a.patientName}
-                              </h3>
-                              <div className="flex items-center gap-2 mt-1 text-sm text-gray-600">
-                                <Calendar className="w-3 h-3" />
-                                <span>{formatPrettyDate(a.startTime)}</span>
-                                <span className="text-gray-400">•</span>
-                                <Clock className="w-3 h-3" />
-                                <span>{formatPrettyTime(a.startTime)}</span>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-3">
-                            <div className="text-sm">
-                              <p className="text-gray-600">Type</p>
-                              <p className="font-medium">{a.type}</p>
-                            </div>
-                            <Badge variant={getStatusColor(a.status)}>
-                              {a.status}
-                            </Badge>
-                          </div>
-
-                          <div className="flex gap-2">
-                            {a.status !== "Completed" && a.status !== "Cancelled" && (
-                              <>
-                                {a.status !== "Confirmed" && (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => updateStatus(a.id, "Confirmed", "Appointment confirmed")}
-                                  >
-                                    Confirm
-                                  </Button>
-                                )}
-
-                                {a.status === "Confirmed" && (
-                                  <Button
-                                    size="sm"
-                                    onClick={() => updateStatus(a.id, "Completed", "Marked completed")}
-                                  >
-                                    <CheckCircle className="w-3 h-3 mr-1" />
-                                    Complete
-                                  </Button>
-                                )}
-
-                                <Button
-                                  size="sm"
-                                  variant="destructive"
-                                  onClick={() => updateStatus(a.id, "Cancelled", "Cancelled")}
-                                >
-                                  <XCircle className="w-3 h-3 mr-1" />
-                                  Cancel
-                                </Button>
-                              </>
-                            )}
-
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setSelectedAppointment(a)}
-                            >
-                              Details
-                            </Button>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-            ) : null}
-
-            {groupedAppointments.past.length > 0 ? (
-              <div className="space-y-4">
-                <div className="text-sm font-medium text-gray-900">Past</div>
-                {groupedAppointments.past.map((a) => {
-                  const initials =
-                    (a.patientName || "Patient")
-                      .split(" ")
-                      .map((n) => n[0])
-                      .join("")
-                      .slice(0, 2)
-                      .toUpperCase() || "P";
-
-                  return (
-                    <Card key={a.id}>
-                      <CardContent className="p-6">
-                        <div className="flex flex-col lg:flex-row gap-4">
-                          <div className="flex items-center gap-4 flex-1">
-                            <div className="w-14 h-14 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-semibold text-lg">
-                              {initials}
-                            </div>
-
-                            <div>
-                              <h3 className="font-semibold text-gray-900">
-                                {a.patientName}
-                              </h3>
-                              <div className="flex items-center gap-2 mt-1 text-sm text-gray-600">
-                                <Calendar className="w-3 h-3" />
-                                <span>{formatPrettyDate(a.startTime)}</span>
-                                <span className="text-gray-400">•</span>
-                                <Clock className="w-3 h-3" />
-                                <span>{formatPrettyTime(a.startTime)}</span>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-3">
-                            <div className="text-sm">
-                              <p className="text-gray-600">Type</p>
-                              <p className="font-medium">{a.type}</p>
-                            </div>
-                            <Badge variant={getStatusColor(a.status)}>
-                              {a.status}
-                            </Badge>
-                          </div>
-
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => setSelectedAppointment(a)}
-                            >
-                              Details
-                            </Button>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-            ) : null}
+            {renderGroupedSection("Past", groupedAppointments.pastGroups, {
+              defaultOpen: false,
+              past: true,
+            })}
           </div>
         </>
       )}
