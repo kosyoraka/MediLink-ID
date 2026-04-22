@@ -618,23 +618,19 @@ export default function Dashboard({
                 <div className="flex items-center justify-between gap-3 mb-3">
                   <div>
                     <p className="text-sm text-gray-900">Recent Emergency Access</p>
-                    <p className="text-xs text-gray-500">See when your Emergency ID was opened.</p>
+                    <p className="text-xs text-gray-500">See the most recent time your Emergency ID was opened.</p>
                   </div>
                 </div>
 
                 {recentEmergencyAccesses.length === 0 ? (
                   <p className="text-sm text-gray-500">No emergency access events yet.</p>
                 ) : (
-                  <div className="space-y-3">
-                    {recentEmergencyAccesses.map((item) => (
-                      <div key={item.id} className="rounded-xl border border-gray-100 bg-gray-50 p-3">
-                        <p className="text-sm text-gray-900">
-                          {item.accessResult === 'revoked' ? 'Blocked access attempt' : 'Emergency ID viewed'}
-                        </p>
-                        <p className="mt-1 text-xs text-gray-500">{describeAccessDevice(item.userAgent)}</p>
-                        <p className="mt-2 text-xs text-gray-400">{formatEmergencyAccessTime(item.accessedAt)}</p>
-                      </div>
-                    ))}
+                  <div className="rounded-xl border border-gray-100 bg-gray-50 p-3">
+                    <p className="text-sm text-gray-900">
+                      {recentEmergencyAccesses[0].accessResult === 'revoked' ? 'Blocked access attempt' : 'Emergency ID viewed'}
+                    </p>
+                    <p className="mt-1 text-xs text-gray-500">{describeAccessDevice(recentEmergencyAccesses[0].userAgent)}</p>
+                    <p className="mt-2 text-xs text-gray-400">{formatEmergencyAccessTime(recentEmergencyAccesses[0].accessedAt)}</p>
                   </div>
                 )}
               </div>
