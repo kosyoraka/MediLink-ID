@@ -112,7 +112,7 @@ export function LoginPage({ onLogin, onSignUpClick }: LoginPageProps) {
         <div className="bg-white rounded-2xl shadow-xl p-8">
           <div className="flex flex-col items-center mb-8">
             <MedilinkIcon className="mb-4 h-16 w-16" />
-            <h1 className="text-2xl font-bold text-gray-900">MediLink ID Portal</h1>
+            <h1 className="text-2xl font-bold text-gray-900">Medilink ID Portal</h1>
             <p className="text-gray-600 mt-1">Hospital Staff Access</p>
           </div>
 

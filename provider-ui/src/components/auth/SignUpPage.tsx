@@ -381,7 +381,7 @@ export function SignUpPage({ onSignUp, onBackToLogin }: SignUpPageProps) {
             <div className="flex flex-col items-center mb-6">
               <MedilinkIcon className="mb-4 h-16 w-16" />
               <h1 className="text-2xl font-bold text-gray-900">Create Account</h1>
-              <p className="text-gray-600 mt-1">Join the MediLink ID Staff Portal</p>
+              <p className="text-gray-600 mt-1">Join the Medilink ID Staff Portal</p>
             </div>
 
             {selectedHospital && (

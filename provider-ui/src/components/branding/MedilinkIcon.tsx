@@ -10,8 +10,7 @@ export function MedilinkIcon({ className = "h-12 w-12" }: MedilinkIconProps) {
       <img
         src={medilinkLogo}
         alt="MediLink ID logo"
-        className="h-full max-w-none object-cover object-left"
-        style={{ width: "177.6px" }}
+        className="h-full w-auto max-w-none"
       />
     </div>
   );

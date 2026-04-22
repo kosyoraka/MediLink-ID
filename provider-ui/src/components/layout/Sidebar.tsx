@@ -42,7 +42,7 @@ export function Sidebar({ currentPage, onNavigate, isOpen, onClose }: SidebarPro
           <div className="flex items-center gap-3">
             <MedilinkIcon className="h-10 w-10 shrink-0" />
             <div>
-              <h1 className="font-bold text-gray-900">MediLink ID</h1>
+              <h1 className="font-bold text-gray-900">Medilink ID</h1>
               <p className="text-xs text-gray-600">Staff Portal</p>
             </div>
           </div>
@@ -84,7 +84,7 @@ export function Sidebar({ currentPage, onNavigate, isOpen, onClose }: SidebarPro
         {/* Footer */}
         <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-200">
           <div className="text-xs text-gray-600 text-center">
-            <p>MediLink ID v2.0</p>
+            <p>Medilink ID v2.0</p>
             <p className="mt-1">© 2026 All rights reserved</p>
           </div>
         </div>
