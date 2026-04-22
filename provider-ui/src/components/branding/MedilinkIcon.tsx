@@ -6,26 +6,15 @@ type MedilinkIconProps = {
 
 export function MedilinkIcon({ className = "h-12 w-12" }: MedilinkIconProps) {
   return (
-    <svg
-      viewBox="0 0 160 160"
-      className={className}
+    <div
+      className={`overflow-hidden rounded-full bg-no-repeat ${className}`.trim()}
       role="img"
       aria-label="Medilink ID logo"
-    >
-      <defs>
-        <clipPath id="medilink-circle-crop">
-          <circle cx="80" cy="80" r="80" />
-        </clipPath>
-      </defs>
-      <image
-        href={medilinkLogo}
-        x="0"
-        y="0"
-        width="444"
-        height="160"
-        preserveAspectRatio="xMinYMid slice"
-        clipPath="url(#medilink-circle-crop)"
-      />
-    </svg>
+      style={{
+        backgroundImage: `url(${medilinkLogo})`,
+        backgroundSize: "auto 100%",
+        backgroundPosition: "left center",
+      }}
+    />
   );
 }
