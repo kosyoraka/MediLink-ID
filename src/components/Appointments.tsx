@@ -45,11 +45,6 @@ function toDateInputValue(date: Date) {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 }
 
-function formatDurationLabel(durationMinutes?: number) {
-  if (!durationMinutes) return "";
-  return durationMinutes === 60 ? "60 minutes" : `${durationMinutes} minutes`;
-}
-
 function formatWhen(iso: string) {
   const d = new Date(iso);
 
@@ -653,14 +648,7 @@ setAppointments(
             </div>
 
             <div>
-              <div className="flex items-center justify-between gap-3 mb-2">
-                <label className="block text-sm text-gray-600">Available times</label>
-                {availabilityDuration ? (
-                  <span className="text-xs text-gray-500">
-                    {formatDurationLabel(availabilityDuration)} • 6:00 AM - 6:00 PM
-                  </span>
-                ) : null}
-              </div>
+              <label className="block text-sm text-gray-600 mb-2">Available time</label>
 
               {!selectedDate || !staffId || !selectedApptType ? (
                 <div className="rounded-lg border border-dashed border-gray-200 px-3 py-4 text-sm text-gray-500">
@@ -679,24 +667,20 @@ setAppointments(
                   No open time slots are available for that day.
                 </div>
               ) : (
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                <select
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  value={selectedSlot}
+                  onChange={(event) => setSelectedSlot(event.target.value)}
+                >
+                  <option value="">Select a time…</option>
                   {availableSlots
                     .filter((slot) => slot.available)
                     .map((slot) => (
-                      <button
-                        key={slot.localDateTime}
-                        type="button"
-                        onClick={() => setSelectedSlot(slot.localDateTime)}
-                        className={`rounded-lg border px-3 py-2 text-sm transition-colors ${
-                          selectedSlot === slot.localDateTime
-                            ? "border-teal-600 bg-teal-50 text-teal-700"
-                            : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
-                        }`}
-                      >
+                      <option key={slot.localDateTime} value={slot.localDateTime}>
                         {slot.label}
-                      </button>
+                      </option>
                     ))}
-                </div>
+                </select>
               )}
             </div>
           </div>
@@ -944,14 +928,7 @@ setAppointments(
                     </div>
 
                     <div>
-                      <div className="flex items-center justify-between gap-3 mb-2">
-                        <label className="block text-sm text-gray-600">Available times</label>
-                        {rescheduleDuration ? (
-                          <span className="text-xs text-gray-500">
-                            {formatDurationLabel(rescheduleDuration)} • 6:00 AM - 6:00 PM
-                          </span>
-                        ) : null}
-                      </div>
+                      <label className="block text-sm text-gray-600 mb-2">Available time</label>
 
                       {rescheduleLoading ? (
                         <div className="rounded-lg border border-gray-200 px-3 py-4 text-sm text-gray-500">
@@ -962,24 +939,20 @@ setAppointments(
                           No open time slots are available for that day.
                         </div>
                       ) : (
-                        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                        <select
+                          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                          value={rescheduleSlot}
+                          onChange={(event) => setRescheduleSlot(event.target.value)}
+                        >
+                          <option value="">Select a time…</option>
                           {rescheduleSlots
                             .filter((slot) => slot.available)
                             .map((slot) => (
-                              <button
-                                key={slot.localDateTime}
-                                type="button"
-                                onClick={() => setRescheduleSlot(slot.localDateTime)}
-                                className={`rounded-lg border px-3 py-2 text-sm transition-colors ${
-                                  rescheduleSlot === slot.localDateTime
-                                    ? "border-teal-600 bg-teal-50 text-teal-700"
-                                    : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
-                                }`}
-                              >
+                              <option key={slot.localDateTime} value={slot.localDateTime}>
                                 {slot.label}
-                              </button>
+                              </option>
                             ))}
-                        </div>
+                        </select>
                       )}
                     </div>
 
