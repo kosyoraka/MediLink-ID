@@ -9,7 +9,16 @@ const outputs = [
   ["icon-512.png", 512],
 ];
 
-const iconDirs = ["public/icons", "provider-ui/public/icons"];
+const targets = [
+  {
+    directory: "public/icons",
+    variant: "patient",
+  },
+  {
+    directory: "provider-ui/public/icons",
+    variant: "provider",
+  },
+];
 
 function clamp(value, min = 0, max = 255) {
   return Math.max(min, Math.min(max, value));
@@ -88,21 +97,40 @@ function drawRoundedRect(buffer, size, x, y, width, height, radius, color, alpha
   }
 }
 
-function drawLinkMark(buffer, size, cx, cy, scale) {
+function drawLinkMark(buffer, size, cx, cy, scale, cutoutColor = "#12a889") {
   const white = hexToRgb("#ffffff");
   const stroke = scale * 0.032;
   drawRoundedRect(buffer, size, cx - scale * 0.16, cy - scale * 0.055, scale * 0.20, scale * 0.11, stroke, white, 0.92, 0.9);
-  drawRoundedRect(buffer, size, cx - scale * 0.11, cy - scale * 0.018, scale * 0.10, scale * 0.036, stroke * 0.5, hexToRgb("#12a889"), 1, 0.8);
+  drawRoundedRect(buffer, size, cx - scale * 0.11, cy - scale * 0.018, scale * 0.10, scale * 0.036, stroke * 0.5, hexToRgb(cutoutColor), 1, 0.8);
   drawRoundedRect(buffer, size, cx - scale * 0.02, cy - scale * 0.055, scale * 0.20, scale * 0.11, stroke, white, 0.92, 0.9);
-  drawRoundedRect(buffer, size, cx + scale * 0.03, cy - scale * 0.018, scale * 0.10, scale * 0.036, stroke * 0.5, hexToRgb("#12a889"), 1, 0.8);
+  drawRoundedRect(buffer, size, cx + scale * 0.03, cy - scale * 0.018, scale * 0.10, scale * 0.036, stroke * 0.5, hexToRgb(cutoutColor), 1, 0.8);
   drawRoundedRect(buffer, size, cx - scale * 0.055, cy - scale * 0.018, scale * 0.11, scale * 0.036, stroke * 0.5, white, 0.92, 0.8);
 }
 
-function makeIcon(size) {
+function drawProviderBadge(buffer, size, center, markRadius) {
+  const badgeX = center + markRadius * 0.24;
+  const badgeY = center - markRadius * 0.62;
+  const badgeW = markRadius * 0.68;
+  const badgeH = markRadius * 0.34;
+  const blue = hexToRgb("#1d4ed8");
+  const white = hexToRgb("#ffffff");
+
+  drawRoundedRect(buffer, size, badgeX, badgeY, badgeW, badgeH, badgeH * 0.32, hexToRgb("#001b3b"), 0.18, size * 0.004);
+  drawRoundedRect(buffer, size, badgeX, badgeY, badgeW, badgeH, badgeH * 0.32, blue, 0.96, size * 0.004);
+  drawCircle(buffer, size, badgeX + badgeW * 0.26, badgeY + badgeH * 0.34, badgeH * 0.14, white, 0.96, size * 0.003);
+  drawRoundedRect(buffer, size, badgeX + badgeW * 0.16, badgeY + badgeH * 0.52, badgeW * 0.20, badgeH * 0.20, badgeH * 0.08, white, 0.96, size * 0.003);
+  drawRoundedRect(buffer, size, badgeX + badgeW * 0.45, badgeY + badgeH * 0.28, badgeW * 0.34, badgeH * 0.12, badgeH * 0.06, white, 0.9, size * 0.003);
+  drawRoundedRect(buffer, size, badgeX + badgeW * 0.45, badgeY + badgeH * 0.52, badgeW * 0.24, badgeH * 0.10, badgeH * 0.05, white, 0.72, size * 0.003);
+}
+
+function makeIcon(size, variant = "patient") {
   const buffer = Buffer.alloc(size * size * 4);
-  const dark = hexToRgb("#052f44");
-  const blue = hexToRgb("#007ca8");
-  const teal = hexToRgb("#009b82");
+  const isProvider = variant === "provider";
+  const dark = hexToRgb(isProvider ? "#061633" : "#052f44");
+  const blue = hexToRgb(isProvider ? "#1d4ed8" : "#007ca8");
+  const teal = hexToRgb(isProvider ? "#0ea5e9" : "#009b82");
+  const linkColor = isProvider ? "#2563eb" : "#13b58f";
+  const linkCutout = isProvider ? "#2563eb" : "#12a889";
 
   for (let y = 0; y < size; y += 1) {
     for (let x = 0; x < size; x += 1) {
@@ -121,14 +149,14 @@ function makeIcon(size) {
   }
 
   drawCircle(buffer, size, size * 0.73, size * 0.2, size * 0.19, hexToRgb("#ffffff"), 0.07, size * 0.006);
-  drawCircle(buffer, size, size * 0.22, size * 0.83, size * 0.28, hexToRgb("#00d0a2"), 0.13, size * 0.006);
+  drawCircle(buffer, size, size * 0.22, size * 0.83, size * 0.28, hexToRgb(isProvider ? "#60a5fa" : "#00d0a2"), 0.13, size * 0.006);
 
   const center = size / 2;
   const markRadius = size * 0.29;
   drawCircle(buffer, size, center, center + size * 0.005, markRadius * 1.03, hexToRgb("#001b2b"), 0.2, size * 0.012);
-  drawCircle(buffer, size, center, center, markRadius, hexToRgb("#0796bb"), 1, size * 0.006);
-  drawCircle(buffer, size, center + markRadius * 0.18, center + markRadius * 0.28, markRadius * 0.88, hexToRgb("#009b82"), 0.55, size * 0.006);
-  drawCircle(buffer, size, center - markRadius * 0.36, center - markRadius * 0.42, markRadius * 0.62, hexToRgb("#3aa9d4"), 0.24, size * 0.006);
+  drawCircle(buffer, size, center, center, markRadius, hexToRgb(isProvider ? "#2563eb" : "#0796bb"), 1, size * 0.006);
+  drawCircle(buffer, size, center + markRadius * 0.18, center + markRadius * 0.28, markRadius * 0.88, hexToRgb(isProvider ? "#0891b2" : "#009b82"), 0.55, size * 0.006);
+  drawCircle(buffer, size, center - markRadius * 0.36, center - markRadius * 0.42, markRadius * 0.62, hexToRgb(isProvider ? "#60a5fa" : "#3aa9d4"), 0.24, size * 0.006);
 
   const plusThickness = markRadius * 0.17;
   const plusLength = markRadius * 1.08;
@@ -138,8 +166,12 @@ function makeIcon(size) {
   const linkRadius = markRadius * 0.24;
   const linkCx = center + markRadius * 0.78;
   const linkCy = center + markRadius * 0.76;
-  drawCircle(buffer, size, linkCx, linkCy, linkRadius, hexToRgb("#13b58f"), 1, size * 0.004);
-  drawLinkMark(buffer, size, linkCx, linkCy, markRadius);
+  drawCircle(buffer, size, linkCx, linkCy, linkRadius, hexToRgb(linkColor), 1, size * 0.004);
+  drawLinkMark(buffer, size, linkCx, linkCy, markRadius, linkCutout);
+
+  if (isProvider) {
+    drawProviderBadge(buffer, size, center, markRadius);
+  }
 
   return encodePng(buffer, size, size);
 }
@@ -191,8 +223,7 @@ function encodePng(rgba, width, height) {
 }
 
 for (const [fileName, size] of outputs) {
-  const png = makeIcon(size);
-  for (const directory of iconDirs) {
-    writeFileSync(join(directory, fileName), png);
+  for (const target of targets) {
+    writeFileSync(join(target.directory, fileName), makeIcon(size, target.variant));
   }
 }
