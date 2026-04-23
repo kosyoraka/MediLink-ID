@@ -5,6 +5,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Checkbox } from '../ui/checkbox';
 import { API_BASE } from "@/config/api";
+import { getPatientDeviceId } from '@/lib/patientDevice';
 
 interface SignUpProps {
   onBack: () => void;
@@ -107,6 +108,7 @@ export default function SignUp({ onBack, onGoToSignIn, onSignUp }: SignUpProps) 
           credential,
           acceptedTerms: agreed,
           hospitalId: hospitalId || undefined,
+          deviceId: getPatientDeviceId(),
         }),
       });
 

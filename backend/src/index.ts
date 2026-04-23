@@ -816,11 +816,297 @@ async function ensureNotificationReadsSchema() {
   }
 }
 
+async function ensurePatientSecuritySchema() {
+  const sql = await readFile(path.resolve(__dirname, "../011_patient_security_events.sql"), "utf8");
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    try {
+      await pool.query(sql);
+      return;
+    } catch (error) {
+      if (attempt === 5) {
+        console.error("Patient security schema setup skipped:", error);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+    }
+  }
+}
+
 function getRequestIp(req: any) {
   const forwardedFor = req.headers["x-forwarded-for"];
   if (Array.isArray(forwardedFor)) return String(forwardedFor[0] || "").split(",")[0].trim() || null;
   if (typeof forwardedFor === "string") return forwardedFor.split(",")[0].trim() || null;
   return req.ip || req.socket?.remoteAddress || null;
+}
+
+function normalizePatientDeviceId(value: unknown) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  if (raw.length > 200) return raw.slice(0, 200);
+  return raw;
+}
+
+function parseUserAgentSummary(userAgent: string | null | undefined) {
+  const raw = String(userAgent || "").toLowerCase();
+
+  let browser = "Browser";
+  if (raw.includes("edg/")) browser = "Edge";
+  else if (raw.includes("opr/") || raw.includes("opera")) browser = "Opera";
+  else if (raw.includes("chrome/")) browser = "Chrome";
+  else if (raw.includes("firefox/")) browser = "Firefox";
+  else if (raw.includes("safari/") && !raw.includes("chrome/")) browser = "Safari";
+
+  let platform = "Unknown device";
+  if (raw.includes("iphone")) platform = "iPhone";
+  else if (raw.includes("ipad")) platform = "iPad";
+  else if (raw.includes("android")) platform = "Android";
+  else if (raw.includes("mac os x") || raw.includes("macintosh")) platform = "Mac";
+  else if (raw.includes("windows")) platform = "Windows";
+  else if (raw.includes("linux")) platform = "Linux";
+
+  return { browser, platform };
+}
+
+function buildPatientDeviceName(req: any) {
+  const userAgent = req.get("user-agent") || "";
+  const chPlatform = String(req.get("sec-ch-ua-platform") || "").replace(/"/g, "").trim();
+  const parsed = parseUserAgentSummary(userAgent);
+  const platform = chPlatform || parsed.platform;
+  return `${platform} · ${parsed.browser}`;
+}
+
+async function recordPatientSecurityEvent(input: {
+  patientId: string;
+  eventType: string;
+  severity?: "info" | "warning" | "critical";
+  req?: any;
+  metadata?: Record<string, unknown>;
+}) {
+  await pool.query(
+    `
+    INSERT INTO patient_security_events (
+      patient_id,
+      event_type,
+      severity,
+      ip_address,
+      user_agent,
+      metadata
+    )
+    VALUES ($1::uuid, $2, $3, $4, $5, $6::jsonb)
+    `,
+    [
+      input.patientId,
+      input.eventType,
+      input.severity || "info",
+      input.req ? getRequestIp(input.req) : null,
+      input.req?.get?.("user-agent") || null,
+      JSON.stringify(input.metadata || {}),
+    ]
+  );
+}
+
+async function sendPatientSecurityEmail(input: {
+  to: string;
+  subject: string;
+  heading: string;
+  intro: string;
+  bullets?: string[];
+  footer?: string;
+}) {
+  const bulletsHtml = (input.bullets || [])
+    .map((item) => `<li>${item}</li>`)
+    .join("");
+
+  return sendTransactionalEmail({
+    to: input.to,
+    subject: input.subject,
+    html: `
+      <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #0f172a;">
+        <h2>${input.heading}</h2>
+        <p>${input.intro}</p>
+        ${bulletsHtml ? `<ul>${bulletsHtml}</ul>` : ""}
+        ${input.footer ? `<p>${input.footer}</p>` : ""}
+      </div>
+    `,
+    text: [
+      input.heading,
+      "",
+      input.intro,
+      ...(input.bullets || []).map((item) => `- ${item}`),
+      "",
+      input.footer || "",
+    ]
+      .filter(Boolean)
+      .join("\n"),
+  });
+}
+
+async function sendPatientNewDeviceSigninEmail(email: string, details: {
+  deviceName: string;
+  signInMethod: string;
+  ipAddress: string | null;
+  occurredAt: string;
+}) {
+  return sendPatientSecurityEmail({
+    to: email,
+    subject: "New sign-in to your MediLink ID account",
+    heading: "New sign-in detected",
+    intro: "We noticed a sign-in from a device or browser that has not been used with your MediLink ID account before.",
+    bullets: [
+      `Device: ${details.deviceName}`,
+      `Sign-in method: ${details.signInMethod}`,
+      `Time: ${details.occurredAt}`,
+      ...(details.ipAddress ? [`IP address: ${details.ipAddress}`] : []),
+    ],
+    footer: "If this was you, no action is needed. If it was not, reset your password right away.",
+  });
+}
+
+async function sendPatientPasswordChangedEmail(email: string, details: {
+  occurredAt: string;
+  ipAddress: string | null;
+}) {
+  return sendPatientSecurityEmail({
+    to: email,
+    subject: "Your MediLink ID password was changed",
+    heading: "Password changed",
+    intro: "Your MediLink ID password was just updated.",
+    bullets: [
+      `Time: ${details.occurredAt}`,
+      ...(details.ipAddress ? [`IP address: ${details.ipAddress}`] : []),
+    ],
+    footer: "If you did not make this change, reset your password and contact support immediately.",
+  });
+}
+
+async function sendPatientEmergencyAccessAlertEmail(email: string, details: {
+  occurredAt: string;
+  staffName?: string | null;
+  hospitalName?: string | null;
+  ipAddress: string | null;
+}) {
+  const responder =
+    details.staffName && details.hospitalName
+      ? `${details.staffName} at ${details.hospitalName}`
+      : details.staffName || details.hospitalName || "an authorized responder";
+
+  return sendPatientSecurityEmail({
+    to: email,
+    subject: "Emergency access was used for your MediLink ID",
+    heading: "Emergency access alert",
+    intro: `Emergency access to your MediLink ID profile was used by ${responder}.`,
+    bullets: [
+      `Time: ${details.occurredAt}`,
+      ...(details.ipAddress ? [`IP address: ${details.ipAddress}`] : []),
+    ],
+    footer: "If this does not look expected, review your emergency settings and contact support.",
+  });
+}
+
+async function registerPatientSigninDevice(input: {
+  patientId: string;
+  email: string;
+  req: any;
+  deviceId: string | null;
+  signInMethod: "password" | "google";
+}) {
+  if (!input.deviceId) {
+    return { isNewDevice: false, deviceName: null };
+  }
+
+  const existingCountResult = await pool.query(
+    `
+    SELECT COUNT(*)::int AS count
+    FROM patient_signin_devices
+    WHERE patient_id = $1::uuid
+    `,
+    [input.patientId]
+  );
+
+  const existingDeviceResult = await pool.query(
+    `
+    SELECT id
+    FROM patient_signin_devices
+    WHERE patient_id = $1::uuid
+      AND device_id = $2
+    LIMIT 1
+    `,
+    [input.patientId, input.deviceId]
+  );
+
+  const deviceName = buildPatientDeviceName(input.req);
+  const ipAddress = getRequestIp(input.req);
+  const userAgent = input.req.get("user-agent") || null;
+  const nowLabel = new Date().toLocaleString("en-CA", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "America/Toronto",
+  });
+
+  if ((existingDeviceResult.rowCount ?? 0) > 0) {
+    await pool.query(
+      `
+      UPDATE patient_signin_devices
+      SET device_name = $3,
+          last_signin_method = $4,
+          last_seen_at = NOW(),
+          last_ip_address = $5,
+          last_user_agent = $6,
+          updated_at = NOW()
+      WHERE patient_id = $1::uuid
+        AND device_id = $2
+      `,
+      [input.patientId, input.deviceId, deviceName, input.signInMethod, ipAddress, userAgent]
+    );
+
+    return { isNewDevice: false, deviceName };
+  }
+
+  await pool.query(
+    `
+    INSERT INTO patient_signin_devices (
+      patient_id,
+      device_id,
+      device_name,
+      last_signin_method,
+      last_ip_address,
+      last_user_agent
+    )
+    VALUES ($1::uuid, $2, $3, $4, $5, $6)
+    `,
+    [input.patientId, input.deviceId, deviceName, input.signInMethod, ipAddress, userAgent]
+  );
+
+  const existingCount = Number(existingCountResult.rows[0]?.count || 0);
+  const shouldAlert = existingCount > 0;
+
+  await recordPatientSecurityEvent({
+    patientId: input.patientId,
+    eventType: shouldAlert ? "signin_new_device" : "signin_first_trusted_device",
+    severity: "info",
+    req: input.req,
+    metadata: {
+      deviceId: input.deviceId,
+      deviceName,
+      signInMethod: input.signInMethod,
+      alerted: shouldAlert,
+    },
+  });
+
+  if (shouldAlert) {
+    try {
+      await sendPatientNewDeviceSigninEmail(input.email, {
+        deviceName,
+        signInMethod: input.signInMethod === "google" ? "Google" : "Email and password",
+        ipAddress,
+        occurredAt: nowLabel,
+      });
+    } catch (emailError) {
+      console.error("PATIENT NEW DEVICE EMAIL SEND ERROR:", emailError);
+    }
+  }
+
+  return { isNewDevice: shouldAlert, deviceName };
 }
 
 async function listEmergencyAccessLogs(patientId: string, limit = 10) {
@@ -1956,6 +2242,7 @@ await pool.query(
  */
 app.post("/api/auth/google", async (req, res) => {
   const { credential, acceptedTerms, hospitalId } = req.body ?? {};
+  const deviceId = normalizePatientDeviceId(req.body?.deviceId);
 
   if (!credential || typeof credential !== "string") {
     return res.status(400).json({ message: "Missing Google credential" });
@@ -1984,6 +2271,14 @@ app.post("/api/auth/google", async (req, res) => {
 
     if ((linked.rowCount ?? 0) > 0) {
       const user = linked.rows[0];
+      await registerPatientSigninDevice({
+        patientId: user.id,
+        email: user.email,
+        req,
+        deviceId,
+        signInMethod: "google",
+      });
+
       return res.status(200).json({
         id: user.id,
         email: user.email,
@@ -2075,6 +2370,14 @@ app.post("/api/auth/google", async (req, res) => {
       [googleSub, patientEmail, patientId]
     );
 
+    await registerPatientSigninDevice({
+      patientId,
+      email: patientEmail,
+      req,
+      deviceId,
+      signInMethod: "google",
+    });
+
     return res.status(200).json({
       id: patientId,
       email: patientEmail,
@@ -2105,6 +2408,7 @@ app.post("/api/auth/google", async (req, res) => {
 // POST /api/staff/auth/signin
 app.post("/api/auth/signin", async (req, res) => {
   const { email, password } = req.body;
+  const deviceId = normalizePatientDeviceId(req.body?.deviceId);
 
   if (!email || !password) {
     return res.status(400).json({ message: "Missing email or password" });
@@ -2140,6 +2444,14 @@ app.post("/api/auth/signin", async (req, res) => {
         code: "EMAIL_NOT_VERIFIED",
       });
     }
+
+    await registerPatientSigninDevice({
+      patientId: user.id,
+      email: user.email,
+      req,
+      deviceId,
+      signInMethod: "password",
+    });
 
     const token = signPatientToken({ id: user.id, email: user.email });
 
@@ -2276,6 +2588,15 @@ app.post("/api/auth/reset-password", async (req, res) => {
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
+    const patientResult = await pool.query(
+      `
+      SELECT email
+      FROM patients
+      WHERE id = $1::uuid
+      LIMIT 1
+      `,
+      [reset.patient_id]
+    );
 
     await pool.query(
       `
@@ -2294,6 +2615,34 @@ app.post("/api/auth/reset-password", async (req, res) => {
       `,
       [reset.id]
     );
+
+    const patientEmail = patientResult.rows[0]?.email ? String(patientResult.rows[0].email) : null;
+    const occurredAt = new Date().toLocaleString("en-CA", {
+      dateStyle: "medium",
+      timeStyle: "short",
+      timeZone: "America/Toronto",
+    });
+
+    await recordPatientSecurityEvent({
+      patientId: String(reset.patient_id),
+      eventType: "password_changed",
+      severity: "warning",
+      req,
+      metadata: {
+        source: "password_reset",
+      },
+    });
+
+    if (patientEmail) {
+      try {
+        await sendPatientPasswordChangedEmail(patientEmail, {
+          occurredAt,
+          ipAddress: getRequestIp(req),
+        });
+      } catch (emailError) {
+        console.error("PATIENT PASSWORD CHANGED EMAIL SEND ERROR:", emailError);
+      }
+    }
 
     return res.status(200).json({
       ok: true,
@@ -3431,6 +3780,59 @@ app.post("/api/emergency/access", async (req: any, res) => {
         req.get("user-agent") || null,
       ]
     );
+
+    if (resolvedAccessMethod === "staff_login" && data?.email) {
+      const occurredAt = new Date().toLocaleString("en-CA", {
+        dateStyle: "medium",
+        timeStyle: "short",
+        timeZone: "America/Toronto",
+      });
+
+      let responderName: string | null = null;
+      let responderHospital: string | null = null;
+
+      if (staffId) {
+        const staffResult = await pool.query(
+          `
+          SELECT sa.full_name, h.name AS hospital_name
+          FROM staff_accounts sa
+          LEFT JOIN hospitals h ON h.id = sa.hospital_id
+          WHERE sa.id = $1::uuid
+          LIMIT 1
+          `,
+          [staffId]
+        );
+
+        if ((staffResult.rowCount ?? 0) > 0) {
+          responderName = staffResult.rows[0].full_name ? String(staffResult.rows[0].full_name) : null;
+          responderHospital = staffResult.rows[0].hospital_name ? String(staffResult.rows[0].hospital_name) : null;
+        }
+      }
+
+      await recordPatientSecurityEvent({
+        patientId: String(emergencyLink.patient_id),
+        eventType: "emergency_access_alert",
+        severity: "critical",
+        req,
+        metadata: {
+          accessMethod: resolvedAccessMethod,
+          staffId,
+          responderName,
+          responderHospital,
+        },
+      });
+
+      try {
+        await sendPatientEmergencyAccessAlertEmail(String(data.email), {
+          occurredAt,
+          staffName: responderName,
+          hospitalName: responderHospital,
+          ipAddress: getRequestIp(req),
+        });
+      } catch (emailError) {
+        console.error("PATIENT EMERGENCY ACCESS ALERT EMAIL SEND ERROR:", emailError);
+      }
+    }
 
     return res.json(data);
   } catch (e: any) {
@@ -8025,6 +8427,7 @@ async function initializeSchemas() {
   await ensureEmergencyAccessSchema();
   await ensureEmergencyAccessSecuritySchema();
   await ensureNotificationReadsSchema();
+  await ensurePatientSecuritySchema();
 }
 
 function startServer() {

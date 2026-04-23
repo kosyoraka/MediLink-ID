@@ -74,7 +74,7 @@ export default function ResetPassword({ token, onBack, onComplete }: ResetPasswo
 
       <h1 className="mb-2 text-gray-900">Choose a new password</h1>
       <p className="text-gray-600 mb-8">
-        Create a new secure password for your MediLink ID account.
+        Create a new password for your account.
       </p>
 
       <form onSubmit={handleSubmit} className="space-y-6 max-w-md">

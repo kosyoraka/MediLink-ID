@@ -3,6 +3,7 @@ import { ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { GoogleLogin, type CredentialResponse } from '@react-oauth/google';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
+import { getPatientDeviceId } from '@/lib/patientDevice';
 
 interface SignInProps {
   onSignIn: (userData: { email: string; name: string; healthCard: string; dob: string; connectedProviders: string[] }) => void;
@@ -32,7 +33,11 @@ export default function SignIn({ onSignIn, onRequireVerification, onForgotPasswo
       const res = await fetch(`${API_BASE_URL}/api/auth/signin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({
+          email,
+          password,
+          deviceId: getPatientDeviceId(),
+        }),
       });
 
       const data = await res.json();
@@ -75,7 +80,10 @@ export default function SignIn({ onSignIn, onRequireVerification, onForgotPasswo
       const res = await fetch(`${API_BASE_URL}/api/auth/google`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ credential }),
+        body: JSON.stringify({
+          credential,
+          deviceId: getPatientDeviceId(),
+        }),
       });
 
       const data = await res.json();

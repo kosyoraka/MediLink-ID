@@ -58,7 +58,7 @@ export default function ForgotPassword({ initialEmail = '', onBack, onComplete }
 
       <h1 className="mb-2 text-gray-900">Reset your password</h1>
       <p className="text-gray-600 mb-8">
-        Enter your email address and we will send you a secure link to reset your password.
+        Enter your email and we will send you a reset link.
       </p>
 
       <form onSubmit={handleSubmit} className="space-y-6 max-w-md">
@@ -101,7 +101,7 @@ export default function ForgotPassword({ initialEmail = '', onBack, onComplete }
         ) : (
           <>
             <div className="rounded-md border border-teal-100 bg-teal-50 px-4 py-3 text-sm text-teal-700">
-              Check your inbox for a password reset link. If you do not see it soon, check spam or promotions.
+              Check your inbox for the reset link. If you do not see it, check spam or promotions.
             </div>
 
             <Button

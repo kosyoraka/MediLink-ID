@@ -30,7 +30,7 @@ export default function VerifyEmail({
           iconClass: 'text-green-600',
           iconWrapClass: 'bg-green-100',
           title: 'Email verified',
-          body: 'Your MediLink ID account is now verified. You can continue to sign in securely.',
+          body: 'Your account is verified. You can sign in now.',
         };
       case 'expired':
       case 'invalid':
@@ -39,8 +39,8 @@ export default function VerifyEmail({
           icon: TriangleAlert,
           iconClass: 'text-amber-600',
           iconWrapClass: 'bg-amber-100',
-          title: 'Verification link needs attention',
-          body: 'This verification link is invalid, expired, or has already been used. You can request a fresh verification email below.',
+          title: 'Link expired or invalid',
+          body: 'Request a new verification email to continue.',
         };
       default:
         return {
@@ -48,7 +48,7 @@ export default function VerifyEmail({
           iconClass: 'text-teal-600',
           iconWrapClass: 'bg-teal-100',
           title: 'Check your email',
-          body: 'We sent a verification link to your inbox. Open that email and click the link to activate your account before signing in.',
+          body: 'We sent you a verification link. Open the email to activate your account.',
         };
     }
   }, [status]);
@@ -103,7 +103,7 @@ export default function VerifyEmail({
 
         {status === 'pending' && (
           <div className="w-full max-w-sm rounded-md border border-teal-100 bg-teal-50 px-4 py-3 text-sm text-teal-700 mb-4">
-            Tip: if you do not see the email in a minute, check spam or promotions first.
+            If you do not see it, check spam or promotions.
           </div>
         )}
 
@@ -141,7 +141,7 @@ export default function VerifyEmail({
             </Button>
 
             <p className="text-center text-sm text-gray-500 max-w-sm mb-4">
-              We will always send the newest verification link. Older links may stop working once a fresh one is issued.
+              Only the newest verification email will work.
             </p>
           </>
         )}
