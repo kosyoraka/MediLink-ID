@@ -15,6 +15,20 @@ export async function setAppointmentStatus(
   });
 }
 
+export async function createStaffAppointment(body: {
+  patientId: string;
+  startTime: string;
+  localDateTime: string;
+  appointmentType: string;
+  visitMode: string;
+  notes?: string;
+}) {
+  return apiFetch<{ id: string }>("/api/staff/appointments", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
 export async function getStaffAppointmentAvailability(params: {
   date: string;
   appointmentType: string;

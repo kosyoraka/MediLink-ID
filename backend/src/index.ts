@@ -4503,6 +4503,8 @@ app.get("/api/staff/messages/conversations", requireStaffAuth, async (req: any, 
         c.id,
         c.patient_id,
         p.email AS patient_email,
+        pp.first_name,
+        pp.last_name,
 
         COALESCE(
           NULLIF(TRIM(pp.first_name || ' ' || pp.last_name), ''),
@@ -4593,6 +4595,68 @@ app.get("/api/staff/messages/conversations", requireStaffAuth, async (req: any, 
     return res.json({ conversations: r.rows });
   } catch (e: any) {
     console.error("STAFF LIST CONVERSATIONS ERROR:", e);
+    return res.status(500).json({ message: e?.message || "Server error" });
+  }
+});
+
+// POST /api/staff/messages/conversations/start
+// body: { patientId, body }
+app.post("/api/staff/messages/conversations/start", requireStaffAuth, async (req: any, res) => {
+  try {
+    const staffId = req.staffId as string;
+    const hospitalId = req.staffHospitalId as string;
+    const patientId = String(req.body?.patientId || "").trim();
+    const body = String(req.body?.body || "").trim();
+
+    if (!patientId || !body) {
+      return res.status(400).json({ message: "Missing patient or message" });
+    }
+
+    const connected = await pool.query(
+      `
+      SELECT 1
+      FROM patient_provider_connections
+      WHERE patient_id = $1::uuid
+        AND provider_id = $2::uuid
+        AND disconnected_at IS NULL
+      LIMIT 1
+      `,
+      [patientId, hospitalId]
+    );
+    if ((connected.rowCount ?? 0) === 0) {
+      return res.status(403).json({ message: "Patient is not actively connected to this provider" });
+    }
+
+    const conv = await pool.query(
+      `
+      INSERT INTO message_conversations (
+        patient_id, provider_id, staff_id, last_message_preview, last_message_at, staff_last_read_at, created_at, updated_at
+      )
+      VALUES ($1::uuid, $2::uuid, $3::uuid, $4, NOW(), NOW(), NOW(), NOW())
+      ON CONFLICT (patient_id, provider_id, staff_id)
+      DO UPDATE SET
+        last_message_preview = EXCLUDED.last_message_preview,
+        last_message_at = NOW(),
+        staff_last_read_at = NOW(),
+        updated_at = NOW()
+      RETURNING id
+      `,
+      [patientId, hospitalId, staffId, body.slice(0, 200)]
+    );
+
+    const conversationId = String(conv.rows[0].id);
+    const msg = await pool.query(
+      `
+      INSERT INTO message_items (conversation_id, sender_type, sender_staff_id, body)
+      VALUES ($1::uuid, 'staff', $2::uuid, $3)
+      RETURNING id, sender_type, body, created_at
+      `,
+      [conversationId, staffId, body]
+    );
+
+    return res.status(201).json({ conversationId, message: msg.rows[0] });
+  } catch (e: any) {
+    console.error("STAFF START CONVERSATION ERROR:", e);
     return res.status(500).json({ message: e?.message || "Server error" });
   }
 });
@@ -5622,6 +5686,101 @@ app.post("/api/patient/appointments/:id/reschedule-request", requirePatientAuth,
 // GET /api/staff/appointments
 // GET staff appointments (scoped to logged-in staff)
 // GET /api/staff/appointments
+app.post("/api/staff/appointments", requireStaffAuth, async (req: any, res) => {
+  try {
+    const staffId = req.staffId as string;
+    const hospitalId = req.staffHospitalId as string;
+    const {
+      patientId,
+      startTime,
+      localDateTime,
+      appointmentType,
+      visitMode,
+      notes,
+    } = req.body ?? {};
+
+    if (!patientId || !startTime || !localDateTime || !appointmentType || !visitMode) {
+      return res.status(400).json({
+        message: "Missing patient, appointment date/time, appointment type, or visit mode",
+      });
+    }
+
+    const connected = await pool.query(
+      `
+      SELECT 1
+      FROM patient_provider_connections
+      WHERE patient_id = $1::uuid
+        AND provider_id = $2::uuid
+        AND disconnected_at IS NULL
+      LIMIT 1
+      `,
+      [patientId, hospitalId]
+    );
+    if ((connected.rowCount ?? 0) === 0) {
+      return res.status(403).json({ message: "Patient is not actively connected to this provider" });
+    }
+
+    const staffRes = await pool.query(
+      `
+      SELECT id, full_name, hospital_id
+      FROM staff_accounts
+      WHERE id = $1::uuid
+        AND hospital_id = $2::uuid
+      LIMIT 1
+      `,
+      [staffId, hospitalId]
+    );
+    if ((staffRes.rowCount ?? 0) === 0) {
+      return res.status(403).json({ message: "Staff account is not connected to this provider" });
+    }
+
+    const parsedLocal = parseLocalDateTimeInput(localDateTime);
+    if (!parsedLocal) {
+      return res.status(400).json({ message: "Invalid appointment date/time" });
+    }
+
+    const durationMinutes = getAppointmentDurationMinutes(appointmentType);
+    if (!isWithinSchedulingWindow(parsedLocal.minutesOfDay, durationMinutes)) {
+      return res.status(400).json({ message: "Appointments must be scheduled between 6:00 AM and 6:00 PM" });
+    }
+
+    const availability = await getAvailableSlotsForStaffOnDate(staffId, parsedLocal.date, appointmentType);
+    const requestedSlot = availability.slots.find((slot) => slot.localDateTime === localDateTime);
+    if (!requestedSlot?.available) {
+      return res.status(409).json({ message: "That appointment time is no longer available" });
+    }
+
+    const id = randomUUID();
+    const result = await pool.query(
+      `
+      INSERT INTO appointments (
+        id, patient_id, staff_id, hospital_id,
+        provider_name, specialty, start_time, type,
+        status, notes, created_at
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'Confirmed',$9,NOW())
+      RETURNING id
+      `,
+      [
+        id,
+        patientId,
+        staffId,
+        hospitalId,
+        staffRes.rows[0].full_name,
+        appointmentType,
+        startTime,
+        visitMode,
+        notes ? String(notes).trim() : null,
+      ]
+    );
+
+    return res.status(201).json({ id: result.rows[0].id });
+  } catch (err: any) {
+    console.error("POST /api/staff/appointments error:", err);
+    return res.status(500).json({ message: err?.message || "Failed to create appointment" });
+  }
+});
+
 app.get("/api/staff/appointments", requireStaffAuth, async (req: any, res) => {
   const staffId = req.staffId as string;
 

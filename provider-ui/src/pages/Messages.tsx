@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Search, Send, CheckCircle2 } from "lucide-react";
+import { Search, Send, CheckCircle2, Plus } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -116,8 +116,13 @@ export function Messages({ onNavigate }: MessagesProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState<"all" | "medication-change" | "refill">("all");
   const [newMessage, setNewMessage] = useState("");
+  const [patients, setPatients] = useState<PatientListRow[]>([]);
+  const [showNewConversation, setShowNewConversation] = useState(false);
+  const [newConversationPatientId, setNewConversationPatientId] = useState("");
+  const [newConversationBody, setNewConversationBody] = useState("");
   const [loadingConversations, setLoadingConversations] = useState(false);
   const [loadingMessages, setLoadingMessages] = useState(false);
+  const [startingConversation, setStartingConversation] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -145,6 +150,10 @@ export function Messages({ onNavigate }: MessagesProps) {
   const medicationRefillConversationCount = useMemo(
     () => conversations.filter((c) => isMedicationRefillConversation(c)).length,
     [conversations]
+  );
+  const activePatients = useMemo(
+    () => patients.filter((patient) => patient.connection_status !== "Inactive"),
+    [patients]
   );
 
   const scrollToBottom = () => {
@@ -200,6 +209,7 @@ export function Messages({ onNavigate }: MessagesProps) {
           return [r.patient_id, patient];
         })
       );
+      setPatients(rows);
       setPatientsById(mapped);
     } catch {
       setPatientsById({});
@@ -304,6 +314,38 @@ export function Messages({ onNavigate }: MessagesProps) {
     }
   };
 
+  const handleStartConversation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const patientId = newConversationPatientId;
+    const body = newConversationBody.trim();
+    if (!patientId || !body) {
+      toast.error("Choose a patient and write a message first");
+      return;
+    }
+
+    try {
+      setStartingConversation(true);
+      const data = await apiFetch<{ conversationId: string }>(
+        "/api/staff/messages/conversations/start",
+        {
+          method: "POST",
+          body: JSON.stringify({ patientId, body }),
+        }
+      );
+      await loadConversations();
+      setSelectedConversationId(data.conversationId);
+      await loadMessages(data.conversationId);
+      setShowNewConversation(false);
+      setNewConversationPatientId("");
+      setNewConversationBody("");
+      toast.success("Message sent");
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to start message");
+    } finally {
+      setStartingConversation(false);
+    }
+  };
+
   const handleResolveMedicationChange = (conversation: StaffConversation) => {
     const patient = patientsById[conversation.patient_id];
     if (!patient || !conversation.active_medication_change_request_id || !conversation.active_medication_change_medication_id) {
@@ -341,6 +383,42 @@ export function Messages({ onNavigate }: MessagesProps) {
       >
         {/* Search */}
         <div className="p-4 border-b border-gray-200">
+          <Button
+            type="button"
+            className="mb-3 w-full gap-2"
+            onClick={() => setShowNewConversation((current) => !current)}
+          >
+            <Plus className="h-4 w-4" />
+            New Message
+          </Button>
+          {showNewConversation ? (
+            <form onSubmit={handleStartConversation} className="mb-3 space-y-2 rounded-xl border border-blue-100 bg-blue-50 p-3">
+              <select
+                value={newConversationPatientId}
+                onChange={(e) => setNewConversationPatientId(e.target.value)}
+                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+              >
+                <option value="">Choose patient</option>
+                {activePatients.map((patient) => {
+                  const name = `${patient.first_name ?? ""} ${patient.last_name ?? ""}`.trim() || patient.email;
+                  return (
+                    <option key={patient.patient_id} value={patient.patient_id}>
+                      {name} ({patient.email})
+                    </option>
+                  );
+                })}
+              </select>
+              <Textarea
+                value={newConversationBody}
+                onChange={(e) => setNewConversationBody(e.target.value)}
+                placeholder="Write your first message..."
+                className="min-h-[90px] bg-white"
+              />
+              <Button type="submit" size="sm" disabled={startingConversation} className="w-full">
+                {startingConversation ? "Sending..." : "Send Message"}
+              </Button>
+            </form>
+          ) : null}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <Input

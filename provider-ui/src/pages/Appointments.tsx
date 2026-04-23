@@ -8,6 +8,7 @@ import {
   RefreshCw,
   ChevronDown,
   ChevronRight,
+  Plus,
 } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,13 +18,22 @@ import { Select } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/toast";
 
-import { getStaffAppointments, setAppointmentStatus } from "@/lib/appointmentsApi";
+import { createStaffAppointment, getStaffAppointments, setAppointmentStatus } from "@/lib/appointmentsApi";
+import { apiFetch } from "@/lib/api";
 import type { Appointment } from "@/lib/types";
 import { AppointmentDetailsModal } from "@/components/modals/AppointmentDetailsModal";
 
 interface AppointmentsProps {
   onNavigate: (page: string, data?: any) => void;
 }
+
+type PatientListRow = {
+  patient_id: string;
+  email: string;
+  first_name: string | null;
+  last_name: string | null;
+  connection_status?: "Active" | "Inactive";
+};
 
 /* ---------- helpers ---------- */
 
@@ -122,6 +132,16 @@ export function Appointments({ onNavigate }: AppointmentsProps) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [patients, setPatients] = useState<PatientListRow[]>([]);
+  const [showNewAppointment, setShowNewAppointment] = useState(false);
+  const [creatingAppointment, setCreatingAppointment] = useState(false);
+  const [appointmentForm, setAppointmentForm] = useState({
+    patientId: "",
+    localDateTime: "",
+    appointmentType: "Consultation",
+    visitMode: "in-person",
+    notes: "",
+  });
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     needsAttention: true,
     upcoming: true,
@@ -167,8 +187,18 @@ export function Appointments({ onNavigate }: AppointmentsProps) {
     }
   };
 
+  const loadPatients = async () => {
+    try {
+      const rows = await apiFetch<PatientListRow[]>("/api/staff/patients/connected");
+      setPatients(rows.filter((patient) => patient.connection_status !== "Inactive"));
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to load connected patients");
+    }
+  };
+
   useEffect(() => {
     loadAppointments();
+    loadPatients();
   }, []);
 
   const filteredAppointments = useMemo(() => {
@@ -365,6 +395,40 @@ export function Appointments({ onNavigate }: AppointmentsProps) {
 
   const toggleGroup = (key: string) => {
     setOpenGroups((current) => ({ ...current, [key]: !current[key] }));
+  };
+
+  const handleCreateAppointment = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!appointmentForm.patientId || !appointmentForm.localDateTime) {
+      toast.error("Choose a patient and appointment time");
+      return;
+    }
+
+    try {
+      setCreatingAppointment(true);
+      await createStaffAppointment({
+        patientId: appointmentForm.patientId,
+        localDateTime: appointmentForm.localDateTime,
+        startTime: new Date(appointmentForm.localDateTime).toISOString(),
+        appointmentType: appointmentForm.appointmentType,
+        visitMode: appointmentForm.visitMode,
+        notes: appointmentForm.notes,
+      });
+      toast.success("Appointment created");
+      setShowNewAppointment(false);
+      setAppointmentForm({
+        patientId: "",
+        localDateTime: "",
+        appointmentType: "Consultation",
+        visitMode: "in-person",
+        notes: "",
+      });
+      await loadAppointments(true);
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to create appointment");
+    } finally {
+      setCreatingAppointment(false);
+    }
   };
 
   const renderAppointmentCard = (a: Appointment, isPastSection = false) => {
@@ -577,18 +641,79 @@ export function Appointments({ onNavigate }: AppointmentsProps) {
           </p>
         </div>
 
-        <Button
-          variant="outline"
-          onClick={handleRefresh}
-          disabled={refreshing}
-          className="gap-2"
-        >
-          <RefreshCw
-            className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
-          />
-          Refresh
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={() => setShowNewAppointment((current) => !current)} className="gap-2">
+            <Plus className="h-4 w-4" />
+            New Appointment
+          </Button>
+          <Button
+            variant="outline"
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="gap-2"
+          >
+            <RefreshCw
+              className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
+            />
+            Refresh
+          </Button>
+        </div>
       </div>
+
+      {showNewAppointment ? (
+        <Card>
+          <CardContent className="p-4">
+            <form onSubmit={handleCreateAppointment} className="grid gap-3 md:grid-cols-2">
+              <Select
+                value={appointmentForm.patientId}
+                onChange={(e) => setAppointmentForm((form) => ({ ...form, patientId: e.target.value }))}
+              >
+                <option value="">Choose patient</option>
+                {patients.map((patient) => {
+                  const name = `${patient.first_name ?? ""} ${patient.last_name ?? ""}`.trim() || patient.email;
+                  return (
+                    <option key={patient.patient_id} value={patient.patient_id}>
+                      {name} ({patient.email})
+                    </option>
+                  );
+                })}
+              </Select>
+              <Input
+                type="datetime-local"
+                value={appointmentForm.localDateTime}
+                onChange={(e) => setAppointmentForm((form) => ({ ...form, localDateTime: e.target.value }))}
+              />
+              <Select
+                value={appointmentForm.appointmentType}
+                onChange={(e) => setAppointmentForm((form) => ({ ...form, appointmentType: e.target.value }))}
+              >
+                <option value="Consultation">Consultation</option>
+                <option value="Checkup">Checkup</option>
+                <option value="Follow-up">Follow-up</option>
+                <option value="Lab Test">Lab Test</option>
+                <option value="Surgery">Surgery</option>
+              </Select>
+              <Select
+                value={appointmentForm.visitMode}
+                onChange={(e) => setAppointmentForm((form) => ({ ...form, visitMode: e.target.value }))}
+              >
+                <option value="in-person">In-person</option>
+                <option value="virtual">Virtual</option>
+                <option value="phone">Phone</option>
+              </Select>
+              <Input
+                className="md:col-span-2"
+                placeholder="Notes (optional)"
+                value={appointmentForm.notes}
+                onChange={(e) => setAppointmentForm((form) => ({ ...form, notes: e.target.value }))}
+              />
+              <Button type="submit" disabled={creatingAppointment} className="md:col-span-2">
+                {creatingAppointment ? "Creating..." : "Create Appointment"}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {/* Filters */}
       <Card>
