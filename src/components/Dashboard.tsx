@@ -442,9 +442,9 @@ export default function Dashboard({
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-100">
           <div>
-            <h3 className="text-gray-900">Emergency Identification</h3>
+            <h3 className="text-gray-900">Emergency ID</h3>
             <p className="text-xs text-gray-500">
-              This is your Emergency ID. It will be converted to a real Apple Wallet pass.
+              Show this QR code when someone needs to access your emergency profile.
             </p>
           </div>
 
@@ -536,8 +536,17 @@ export default function Dashboard({
 
           {/* If nothing yet (rare) */}
           {!walletLoading && !walletError && !emergencyUrl && (
-            <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-sm text-gray-600">
-              No link available yet. Try again.
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
+              <p className="text-sm text-gray-600">We couldn’t load your Emergency ID right now.</p>
+              <Button
+                onClick={regenerateEmergencyQr}
+                variant="outline"
+                className="w-full"
+                disabled={walletLoading}
+              >
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Try Again
+              </Button>
             </div>
           )}
         </div>
