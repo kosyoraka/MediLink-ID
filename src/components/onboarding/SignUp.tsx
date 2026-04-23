@@ -90,11 +90,6 @@ export default function SignUp({ onBack, onGoToSignIn, onSignUp }: SignUpProps) 
       return;
     }
 
-    if (!agreed) {
-      setGoogleError("Please accept Terms of Service before continuing with Google");
-      return;
-    }
-
     setGoogleError(null);
 
     try {
@@ -228,6 +223,29 @@ export default function SignUp({ onBack, onGoToSignIn, onSignUp }: SignUpProps) 
           )}
         </div>
 
+        <div className="flex items-start gap-2 rounded-xl border border-teal-100 bg-teal-50/60 p-4">
+          <Checkbox
+            id="terms"
+            checked={agreed}
+            onCheckedChange={(checked) => {
+              setAgreed(checked as boolean);
+              setGoogleError(null);
+            }}
+            className="mt-1"
+          />
+          <label htmlFor="terms" className="text-sm text-gray-700">
+            I agree to the{' '}
+            <a href="#" className="text-teal-600 underline">
+              Terms of Service
+            </a>{' '}
+            and{' '}
+            <a href="#" className="text-teal-600 underline">
+              Privacy Policy
+            </a>{' '}
+            before creating my MediLink ID account.
+          </label>
+        </div>
+
         <div className="border-t border-b border-gray-200 py-6 space-y-4">
           <p className="text-gray-700">Or sign up with</p>
           <div className="space-y-3">
@@ -248,15 +266,26 @@ export default function SignUp({ onBack, onGoToSignIn, onSignUp }: SignUpProps) 
             </Button>
             {hasGoogleClientId ? (
               <div className="flex justify-center">
-                <GoogleLogin
-                  onSuccess={handleGoogleSuccess}
-                  onError={() => setGoogleError("Google sign-up was cancelled or failed")}
-                  useOneTap={false}
-                  text="signup_with"
-                  shape="pill"
-                  theme="outline"
-                  size="large"
-                />
+                {agreed ? (
+                  <GoogleLogin
+                    onSuccess={handleGoogleSuccess}
+                    onError={() => setGoogleError("Google sign-up was cancelled or failed")}
+                    useOneTap={false}
+                    text="signup_with"
+                    shape="pill"
+                    theme="outline"
+                    size="large"
+                  />
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-11 min-w-[220px] rounded-full text-gray-500"
+                    disabled
+                  >
+                    Accept terms to use Google
+                  </Button>
+                )}
               </div>
             ) : (
               <Button type="button" variant="outline" className="w-full h-12" disabled={loading}>
@@ -267,25 +296,6 @@ export default function SignUp({ onBack, onGoToSignIn, onSignUp }: SignUpProps) 
               <p className="text-center text-sm text-red-600">{googleError}</p>
             )}
           </div>
-        </div>
-
-        <div className="flex items-start gap-2">
-          <Checkbox
-            id="terms"
-            checked={agreed}
-            onCheckedChange={(checked) => setAgreed(checked as boolean)}
-            className="mt-1"
-          />
-          <label htmlFor="terms" className="text-sm text-gray-600">
-            I agree to the{' '}
-            <a href="#" className="text-teal-600 underline">
-              Terms of Service
-            </a>{' '}
-            and{' '}
-            <a href="#" className="text-teal-600 underline">
-              Privacy Policy
-            </a>
-          </label>
         </div>
 
         <Button
