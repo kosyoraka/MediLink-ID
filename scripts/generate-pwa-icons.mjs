@@ -108,10 +108,10 @@ function drawLinkMark(buffer, size, cx, cy, scale, cutoutColor = "#12a889") {
 }
 
 function drawProviderBadge(buffer, size, center, markRadius) {
-  const badgeX = center + markRadius * 0.24;
-  const badgeY = center - markRadius * 0.62;
-  const badgeW = markRadius * 0.68;
-  const badgeH = markRadius * 0.34;
+  const badgeW = markRadius * 0.76;
+  const badgeH = markRadius * 0.32;
+  const badgeX = center - badgeW / 2;
+  const badgeY = center + markRadius * 1.04;
   const blue = hexToRgb("#1d4ed8");
   const white = hexToRgb("#ffffff");
 
