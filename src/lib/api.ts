@@ -344,6 +344,163 @@ export type PatientMedication = {
   updatedAt: string;
 };
 
+export type PatientMedicalHistorySourceType = "patient" | "provider";
+export type PatientMedicalHistoryVerificationStatus =
+  | "patient_reported"
+  | "provider_documented"
+  | "provider_reviewed";
+
+export type PatientMedicalHistorySectionKey =
+  | "surgical"
+  | "hospitalizations"
+  | "emergency"
+  | "social"
+  | "reproductive"
+  | "mental";
+
+export type PatientSurgicalHistoryEntry = {
+  id: string;
+  patientId: string;
+  hospitalId: string | null;
+  staffId: string | null;
+  sourceType: PatientMedicalHistorySourceType;
+  verificationStatus: PatientMedicalHistoryVerificationStatus;
+  procedureName: string;
+  surgeryDate: string | null;
+  facility: string;
+  surgeon: string;
+  indication: string;
+  complications: string;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PatientHospitalizationEntry = {
+  id: string;
+  patientId: string;
+  hospitalId: string | null;
+  staffId: string | null;
+  sourceType: PatientMedicalHistorySourceType;
+  verificationStatus: PatientMedicalHistoryVerificationStatus;
+  reason: string;
+  admissionDate: string | null;
+  dischargeDate: string | null;
+  facility: string;
+  attendingProvider: string;
+  diagnosis: string;
+  treatmentSummary: string;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PatientEmergencyVisitEntry = {
+  id: string;
+  patientId: string;
+  hospitalId: string | null;
+  staffId: string | null;
+  sourceType: PatientMedicalHistorySourceType;
+  verificationStatus: PatientMedicalHistoryVerificationStatus;
+  reason: string;
+  visitDate: string | null;
+  visitTime: string;
+  facility: string;
+  diagnosis: string;
+  treatment: string;
+  disposition: string;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PatientSocialHistoryEntry = {
+  id: string;
+  patientId: string;
+  sourceType: PatientMedicalHistorySourceType;
+  verificationStatus: PatientMedicalHistoryVerificationStatus;
+  category:
+    | "smoking"
+    | "alcohol"
+    | "occupation"
+    | "exercise"
+    | "travel"
+    | "substance_use"
+    | "diet"
+    | "other";
+  title: string;
+  status: string;
+  startDate: string | null;
+  endDate: string | null;
+  detail: string;
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PatientReproductiveHistoryEntry = {
+  id: string;
+  patientId: string;
+  sourceType: PatientMedicalHistorySourceType;
+  verificationStatus: PatientMedicalHistoryVerificationStatus;
+  eventType: string;
+  title: string;
+  eventDate: string | null;
+  outcome: string;
+  detail: string;
+  notes: string;
+  isSensitive: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PatientMentalHealthHistoryEntry = {
+  id: string;
+  patientId: string;
+  sourceType: PatientMedicalHistorySourceType;
+  verificationStatus: PatientMedicalHistoryVerificationStatus;
+  conditionName: string;
+  diagnosedDate: string | null;
+  status: string;
+  providerName: string;
+  treatment: string;
+  notes: string;
+  isSensitive: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PatientMedicalHistoryAuditEvent = {
+  id: string;
+  patientId: string;
+  sectionType: PatientMedicalHistorySectionKey;
+  entryId: string;
+  actionType: "created" | "updated" | "deleted";
+  actorType: "patient" | "staff" | "system";
+  actorId: string | null;
+  summary: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+};
+
+export type PatientMedicalHistoryEntry =
+  | PatientSurgicalHistoryEntry
+  | PatientHospitalizationEntry
+  | PatientEmergencyVisitEntry
+  | PatientSocialHistoryEntry
+  | PatientReproductiveHistoryEntry
+  | PatientMentalHealthHistoryEntry;
+
+export type PatientMedicalHistoryPayload = {
+  surgicalHistory: PatientSurgicalHistoryEntry[];
+  hospitalizations: PatientHospitalizationEntry[];
+  emergencyVisits: PatientEmergencyVisitEntry[];
+  socialHistory: PatientSocialHistoryEntry[];
+  reproductiveHistory: PatientReproductiveHistoryEntry[];
+  mentalHealthHistory: PatientMentalHealthHistoryEntry[];
+  auditEvents: PatientMedicalHistoryAuditEvent[];
+};
+
 export const api = {
   // directory
   listProviders: () => request<{ providers: Provider[] }>("/api/providers"),
@@ -451,6 +608,29 @@ export const api = {
     request<{ summary: HealthSummaryPayload }>("/api/patient/health-summary", {
       method: "PUT",
       body: JSON.stringify(body),
+    }),
+  getMyMedicalHistory: () =>
+    request<{ history: PatientMedicalHistoryPayload }>("/api/patient/medical-history"),
+  createMyMedicalHistoryEntry: (
+    section: PatientMedicalHistorySectionKey,
+    body: Record<string, unknown>
+  ) =>
+    request<{ entry: PatientMedicalHistoryEntry }>(`/api/patient/medical-history/${section}`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateMyMedicalHistoryEntry: (
+    section: PatientMedicalHistorySectionKey,
+    entryId: string,
+    body: Record<string, unknown>
+  ) =>
+    request<{ entry: PatientMedicalHistoryEntry }>(`/api/patient/medical-history/${section}/${entryId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deleteMyMedicalHistoryEntry: (section: PatientMedicalHistorySectionKey, entryId: string) =>
+    request<{ ok: boolean }>(`/api/patient/medical-history/${section}/${entryId}`, {
+      method: "DELETE",
     }),
   listMyConditions: () => request<{ conditions: HealthSummaryCondition[] }>("/api/patient/conditions"),
   createMyCondition: (body: {

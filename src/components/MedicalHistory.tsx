@@ -1,1064 +1,1198 @@
-import { useState } from 'react';
-import { ArrowLeft, ChevronRight, Plus, Edit2, Eye, EyeOff, AlertCircle, CheckCircle2, Clock, MapPin, User, FileText, Activity, Cigarette, Wine, Briefcase, Plane, Baby, Brain, History } from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
+import {
+  AlertCircle,
+  ArrowLeft,
+  Briefcase,
+  Calendar,
+  CheckCircle2,
+  Clock3,
+  Eye,
+  EyeOff,
+  FileText,
+  HeartPulse,
+  History,
+  Hospital,
+  Pencil,
+  Pill,
+  Plus,
+  RefreshCw,
+  Scissors,
+  Shield,
+  Stethoscope,
+  Trash2,
+  TriangleAlert,
+  Users,
+} from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
+import { api, type PatientMedicalHistorySectionKey } from '@/lib/api';
+import {
+  fetchMedicalHistoryData,
+  formatDateLabel,
+  formatDateRangeLabel,
+  type MedicalHistoryConditionItem,
+  type MedicalHistoryData,
+  type MedicalHistoryEncounterItem,
+  type MedicalHistoryMedicationItem,
+  type MedicalHistoryRecordItem,
+} from '@/lib/medicalHistory';
+import type { PatientDataScreen } from '@/lib/patientDataNavigation';
 
 interface MedicalHistoryProps {
   onBack: () => void;
+  onNavigate: (screen: PatientDataScreen) => void;
 }
 
-type HistorySection = 'overview' | 'surgical' | 'hospitalizations' | 'emergency' | 'chronic' | 'medications' | 'problems' | 'social' | 'reproductive' | 'mental' | 'audit';
+type ManagedSectionKey = PatientMedicalHistorySectionKey;
+type EditorValue = string | boolean;
+type EditorValues = Record<string, EditorValue>;
 
-export default function MedicalHistory({ onBack }: MedicalHistoryProps) {
-  const [activeSection, setActiveSection] = useState<HistorySection>('overview');
-  const [selectedItem, setSelectedItem] = useState<string | null>(null);
-  const [sensitiveVisible, setSensitiveVisible] = useState(false);
+type EditorField = {
+  key: string;
+  label: string;
+  type: 'text' | 'textarea' | 'date' | 'select' | 'checkbox';
+  placeholder?: string;
+  options?: Array<{ value: string; label: string }>;
+};
 
-  // Mock data for surgical history
-  const surgeries = [
-    {
-      id: '1',
-      procedure: 'Appendectomy',
-      date: 'March 2015',
-      facility: 'Toronto General Hospital',
-      surgeon: 'Dr. Williams',
-      indication: 'Acute appendicitis',
-      complications: 'None',
-      hasReport: true,
-    },
-    {
-      id: '2',
-      procedure: 'Wisdom Teeth Extraction',
-      date: 'July 2018',
-      facility: 'Toronto Dental Surgery Centre',
-      surgeon: 'Dr. Chen',
-      indication: 'Impacted wisdom teeth',
-      complications: 'Minor swelling',
-      hasReport: false,
-    },
-  ];
+type SectionConfig = {
+  title: string;
+  description: string;
+  addLabel: string;
+  emptyMessage: string;
+  icon: ReactNode;
+  defaultValues: EditorValues;
+  fields: EditorField[];
+  sensitive?: boolean;
+};
 
-  // Mock data for hospitalizations
-  const hospitalizations = [
-    {
-      id: '1',
-      reason: 'Pneumonia',
-      admissionDate: 'Jan 10, 2020',
-      dischargeDate: 'Jan 17, 2020',
-      lengthOfStay: '7 days',
-      hospital: 'Sunnybrook Hospital',
-      attendingPhysician: 'Dr. Sarah Johnson',
-      hasDischarge: true,
-    },
-  ];
+const socialCategoryOptions = [
+  { value: 'smoking', label: 'Smoking' },
+  { value: 'alcohol', label: 'Alcohol' },
+  { value: 'occupation', label: 'Occupation' },
+  { value: 'exercise', label: 'Exercise' },
+  { value: 'travel', label: 'Travel' },
+  { value: 'substance_use', label: 'Substance use' },
+  { value: 'diet', label: 'Diet' },
+  { value: 'other', label: 'Other' },
+];
 
-  // Mock data for emergency visits
-  const emergencyVisits = [
-    {
-      id: '1',
-      date: 'Nov 5, 2025',
-      time: '11:30 PM',
-      reason: 'Severe migraine',
-      facility: 'Toronto Western ER',
-      diagnosis: 'Migraine with aura',
-      treatment: 'IV fluids, pain management',
+const sectionConfigs: Record<ManagedSectionKey, SectionConfig> = {
+  surgical: {
+    title: 'Surgical history',
+    description: 'Track procedures, facilities, and recovery notes in structured form.',
+    addLabel: 'Add surgery',
+    emptyMessage: 'No surgeries have been saved yet.',
+    icon: <Scissors className="w-5 h-5 text-red-600" />,
+    defaultValues: {
+      procedureName: '',
+      surgeryDate: '',
+      facility: '',
+      surgeon: '',
+      indication: '',
+      complications: '',
+      notes: '',
     },
-    {
-      id: '2',
-      date: 'Aug 12, 2024',
-      time: '3:45 PM',
-      reason: 'Allergic reaction',
-      facility: 'Mount Sinai ER',
-      diagnosis: 'Anaphylaxis (shellfish)',
-      treatment: 'Epinephrine, antihistamines',
+    fields: [
+      { key: 'procedureName', label: 'Procedure name', type: 'text', placeholder: 'Appendectomy' },
+      { key: 'surgeryDate', label: 'Surgery date', type: 'date' },
+      { key: 'facility', label: 'Facility', type: 'text', placeholder: 'Toronto General Hospital' },
+      { key: 'surgeon', label: 'Surgeon', type: 'text', placeholder: 'Dr. Singh' },
+      { key: 'indication', label: 'Reason for surgery', type: 'text', placeholder: 'Acute appendicitis' },
+      { key: 'complications', label: 'Complications', type: 'text', placeholder: 'None' },
+      { key: 'notes', label: 'Notes', type: 'textarea', placeholder: 'Extra context or recovery notes' },
+    ],
+  },
+  hospitalizations: {
+    title: 'Hospitalizations',
+    description: 'Save admissions, length of stay, diagnosis, and discharge details.',
+    addLabel: 'Add hospitalization',
+    emptyMessage: 'No hospitalizations have been saved yet.',
+    icon: <Hospital className="w-5 h-5 text-blue-600" />,
+    defaultValues: {
+      reason: '',
+      admissionDate: '',
+      dischargeDate: '',
+      facility: '',
+      attendingProvider: '',
+      diagnosis: '',
+      treatmentSummary: '',
+      notes: '',
     },
-  ];
+    fields: [
+      { key: 'reason', label: 'Reason for admission', type: 'text', placeholder: 'Pneumonia' },
+      { key: 'admissionDate', label: 'Admission date', type: 'date' },
+      { key: 'dischargeDate', label: 'Discharge date', type: 'date' },
+      { key: 'facility', label: 'Hospital', type: 'text', placeholder: 'Sunnybrook Hospital' },
+      { key: 'attendingProvider', label: 'Attending provider', type: 'text', placeholder: 'Dr. Johnson' },
+      { key: 'diagnosis', label: 'Diagnosis', type: 'text', placeholder: 'Community-acquired pneumonia' },
+      { key: 'treatmentSummary', label: 'Treatment summary', type: 'textarea', placeholder: 'IV antibiotics, oxygen, monitoring' },
+      { key: 'notes', label: 'Notes', type: 'textarea', placeholder: 'Any follow-up or discharge notes' },
+    ],
+  },
+  emergency: {
+    title: 'Emergency visits',
+    description: 'Store urgent visits with reason, diagnosis, treatment, and disposition.',
+    addLabel: 'Add ER visit',
+    emptyMessage: 'No emergency visits have been saved yet.',
+    icon: <AlertCircle className="w-5 h-5 text-red-600" />,
+    defaultValues: {
+      reason: '',
+      visitDate: '',
+      visitTime: '',
+      facility: '',
+      diagnosis: '',
+      treatment: '',
+      disposition: '',
+      notes: '',
+    },
+    fields: [
+      { key: 'reason', label: 'Reason for visit', type: 'text', placeholder: 'Severe migraine' },
+      { key: 'visitDate', label: 'Visit date', type: 'date' },
+      { key: 'visitTime', label: 'Visit time', type: 'text', placeholder: '11:30 PM' },
+      { key: 'facility', label: 'Facility', type: 'text', placeholder: 'Toronto Western ER' },
+      { key: 'diagnosis', label: 'Diagnosis', type: 'text', placeholder: 'Migraine with aura' },
+      { key: 'treatment', label: 'Treatment', type: 'textarea', placeholder: 'IV fluids, pain management' },
+      { key: 'disposition', label: 'Disposition', type: 'text', placeholder: 'Discharged home' },
+      { key: 'notes', label: 'Notes', type: 'textarea', placeholder: 'Any follow-up instructions' },
+    ],
+  },
+  social: {
+    title: 'Social history',
+    description: 'Capture smoking, alcohol, exercise, occupation, travel, and other lifestyle history.',
+    addLabel: 'Add social history',
+    emptyMessage: 'No social history entries have been saved yet.',
+    icon: <Briefcase className="w-5 h-5 text-amber-600" />,
+    defaultValues: {
+      category: 'other',
+      title: '',
+      status: '',
+      startDate: '',
+      endDate: '',
+      detail: '',
+      notes: '',
+    },
+    fields: [
+      { key: 'category', label: 'Category', type: 'select', options: socialCategoryOptions },
+      { key: 'title', label: 'Title', type: 'text', placeholder: 'Former smoker' },
+      { key: 'status', label: 'Status', type: 'text', placeholder: 'Quit in 2018' },
+      { key: 'startDate', label: 'Start date', type: 'date' },
+      { key: 'endDate', label: 'End date', type: 'date' },
+      { key: 'detail', label: 'Details', type: 'textarea', placeholder: '5 pack-years, quit successfully' },
+      { key: 'notes', label: 'Notes', type: 'textarea', placeholder: 'Extra context' },
+    ],
+  },
+  reproductive: {
+    title: 'Reproductive history',
+    description: 'Keep reproductive events and outcomes in a structured, privacy-protected section.',
+    addLabel: 'Add reproductive history',
+    emptyMessage: 'No reproductive history entries have been saved yet.',
+    icon: <Shield className="w-5 h-5 text-pink-600" />,
+    sensitive: true,
+    defaultValues: {
+      eventType: 'general',
+      title: '',
+      eventDate: '',
+      outcome: '',
+      detail: '',
+      notes: '',
+      isSensitive: true,
+    },
+    fields: [
+      { key: 'eventType', label: 'Event type', type: 'text', placeholder: 'Pregnancy, contraception, menopause' },
+      { key: 'title', label: 'Title', type: 'text', placeholder: 'Pregnancy history' },
+      { key: 'eventDate', label: 'Event date', type: 'date' },
+      { key: 'outcome', label: 'Outcome', type: 'text', placeholder: '2 live births' },
+      { key: 'detail', label: 'Details', type: 'textarea', placeholder: 'Relevant medical context' },
+      { key: 'notes', label: 'Notes', type: 'textarea', placeholder: 'Optional care notes' },
+      { key: 'isSensitive', label: 'Mark as sensitive', type: 'checkbox' },
+    ],
+  },
+  mental: {
+    title: 'Mental health history',
+    description: 'Track diagnoses, treatment, providers, and mental-health care notes.',
+    addLabel: 'Add mental health entry',
+    emptyMessage: 'No mental health entries have been saved yet.',
+    icon: <HeartPulse className="w-5 h-5 text-indigo-600" />,
+    sensitive: true,
+    defaultValues: {
+      conditionName: '',
+      diagnosedDate: '',
+      status: '',
+      providerName: '',
+      treatment: '',
+      notes: '',
+      isSensitive: true,
+    },
+    fields: [
+      { key: 'conditionName', label: 'Condition or concern', type: 'text', placeholder: 'Generalized anxiety disorder' },
+      { key: 'diagnosedDate', label: 'Diagnosed date', type: 'date' },
+      { key: 'status', label: 'Status', type: 'text', placeholder: 'Active, stable, in remission' },
+      { key: 'providerName', label: 'Provider', type: 'text', placeholder: 'Dr. Chen' },
+      { key: 'treatment', label: 'Treatment', type: 'textarea', placeholder: 'CBT, sertraline 50mg daily' },
+      { key: 'notes', label: 'Notes', type: 'textarea', placeholder: 'Optional care notes' },
+      { key: 'isSensitive', label: 'Mark as sensitive', type: 'checkbox' },
+    ],
+  },
+};
 
-  // Mock data for chronic conditions
-  const chronicConditions = [
-    {
-      id: '1',
-      condition: 'Hypertension',
-      diagnosedDate: 'March 2019',
-      status: 'Active - Well Controlled',
-      complications: 'None',
-      currentTreatment: 'Lisinopril 10mg daily',
-    },
-    {
-      id: '2',
-      condition: 'Type 2 Diabetes',
-      diagnosedDate: 'June 2020',
-      status: 'Active - Managed',
-      complications: 'None',
-      currentTreatment: 'Metformin 500mg twice daily, diet modification',
-    },
-  ];
+function SummaryCard({
+  icon,
+  title,
+  value,
+  detail,
+  actionLabel,
+  onClick,
+}: {
+  icon: ReactNode;
+  title: string;
+  value: string;
+  detail: string;
+  actionLabel: string;
+  onClick: () => void;
+}) {
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-4">
+      <div className="mb-3 flex items-center gap-2 text-sm text-gray-600">
+        {icon}
+        <span>{title}</span>
+      </div>
+      <p className="text-2xl text-gray-900">{value}</p>
+      <p className="mt-1 text-sm text-gray-500">{detail}</p>
+      <Button size="sm" variant="outline" className="mt-4 w-full" onClick={onClick}>
+        {actionLabel}
+      </Button>
+    </div>
+  );
+}
 
-  // Mock data for medication history
-  const pastMedications = [
-    {
-      id: '1',
-      name: 'Amoxicillin',
-      startDate: 'Nov 1, 2025',
-      endDate: 'Nov 10, 2025',
-      duration: '10 days',
-      reason: 'Completed course',
-      indication: 'Sinus infection',
-    },
-    {
-      id: '2',
-      name: 'Ibuprofen 400mg',
-      startDate: 'July 2024',
-      endDate: 'Aug 2024',
-      duration: '1 month',
-      reason: 'Side effects (stomach upset)',
-      indication: 'Chronic back pain',
-    },
-  ];
+function SectionHeader({
+  title,
+  description,
+  actions,
+}: {
+  title: string;
+  description: string;
+  actions?: ReactNode;
+}) {
+  return (
+    <div className="mb-3 flex items-start justify-between gap-4">
+      <div>
+        <h3 className="text-gray-900">{title}</h3>
+        <p className="mt-1 text-sm text-gray-600">{description}</p>
+      </div>
+      {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
+    </div>
+  );
+}
 
-  // Mock data for problem list
-  const activeProblems = [
-    {
-      id: '1',
-      problem: 'Hypertension',
-      dateIdentified: 'March 2019',
-      status: 'Active',
-      managingProvider: 'Dr. Sarah Johnson',
-      hasCarePlan: true,
-    },
-    {
-      id: '2',
-      problem: 'Type 2 Diabetes',
-      dateIdentified: 'June 2020',
-      status: 'Active',
-      managingProvider: 'Dr. Sarah Johnson',
-      hasCarePlan: true,
-    },
-  ];
+function ConditionCard({ item }: { item: MedicalHistoryConditionItem }) {
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-4">
+      <div className="mb-2 flex items-start justify-between gap-3">
+        <div>
+          <h4 className="text-gray-900">{item.name}</h4>
+          <p className="mt-1 text-sm text-gray-500">{item.dateLabel}</p>
+        </div>
+        <Badge className="border-0 bg-blue-100 text-blue-700">{item.statusLabel}</Badge>
+      </div>
+      <p className="mb-2 text-sm text-gray-600">{item.detail}</p>
+      <p className="text-sm text-gray-500">Provider: {item.provider}</p>
+    </div>
+  );
+}
 
-  const resolvedProblems = [
-    {
-      id: '1',
-      problem: 'Acute appendicitis',
-      dateIdentified: 'March 2015',
-      dateResolved: 'March 2015',
-      status: 'Resolved',
-      resolution: 'Surgical intervention',
-    },
-  ];
+function MedicationCard({ item }: { item: MedicalHistoryMedicationItem }) {
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-4">
+      <div className="mb-2 flex items-start justify-between gap-3">
+        <div>
+          <h4 className="text-gray-900">{item.name}</h4>
+          <p className="mt-1 text-sm text-gray-500">{item.dateLabel}</p>
+        </div>
+        <Badge
+          className={
+            item.statusLabel === 'Current'
+              ? 'border-0 bg-green-100 text-green-700'
+              : 'border-0 bg-gray-200 text-gray-700'
+          }
+        >
+          {item.statusLabel}
+        </Badge>
+      </div>
+      <p className="mb-2 text-sm text-gray-600">{item.detail}</p>
+      <div className="flex flex-wrap gap-2 text-xs text-gray-500">
+        <span>Prescriber: {item.provider}</span>
+        <span>Adherence: {item.adherenceLabel}</span>
+      </div>
+    </div>
+  );
+}
 
-  // Render overview with all sections
-  if (activeSection === 'overview') {
+function EncounterCard({ item }: { item: MedicalHistoryEncounterItem }) {
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-4">
+      <div className="mb-2 flex items-start justify-between gap-3">
+        <div>
+          <h4 className="text-gray-900">{item.title}</h4>
+          <p className="mt-1 text-sm text-gray-500">{item.dateLabel}</p>
+        </div>
+        <Badge className="border-0 bg-purple-100 text-purple-700">{item.statusLabel}</Badge>
+      </div>
+      <p className="text-sm text-gray-600">{item.detail}</p>
+    </div>
+  );
+}
+
+function RecordCard({ item }: { item: MedicalHistoryRecordItem }) {
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-4">
+      <div className="mb-2 flex items-start justify-between gap-3">
+        <div>
+          <h4 className="text-gray-900">{item.title}</h4>
+          <p className="mt-1 text-sm text-gray-500">{item.dateLabel}</p>
+        </div>
+        <Badge className="border-0 bg-amber-100 text-amber-700">{item.categoryLabel}</Badge>
+      </div>
+      <p className="mb-2 text-sm text-gray-600">{item.detail}</p>
+      <p className="text-xs text-gray-500">{item.statusLabel}</p>
+    </div>
+  );
+}
+
+function EmptyCard({ message }: { message: string }) {
+  return (
+    <div className="rounded-xl border border-dashed border-gray-300 bg-white p-5 text-sm text-gray-600">
+      {message}
+    </div>
+  );
+}
+
+function HistoryEditor({
+  section,
+  values,
+  saving,
+  onChange,
+  onSave,
+  onCancel,
+}: {
+  section: ManagedSectionKey;
+  values: EditorValues;
+  saving: boolean;
+  onChange: (key: string, value: EditorValue) => void;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  const config = sectionConfigs[section];
+
+  return (
+    <div className="rounded-xl border border-teal-200 bg-teal-50 p-4">
+      <div className="mb-4 flex items-center gap-2">
+        {config.icon}
+        <h4 className="text-gray-900">{config.title} editor</h4>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3">
+        {config.fields.map((field) => {
+          if (field.type === 'textarea') {
+            return (
+              <label key={field.key} className="text-sm text-gray-700">
+                {field.label}
+                <textarea
+                  className="mt-1 min-h-[100px] w-full rounded-lg border border-gray-200 px-3 py-2"
+                  placeholder={field.placeholder}
+                  value={String(values[field.key] ?? '')}
+                  onChange={(event) => onChange(field.key, event.target.value)}
+                />
+              </label>
+            );
+          }
+
+          if (field.type === 'select') {
+            return (
+              <label key={field.key} className="text-sm text-gray-700">
+                {field.label}
+                <select
+                  className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2"
+                  value={String(values[field.key] ?? '')}
+                  onChange={(event) => onChange(field.key, event.target.value)}
+                >
+                  {(field.options || []).map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            );
+          }
+
+          if (field.type === 'checkbox') {
+            return (
+              <label key={field.key} className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white px-3 py-3 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={Boolean(values[field.key])}
+                  onChange={(event) => onChange(field.key, event.target.checked)}
+                />
+                <span>{field.label}</span>
+              </label>
+            );
+          }
+
+          return (
+            <label key={field.key} className="text-sm text-gray-700">
+              {field.label}
+              <input
+                type={field.type}
+                className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2"
+                placeholder={field.placeholder}
+                value={String(values[field.key] ?? '')}
+                onChange={(event) => onChange(field.key, event.target.value)}
+              />
+            </label>
+          );
+        })}
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-3">
+        <Button className="bg-teal-600 text-white hover:bg-teal-700" onClick={onSave} disabled={saving}>
+          {saving ? 'Saving...' : 'Save entry'}
+        </Button>
+        <Button variant="outline" onClick={onCancel} disabled={saving}>
+          Cancel
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function getInitialValues(section: ManagedSectionKey) {
+  return { ...sectionConfigs[section].defaultValues };
+}
+
+function getFormValuesFromEntry(section: ManagedSectionKey, entry: any): EditorValues {
+  switch (section) {
+    case 'surgical':
+      return {
+        procedureName: entry.procedureName || '',
+        surgeryDate: entry.surgeryDate || '',
+        facility: entry.facility || '',
+        surgeon: entry.surgeon || '',
+        indication: entry.indication || '',
+        complications: entry.complications || '',
+        notes: entry.notes || '',
+      };
+    case 'hospitalizations':
+      return {
+        reason: entry.reason || '',
+        admissionDate: entry.admissionDate || '',
+        dischargeDate: entry.dischargeDate || '',
+        facility: entry.facility || '',
+        attendingProvider: entry.attendingProvider || '',
+        diagnosis: entry.diagnosis || '',
+        treatmentSummary: entry.treatmentSummary || '',
+        notes: entry.notes || '',
+      };
+    case 'emergency':
+      return {
+        reason: entry.reason || '',
+        visitDate: entry.visitDate || '',
+        visitTime: entry.visitTime || '',
+        facility: entry.facility || '',
+        diagnosis: entry.diagnosis || '',
+        treatment: entry.treatment || '',
+        disposition: entry.disposition || '',
+        notes: entry.notes || '',
+      };
+    case 'social':
+      return {
+        category: entry.category || 'other',
+        title: entry.title || '',
+        status: entry.status || '',
+        startDate: entry.startDate || '',
+        endDate: entry.endDate || '',
+        detail: entry.detail || '',
+        notes: entry.notes || '',
+      };
+    case 'reproductive':
+      return {
+        eventType: entry.eventType || 'general',
+        title: entry.title || '',
+        eventDate: entry.eventDate || '',
+        outcome: entry.outcome || '',
+        detail: entry.detail || '',
+        notes: entry.notes || '',
+        isSensitive: Boolean(entry.isSensitive),
+      };
+    case 'mental':
+      return {
+        conditionName: entry.conditionName || '',
+        diagnosedDate: entry.diagnosedDate || '',
+        status: entry.status || '',
+        providerName: entry.providerName || '',
+        treatment: entry.treatment || '',
+        notes: entry.notes || '',
+        isSensitive: Boolean(entry.isSensitive),
+      };
+  }
+}
+
+function renderManagedEntryDetails(section: ManagedSectionKey, entry: any) {
+  switch (section) {
+    case 'surgical':
+      return (
+        <>
+          <p className="text-sm text-gray-600">{entry.indication || 'No indication listed'}</p>
+          <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-500">
+            <span>Facility: {entry.facility || 'Not listed'}</span>
+            <span>Surgeon: {entry.surgeon || 'Not listed'}</span>
+            <span>Complications: {entry.complications || 'None listed'}</span>
+          </div>
+          {entry.notes ? <p className="mt-2 text-sm text-gray-500">{entry.notes}</p> : null}
+        </>
+      );
+    case 'hospitalizations':
+      return (
+        <>
+          <p className="text-sm text-gray-600">{entry.diagnosis || entry.reason}</p>
+          <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-500">
+            <span>Hospital: {entry.facility || 'Not listed'}</span>
+            <span>Attending: {entry.attendingProvider || 'Not listed'}</span>
+          </div>
+          {entry.treatmentSummary ? <p className="mt-2 text-sm text-gray-500">{entry.treatmentSummary}</p> : null}
+          {entry.notes ? <p className="mt-2 text-sm text-gray-500">{entry.notes}</p> : null}
+        </>
+      );
+    case 'emergency':
+      return (
+        <>
+          <p className="text-sm text-gray-600">{entry.diagnosis || entry.reason}</p>
+          <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-500">
+            <span>Facility: {entry.facility || 'Not listed'}</span>
+            <span>Treatment: {entry.treatment || 'Not listed'}</span>
+            <span>Disposition: {entry.disposition || 'Not listed'}</span>
+          </div>
+          {entry.notes ? <p className="mt-2 text-sm text-gray-500">{entry.notes}</p> : null}
+        </>
+      );
+    case 'social':
+      return (
+        <>
+          <p className="text-sm text-gray-600">{entry.detail || 'No details listed'}</p>
+          <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-500">
+            <span>Status: {entry.status || 'Not listed'}</span>
+            <span>Range: {formatDateRangeLabel(entry.startDate, entry.endDate, 'No date range')}</span>
+          </div>
+          {entry.notes ? <p className="mt-2 text-sm text-gray-500">{entry.notes}</p> : null}
+        </>
+      );
+    case 'reproductive':
+      return (
+        <>
+          <p className="text-sm text-gray-600">{entry.detail || 'No details listed'}</p>
+          <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-500">
+            <span>Outcome: {entry.outcome || 'Not listed'}</span>
+            <span>Sensitive: {entry.isSensitive ? 'Yes' : 'No'}</span>
+          </div>
+          {entry.notes ? <p className="mt-2 text-sm text-gray-500">{entry.notes}</p> : null}
+        </>
+      );
+    case 'mental':
+      return (
+        <>
+          <p className="text-sm text-gray-600">{entry.treatment || 'No treatment listed'}</p>
+          <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-500">
+            <span>Status: {entry.status || 'Not listed'}</span>
+            <span>Provider: {entry.providerName || 'Not listed'}</span>
+            <span>Sensitive: {entry.isSensitive ? 'Yes' : 'No'}</span>
+          </div>
+          {entry.notes ? <p className="mt-2 text-sm text-gray-500">{entry.notes}</p> : null}
+        </>
+      );
+  }
+}
+
+function getEntryTitle(section: ManagedSectionKey, entry: any) {
+  switch (section) {
+    case 'surgical':
+      return entry.procedureName || 'Untitled surgery';
+    case 'hospitalizations':
+      return entry.reason || 'Untitled hospitalization';
+    case 'emergency':
+      return entry.reason || 'Untitled emergency visit';
+    case 'social':
+      return entry.title || 'Untitled social history entry';
+    case 'reproductive':
+      return entry.title || 'Untitled reproductive history entry';
+    case 'mental':
+      return entry.conditionName || 'Untitled mental health entry';
+  }
+}
+
+function getEntryDate(section: ManagedSectionKey, entry: any) {
+  switch (section) {
+    case 'surgical':
+      return formatDateLabel(entry.surgeryDate);
+    case 'hospitalizations':
+      return formatDateRangeLabel(entry.admissionDate, entry.dischargeDate);
+    case 'emergency':
+      return entry.visitTime
+        ? `${formatDateLabel(entry.visitDate)} • ${entry.visitTime}`
+        : formatDateLabel(entry.visitDate);
+    case 'social':
+      return formatDateRangeLabel(entry.startDate, entry.endDate);
+    case 'reproductive':
+      return formatDateLabel(entry.eventDate);
+    case 'mental':
+      return formatDateLabel(entry.diagnosedDate);
+  }
+}
+
+function getEntryBadge(section: ManagedSectionKey, entry: any) {
+  switch (section) {
+    case 'social':
+      return entry.category || 'other';
+    case 'reproductive':
+      return entry.eventType || 'general';
+    case 'mental':
+      return entry.status || 'Tracked';
+    default:
+      return entry.sourceType === 'provider' ? 'Provider' : 'Patient';
+  }
+}
+
+export default function MedicalHistory({ onBack, onNavigate }: MedicalHistoryProps) {
+  const [data, setData] = useState<MedicalHistoryData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [activeEditor, setActiveEditor] = useState<{
+    section: ManagedSectionKey;
+    mode: 'create' | 'edit';
+    entryId?: string;
+  } | null>(null);
+  const [editorValues, setEditorValues] = useState<EditorValues>({});
+  const [sensitiveVisible, setSensitiveVisible] = useState({
+    reproductive: false,
+    mental: false,
+  });
+
+  const loadHistory = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const next = await fetchMedicalHistoryData();
+      setData(next);
+    } catch (err: any) {
+      setError(err?.message || 'Unable to load medical history');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadHistory();
+  }, []);
+
+  const openCreateEditor = (section: ManagedSectionKey) => {
+    setActiveEditor({ section, mode: 'create' });
+    setEditorValues(getInitialValues(section));
+  };
+
+  const openEditEditor = (section: ManagedSectionKey, entry: any) => {
+    setActiveEditor({ section, mode: 'edit', entryId: entry.id });
+    setEditorValues(getFormValuesFromEntry(section, entry));
+  };
+
+  const closeEditor = () => {
+    setActiveEditor(null);
+    setEditorValues({});
+  };
+
+  const handleSaveEditor = async () => {
+    if (!activeEditor) return;
+
+    setSaving(true);
+    try {
+      if (activeEditor.mode === 'create') {
+        await api.createMyMedicalHistoryEntry(activeEditor.section, editorValues);
+      } else if (activeEditor.entryId) {
+        await api.updateMyMedicalHistoryEntry(activeEditor.section, activeEditor.entryId, editorValues);
+      }
+
+      closeEditor();
+      await loadHistory();
+    } catch (err: any) {
+      alert(err?.message || 'Failed to save medical history entry');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteEntry = async (section: ManagedSectionKey, entry: any) => {
+    const label = getEntryTitle(section, entry);
+    if (!window.confirm(`Delete "${label}" from ${sectionConfigs[section].title.toLowerCase()}?`)) {
+      return;
+    }
+
+    try {
+      await api.deleteMyMedicalHistoryEntry(section, entry.id);
+      if (activeEditor?.entryId === entry.id) {
+        closeEditor();
+      }
+      await loadHistory();
+    } catch (err: any) {
+      alert(err?.message || 'Failed to delete medical history entry');
+    }
+  };
+
+  const renderManagedSection = (section: ManagedSectionKey, entries: any[]) => {
+    const config = sectionConfigs[section];
+    const isSensitiveHidden =
+      Boolean(config.sensitive) &&
+      !sensitiveVisible[section as keyof typeof sensitiveVisible];
+
     return (
-      <div className="min-h-screen bg-gray-50">
-        <div className="bg-white border-b border-gray-200 p-4 flex items-center gap-3 sticky top-0 z-10">
+      <section key={section}>
+        <SectionHeader
+          title={config.title}
+          description={config.description}
+          actions={
+            <>
+              {config.sensitive ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    setSensitiveVisible((current) => ({
+                      ...current,
+                      [section]: !current[section as keyof typeof current],
+                    }))
+                  }
+                >
+                  {isSensitiveHidden ? (
+                    <>
+                      <Eye className="w-4 h-4 mr-2" />
+                      Show
+                    </>
+                  ) : (
+                    <>
+                      <EyeOff className="w-4 h-4 mr-2" />
+                      Hide
+                    </>
+                  )}
+                </Button>
+              ) : null}
+              <Button size="sm" className="bg-teal-600 text-white hover:bg-teal-700" onClick={() => openCreateEditor(section)}>
+                <Plus className="w-4 h-4 mr-2" />
+                {config.addLabel}
+              </Button>
+            </>
+          }
+        />
+
+        {activeEditor?.section === section && activeEditor.mode === 'create' && (
+          <div className="mb-3">
+            <HistoryEditor
+              section={section}
+              values={editorValues}
+              saving={saving}
+              onChange={(key, value) => setEditorValues((current) => ({ ...current, [key]: value }))}
+              onSave={handleSaveEditor}
+              onCancel={closeEditor}
+            />
+          </div>
+        )}
+
+        {isSensitiveHidden ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            Sensitive details are hidden on this device until you choose to reveal them.
+          </div>
+        ) : entries.length > 0 ? (
+          <div className="space-y-3">
+            {entries.map((entry) => (
+              <div key={entry.id} className="rounded-xl border border-gray-200 bg-white p-4">
+                <div className="mb-2 flex items-start justify-between gap-3">
+                  <div>
+                    <h4 className="text-gray-900">{getEntryTitle(section, entry)}</h4>
+                    <p className="mt-1 text-sm text-gray-500">{getEntryDate(section, entry)}</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge className="border-0 bg-blue-100 text-blue-700">{getEntryBadge(section, entry)}</Badge>
+                    <Button size="sm" variant="outline" onClick={() => openEditEditor(section, entry)}>
+                      <Pencil className="w-4 h-4 mr-2" />
+                      Edit
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => handleDeleteEntry(section, entry)}>
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Delete
+                    </Button>
+                  </div>
+                </div>
+
+                {activeEditor?.section === section &&
+                activeEditor.mode === 'edit' &&
+                activeEditor.entryId === entry.id ? (
+                  <HistoryEditor
+                    section={section}
+                    values={editorValues}
+                    saving={saving}
+                    onChange={(key, value) => setEditorValues((current) => ({ ...current, [key]: value }))}
+                    onSave={handleSaveEditor}
+                    onCancel={closeEditor}
+                  />
+                ) : (
+                  renderManagedEntryDetails(section, entry)
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyCard message={config.emptyMessage} />
+        )}
+      </section>
+    );
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <div className="sticky top-0 z-10 border-b border-gray-200 bg-white p-4">
+        <div className="flex items-center gap-3">
           <button onClick={onBack} className="text-gray-600">
             <ArrowLeft className="w-6 h-6" />
           </button>
-          <h1 className="text-gray-900">Medical History</h1>
-        </div>
-
-        <div className="p-4 space-y-3">
-          {/* Surgical History */}
-          <button
-            onClick={() => setActiveSection('surgical')}
-            className="w-full bg-white rounded-xl border border-gray-200 p-4 hover:border-teal-500 hover:bg-teal-50 transition-all"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
-                <Activity className="w-6 h-6 text-red-600" />
-              </div>
-              <div className="flex-1 text-left">
-                <h3 className="text-gray-900">Surgical History</h3>
-                <p className="text-sm text-gray-500">{surgeries.length} procedures</p>
-              </div>
-              <ChevronRight className="w-5 h-5 text-gray-400" />
-            </div>
-          </button>
-
-          {/* Hospitalizations */}
-          <button
-            onClick={() => setActiveSection('hospitalizations')}
-            className="w-full bg-white rounded-xl border border-gray-200 p-4 hover:border-teal-500 hover:bg-teal-50 transition-all"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                <MapPin className="w-6 h-6 text-blue-600" />
-              </div>
-              <div className="flex-1 text-left">
-                <h3 className="text-gray-900">Hospitalizations</h3>
-                <p className="text-sm text-gray-500">{hospitalizations.length} admission</p>
-              </div>
-              <ChevronRight className="w-5 h-5 text-gray-400" />
-            </div>
-          </button>
-
-          {/* Emergency Visits */}
-          <button
-            onClick={() => setActiveSection('emergency')}
-            className="w-full bg-white rounded-xl border border-gray-200 p-4 hover:border-teal-500 hover:bg-teal-50 transition-all"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
-                <AlertCircle className="w-6 h-6 text-red-600" />
-              </div>
-              <div className="flex-1 text-left">
-                <h3 className="text-gray-900">Emergency Visits</h3>
-                <p className="text-sm text-gray-500">{emergencyVisits.length} visits</p>
-              </div>
-              <ChevronRight className="w-5 h-5 text-gray-400" />
-            </div>
-          </button>
-
-          {/* Chronic Conditions */}
-          <button
-            onClick={() => setActiveSection('chronic')}
-            className="w-full bg-white rounded-xl border border-gray-200 p-4 hover:border-teal-500 hover:bg-teal-50 transition-all"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center flex-shrink-0">
-                <Clock className="w-6 h-6 text-purple-600" />
-              </div>
-              <div className="flex-1 text-left">
-                <h3 className="text-gray-900">Chronic Conditions</h3>
-                <p className="text-sm text-gray-500">{chronicConditions.length} active conditions</p>
-              </div>
-              <ChevronRight className="w-5 h-5 text-gray-400" />
-            </div>
-          </button>
-
-          {/* Medication History */}
-          <button
-            onClick={() => setActiveSection('medications')}
-            className="w-full bg-white rounded-xl border border-gray-200 p-4 hover:border-teal-500 hover:bg-teal-50 transition-all"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
-                <FileText className="w-6 h-6 text-green-600" />
-              </div>
-              <div className="flex-1 text-left">
-                <h3 className="text-gray-900">Medication History</h3>
-                <p className="text-sm text-gray-500">Past medications & allergies</p>
-              </div>
-              <ChevronRight className="w-5 h-5 text-gray-400" />
-            </div>
-          </button>
-
-          {/* Problem List */}
-          <button
-            onClick={() => setActiveSection('problems')}
-            className="w-full bg-white rounded-xl border border-gray-200 p-4 hover:border-teal-500 hover:bg-teal-50 transition-all"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center flex-shrink-0">
-                <CheckCircle2 className="w-6 h-6 text-orange-600" />
-              </div>
-              <div className="flex-1 text-left">
-                <h3 className="text-gray-900">Problem List</h3>
-                <p className="text-sm text-gray-500">{activeProblems.length} active, {resolvedProblems.length} resolved</p>
-              </div>
-              <ChevronRight className="w-5 h-5 text-gray-400" />
-            </div>
-          </button>
-
-          {/* Social History */}
-          <button
-            onClick={() => setActiveSection('social')}
-            className="w-full bg-white rounded-xl border border-gray-200 p-4 hover:border-teal-500 hover:bg-teal-50 transition-all"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center flex-shrink-0">
-                <Briefcase className="w-6 h-6 text-yellow-600" />
-              </div>
-              <div className="flex-1 text-left">
-                <h3 className="text-gray-900">Social History</h3>
-                <p className="text-sm text-gray-500">Lifestyle & occupational history</p>
-              </div>
-              <ChevronRight className="w-5 h-5 text-gray-400" />
-            </div>
-          </button>
-
-          {/* Reproductive History */}
-          <button
-            onClick={() => setActiveSection('reproductive')}
-            className="w-full bg-white rounded-xl border border-gray-200 p-4 hover:border-teal-500 hover:bg-teal-50 transition-all"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-pink-100 rounded-full flex items-center justify-center flex-shrink-0">
-                <Baby className="w-6 h-6 text-pink-600" />
-              </div>
-              <div className="flex-1 text-left">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-gray-900">Reproductive History</h3>
-                  {!sensitiveVisible && <EyeOff className="w-4 h-4 text-gray-400" />}
-                </div>
-                <p className="text-sm text-gray-500">Privacy protected</p>
-              </div>
-              <ChevronRight className="w-5 h-5 text-gray-400" />
-            </div>
-          </button>
-
-          {/* Mental Health History */}
-          <button
-            onClick={() => setActiveSection('mental')}
-            className="w-full bg-white rounded-xl border border-gray-200 p-4 hover:border-teal-500 hover:bg-teal-50 transition-all"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-indigo-100 rounded-full flex items-center justify-center flex-shrink-0">
-                <Brain className="w-6 h-6 text-indigo-600" />
-              </div>
-              <div className="flex-1 text-left">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-gray-900">Mental Health History</h3>
-                  {!sensitiveVisible && <EyeOff className="w-4 h-4 text-gray-400" />}
-                </div>
-                <p className="text-sm text-gray-500">Privacy protected</p>
-              </div>
-              <ChevronRight className="w-5 h-5 text-gray-400" />
-            </div>
-          </button>
-
-          {/* Edit History */}
-          <button
-            onClick={() => setActiveSection('audit')}
-            className="w-full bg-white rounded-xl border border-gray-200 p-4 hover:border-teal-500 hover:bg-teal-50 transition-all"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center flex-shrink-0">
-                <History className="w-6 h-6 text-gray-600" />
-              </div>
-              <div className="flex-1 text-left">
-                <h3 className="text-gray-900">Edit History</h3>
-                <p className="text-sm text-gray-500">Audit trail & accuracy log</p>
-              </div>
-              <ChevronRight className="w-5 h-5 text-gray-400" />
-            </div>
-          </button>
+          <div>
+            <h1 className="text-gray-900">Medical History</h1>
+            <p className="text-sm text-gray-500">
+              Data-backed view of your chart plus editable structured history sections.
+            </p>
+          </div>
         </div>
       </div>
-    );
-  }
 
-  // Surgical History Section
-  if (activeSection === 'surgical') {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <div className="bg-white border-b border-gray-200 p-4 flex items-center justify-between sticky top-0 z-10">
-          <div className="flex items-center gap-3">
-            <button onClick={() => setActiveSection('overview')} className="text-gray-600">
-              <ArrowLeft className="w-6 h-6" />
-            </button>
-            <h1 className="text-gray-900">Surgical History</h1>
-          </div>
-          <button className="text-teal-600">
-            <Plus className="w-6 h-6" />
-          </button>
+      <div className="space-y-6 p-4">
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+          This page now reads from your real conditions, medications, appointments, records, emergency profile,
+          health summary, and dedicated medical-history tables for surgery, hospitalizations, ER visits, social
+          history, reproductive history, mental health history, and audit history.
         </div>
 
-        <div className="p-4 space-y-3">
-          {surgeries.map((surgery) => (
-            <div key={surgery.id} className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="flex items-start justify-between mb-3">
-                <div>
-                  <h3 className="text-gray-900 mb-1">{surgery.procedure}</h3>
-                  <p className="text-sm text-gray-500">{surgery.date}</p>
-                </div>
-                <Badge className="bg-blue-100 text-blue-700 border-0">Completed</Badge>
+        <div className="rounded-xl border border-gray-200 bg-white p-4">
+          <div className="flex items-center gap-2 text-sm text-gray-600">
+            <Calendar className="w-4 h-4" />
+            <span>Last update reflected here: {loading ? 'Loading...' : data?.lastUpdatedLabel || 'No updates yet'}</span>
+          </div>
+        </div>
+
+        {loading && (
+          <div className="rounded-xl border border-gray-200 bg-white p-6 text-sm text-gray-600">
+            Loading medical history...
+          </div>
+        )}
+
+        {!loading && error && (
+          <div className="rounded-xl border border-red-200 bg-white p-6">
+            <div className="mb-4 flex items-start gap-3">
+              <AlertCircle className="mt-0.5 w-5 h-5 text-red-600" />
+              <div>
+                <h3 className="text-gray-900">Could not load medical history</h3>
+                <p className="mt-1 text-sm text-gray-600">{error}</p>
+              </div>
+            </div>
+            <Button variant="outline" onClick={() => void loadHistory()}>
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Refresh Page
+            </Button>
+          </div>
+        )}
+
+        {!loading && !error && data && (
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              {data.summaryCards.map((card) => (
+                <SummaryCard
+                  key={card.id}
+                  icon={
+                    card.id === 'conditions' ? (
+                      <Stethoscope className="w-4 h-4 text-teal-600" />
+                    ) : card.id === 'medications' ? (
+                      <Pill className="w-4 h-4 text-teal-600" />
+                    ) : card.id === 'encounters' ? (
+                      <Clock3 className="w-4 h-4 text-teal-600" />
+                    ) : (
+                      <FileText className="w-4 h-4 text-teal-600" />
+                    )
+                  }
+                  title={card.title}
+                  value={card.value}
+                  detail={card.detail}
+                  actionLabel={card.actionLabel}
+                  onClick={() => onNavigate(card.actionScreen)}
+                />
+              ))}
+            </div>
+
+            <section>
+              <SectionHeader
+                title="Conditions and problem list"
+                description="Active and resolved conditions come from your condition records and health summary."
+                actions={
+                  <Button size="sm" variant="outline" onClick={() => onNavigate('health-summary')}>
+                    Open health summary
+                  </Button>
+                }
+              />
+
+              <div className="space-y-3">
+                {data.activeConditions.length > 0 ? (
+                  data.activeConditions.map((item) => <ConditionCard key={item.id} item={item} />)
+                ) : (
+                  <EmptyCard message="No active conditions are currently listed in your chart." />
+                )}
               </div>
 
-              <div className="space-y-2 text-sm">
-                <div className="flex items-start gap-2">
-                  <MapPin className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <p className="text-gray-500">Facility</p>
-                    <p className="text-gray-900">{surgery.facility}</p>
+              {data.resolvedConditions.length > 0 && (
+                <div className="mt-4">
+                  <p className="mb-3 text-sm text-gray-500">Resolved or inactive history</p>
+                  <div className="space-y-3">
+                    {data.resolvedConditions.map((item) => (
+                      <ConditionCard key={item.id} item={item} />
+                    ))}
                   </div>
                 </div>
-
-                <div className="flex items-start gap-2">
-                  <User className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <p className="text-gray-500">Surgeon</p>
-                    <p className="text-gray-900">{surgery.surgeon}</p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-2">
-                  <FileText className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <p className="text-gray-500">Indication</p>
-                    <p className="text-gray-900">{surgery.indication}</p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <p className="text-gray-500">Complications</p>
-                    <p className="text-gray-900">{surgery.complications}</p>
-                  </div>
-                </div>
-              </div>
-
-              {surgery.hasReport && (
-                <Button variant="outline" className="w-full mt-4">
-                  <FileText className="w-4 h-4 mr-2" />
-                  View Operative Report
-                </Button>
               )}
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
+            </section>
 
-  // Hospitalizations Section
-  if (activeSection === 'hospitalizations') {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <div className="bg-white border-b border-gray-200 p-4 flex items-center justify-between sticky top-0 z-10">
-          <div className="flex items-center gap-3">
-            <button onClick={() => setActiveSection('overview')} className="text-gray-600">
-              <ArrowLeft className="w-6 h-6" />
-            </button>
-            <h1 className="text-gray-900">Hospitalizations</h1>
-          </div>
-          <button className="text-teal-600">
-            <Plus className="w-6 h-6" />
-          </button>
-        </div>
+            <section>
+              <SectionHeader
+                title="Medication history and allergies"
+                description="Medication history is pulled from your medication list. Allergies still come from your health summary."
+                actions={
+                  <Button size="sm" variant="outline" onClick={() => onNavigate('medications')}>
+                    Open medications
+                  </Button>
+                }
+              />
 
-        <div className="p-4 space-y-3">
-          {hospitalizations.map((hosp) => (
-            <div key={hosp.id} className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="flex items-start justify-between mb-3">
-                <div>
-                  <h3 className="text-gray-900 mb-1">{hosp.reason}</h3>
-                  <p className="text-sm text-gray-500">{hosp.admissionDate} - {hosp.dischargeDate}</p>
-                </div>
-                <Badge className="bg-green-100 text-green-700 border-0">{hosp.lengthOfStay}</Badge>
+              <div className="space-y-3">
+                {data.activeMedications.length > 0 ? (
+                  data.activeMedications.map((item) => <MedicationCard key={item.id} item={item} />)
+                ) : (
+                  <EmptyCard message="No current medications are saved yet." />
+                )}
               </div>
 
-              <div className="space-y-2 text-sm mb-4">
-                <div className="flex items-start gap-2">
-                  <MapPin className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <p className="text-gray-500">Hospital</p>
-                    <p className="text-gray-900">{hosp.hospital}</p>
-                  </div>
+              <div className="mt-4 rounded-xl border border-gray-200 bg-white p-4">
+                <div className="mb-3 flex items-center gap-2">
+                  <Shield className="w-5 h-5 text-red-600" />
+                  <h4 className="text-gray-900">Allergies</h4>
                 </div>
-
-                <div className="flex items-start gap-2">
-                  <User className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <p className="text-gray-500">Attending Physician</p>
-                    <p className="text-gray-900">{hosp.attendingPhysician}</p>
+                {data.allergies.length > 0 ? (
+                  <div className="space-y-2">
+                    {data.allergies.map((allergy) => (
+                      <div key={allergy.id} className="rounded-lg bg-gray-50 p-3">
+                        <div className="mb-1 flex items-center gap-2">
+                          <p className="text-gray-900">{allergy.name}</p>
+                          <Badge className="border-0 bg-red-100 text-red-700">{allergy.severity}</Badge>
+                        </div>
+                        <p className="text-sm text-gray-600">{allergy.reaction || 'Reaction not listed'}</p>
+                      </div>
+                    ))}
                   </div>
-                </div>
+                ) : (
+                  <EmptyCard message="No allergies are saved in your health summary." />
+                )}
               </div>
 
-              {hosp.hasDischarge && (
-                <Button variant="outline" className="w-full">
-                  <FileText className="w-4 h-4 mr-2" />
-                  View Discharge Summary
-                </Button>
+              {data.pastMedications.length > 0 && (
+                <div className="mt-4">
+                  <p className="mb-3 text-sm text-gray-500">Past medications</p>
+                  <div className="space-y-3">
+                    {data.pastMedications.map((item) => (
+                      <MedicationCard key={item.id} item={item} />
+                    ))}
+                  </div>
+                </div>
               )}
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
+            </section>
 
-  // Emergency Visits Section
-  if (activeSection === 'emergency') {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <div className="bg-white border-b border-gray-200 p-4 flex items-center justify-between sticky top-0 z-10">
-          <div className="flex items-center gap-3">
-            <button onClick={() => setActiveSection('overview')} className="text-gray-600">
-              <ArrowLeft className="w-6 h-6" />
-            </button>
-            <h1 className="text-gray-900">Emergency Visits</h1>
-          </div>
-          <button className="text-teal-600">
-            <Plus className="w-6 h-6" />
-          </button>
-        </div>
+            <section>
+              <SectionHeader
+                title="Encounters and records"
+                description="Past appointments are shown as encounter history, and uploaded or provider-linked files appear below."
+                actions={
+                  <Button size="sm" variant="outline" onClick={() => onNavigate('records')}>
+                    View records
+                  </Button>
+                }
+              />
 
-        <div className="p-4 space-y-3">
-          {emergencyVisits.map((visit) => (
-            <div key={visit.id} className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="mb-3">
-                <h3 className="text-gray-900 mb-1">{visit.reason}</h3>
-                <p className="text-sm text-gray-500">{visit.date} • {visit.time}</p>
+              <div className="space-y-3">
+                {data.encounters.length > 0 ? (
+                  data.encounters.slice(0, 5).map((item) => <EncounterCard key={item.id} item={item} />)
+                ) : (
+                  <EmptyCard message="No past appointments are available in this account yet." />
+                )}
               </div>
 
-              <div className="space-y-2 text-sm">
-                <div className="flex items-start gap-2">
-                  <MapPin className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <p className="text-gray-500">Facility</p>
-                    <p className="text-gray-900">{visit.facility}</p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-2">
-                  <FileText className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <p className="text-gray-500">Diagnosis</p>
-                    <p className="text-gray-900">{visit.diagnosis}</p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-2">
-                  <Activity className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <p className="text-gray-500">Treatment</p>
-                    <p className="text-gray-900">{visit.treatment}</p>
-                  </div>
-                </div>
+              <div className="mt-4 space-y-3">
+                {data.records.length > 0 ? (
+                  data.records.slice(0, 6).map((item) => <RecordCard key={item.id} item={item} />)
+                ) : (
+                  <EmptyCard message="No uploaded or linked records are currently saved." />
+                )}
               </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
 
-  // Chronic Conditions Section
-  if (activeSection === 'chronic') {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <div className="bg-white border-b border-gray-200 p-4 flex items-center justify-between sticky top-0 z-10">
-          <div className="flex items-center gap-3">
-            <button onClick={() => setActiveSection('overview')} className="text-gray-600">
-              <ArrowLeft className="w-6 h-6" />
-            </button>
-            <h1 className="text-gray-900">Chronic Conditions</h1>
-          </div>
-          <button className="text-teal-600">
-            <Plus className="w-6 h-6" />
-          </button>
-        </div>
-
-        <div className="p-4">
-          {/* Timeline View */}
-          <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
-            <h3 className="text-gray-900 mb-4">Condition Timeline</h3>
-            <div className="space-y-4">
-              {chronicConditions.map((condition, index) => (
-                <div key={condition.id} className="flex gap-3">
-                  <div className="flex flex-col items-center">
-                    <div className="w-3 h-3 bg-purple-600 rounded-full" />
-                    {index < chronicConditions.length - 1 && (
-                      <div className="w-0.5 h-full bg-purple-200 my-1" />
-                    )}
-                  </div>
-                  <div className="flex-1 pb-4">
-                    <p className="text-sm text-gray-500 mb-1">{condition.diagnosedDate}</p>
-                    <p className="text-gray-900">{condition.condition}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Detailed Cards */}
-          <div className="space-y-3">
-            {chronicConditions.map((condition) => (
-              <div key={condition.id} className="bg-white rounded-xl border border-gray-200 p-4">
-                <div className="flex items-start justify-between mb-3">
-                  <div>
-                    <h3 className="text-gray-900 mb-1">{condition.condition}</h3>
-                    <p className="text-sm text-gray-500">Diagnosed: {condition.diagnosedDate}</p>
-                  </div>
-                  <Badge className="bg-green-100 text-green-700 border-0">Active</Badge>
-                </div>
-
-                <div className="space-y-2 text-sm">
-                  <div>
-                    <p className="text-gray-500">Status</p>
-                    <p className="text-gray-900">{condition.status}</p>
-                  </div>
-
-                  <div>
-                    <p className="text-gray-500">Current Treatment</p>
-                    <p className="text-gray-900">{condition.currentTreatment}</p>
-                  </div>
-
-                  <div>
-                    <p className="text-gray-500">Complications</p>
-                    <p className="text-gray-900">{condition.complications}</p>
-                  </div>
-                </div>
-
-                <Button variant="outline" className="w-full mt-4">
-                  View Treatment History
+              <div className="mt-4 flex flex-wrap gap-3">
+                <Button className="bg-teal-600 text-white hover:bg-teal-700" onClick={() => onNavigate('appointments')}>
+                  Open appointments
+                </Button>
+                <Button variant="outline" onClick={() => onNavigate('records')}>
+                  View full records
                 </Button>
               </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  }
+            </section>
 
-  // Medication History Section
-  if (activeSection === 'medications') {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <div className="bg-white border-b border-gray-200 p-4 flex items-center justify-between sticky top-0 z-10">
-          <div className="flex items-center gap-3">
-            <button onClick={() => setActiveSection('overview')} className="text-gray-600">
-              <ArrowLeft className="w-6 h-6" />
-            </button>
-            <h1 className="text-gray-900">Medication History</h1>
-          </div>
-        </div>
+            {renderManagedSection('surgical', data.surgicalHistory)}
+            {renderManagedSection('hospitalizations', data.hospitalizations)}
+            {renderManagedSection('emergency', data.emergencyVisits)}
+            {renderManagedSection('social', data.socialHistory)}
+            {renderManagedSection('reproductive', data.reproductiveHistory)}
+            {renderManagedSection('mental', data.mentalHealthHistory)}
 
-        <div className="p-4 space-y-4">
-          <div>
-            <h3 className="text-gray-900 mb-3">Past Medications</h3>
-            <div className="space-y-3">
-              {pastMedications.map((med) => (
-                <div key={med.id} className="bg-white rounded-xl border border-gray-200 p-4">
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <h3 className="text-gray-900 mb-1">{med.name}</h3>
-                      <p className="text-sm text-gray-500">{med.startDate} - {med.endDate}</p>
+            <section>
+              <SectionHeader
+                title="Supporting history"
+                description="These facts are supported today through your health summary and emergency profile."
+                actions={
+                  <Button size="sm" variant="outline" onClick={() => onNavigate('emergency-profile')}>
+                    Emergency profile
+                  </Button>
+                }
+              />
+
+              <div className="space-y-3">
+                {data.keyFacts.map((fact) => (
+                  <div key={fact.id} className="rounded-xl border border-gray-200 bg-white p-4">
+                    <div className="mb-2 flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm text-gray-500">{fact.label}</p>
+                        <p className="mt-1 text-gray-900">{fact.value}</p>
+                      </div>
+                      {fact.actionLabel && fact.actionScreen ? (
+                        <Button size="sm" variant="outline" onClick={() => onNavigate(fact.actionScreen!)}>
+                          {fact.actionLabel}
+                        </Button>
+                      ) : null}
                     </div>
-                    <Badge className="bg-gray-100 text-gray-700 border-0">{med.duration}</Badge>
+                    <p className="text-sm text-gray-600">{fact.detail}</p>
                   </div>
-
-                  <div className="space-y-2 text-sm">
-                    <div>
-                      <p className="text-gray-500">Indication</p>
-                      <p className="text-gray-900">{med.indication}</p>
-                    </div>
-
-                    <div>
-                      <p className="text-gray-500">Reason Discontinued</p>
-                      <p className="text-gray-900">{med.reason}</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <h3 className="text-gray-900 mb-3">Medication Allergies</h3>
-            <div className="bg-white rounded-xl border border-red-200 p-4">
-              <div className="flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-                <div>
-                  <h3 className="text-gray-900 mb-1">Penicillin</h3>
-                  <p className="text-sm text-gray-600">Reaction: Severe rash, difficulty breathing</p>
-                  <p className="text-sm text-gray-500 mt-1">Reported: March 2010</p>
-                </div>
+                ))}
               </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
-  // Problem List Section
-  if (activeSection === 'problems') {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <div className="bg-white border-b border-gray-200 p-4 flex items-center justify-between sticky top-0 z-10">
-          <div className="flex items-center gap-3">
-            <button onClick={() => setActiveSection('overview')} className="text-gray-600">
-              <ArrowLeft className="w-6 h-6" />
-            </button>
-            <h1 className="text-gray-900">Problem List</h1>
-          </div>
-          <button className="text-teal-600">
-            <Plus className="w-6 h-6" />
-          </button>
-        </div>
-
-        <div className="p-4 space-y-4">
-          <div>
-            <h3 className="text-gray-900 mb-3">Active Problems</h3>
-            <div className="space-y-3">
-              {activeProblems.map((problem) => (
-                <div key={problem.id} className="bg-white rounded-xl border border-gray-200 p-4">
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <h3 className="text-gray-900 mb-1">{problem.problem}</h3>
-                      <p className="text-sm text-gray-500">Identified: {problem.dateIdentified}</p>
-                    </div>
-                    <Badge className="bg-orange-100 text-orange-700 border-0">{problem.status}</Badge>
-                  </div>
-
-                  <div className="space-y-2 text-sm mb-4">
-                    <div>
-                      <p className="text-gray-500">Managing Provider</p>
-                      <p className="text-gray-900">{problem.managingProvider}</p>
-                    </div>
-                  </div>
-
-                  {problem.hasCarePlan && (
-                    <Button variant="outline" className="w-full">
-                      View Care Plan
-                    </Button>
-                  )}
+              <div className="mt-4 rounded-xl border border-gray-200 bg-white p-4">
+                <div className="mb-3 flex items-center gap-2">
+                  <CheckCircle2 className="w-5 h-5 text-green-600" />
+                  <h4 className="text-gray-900">Immunizations</h4>
                 </div>
-              ))}
-            </div>
-          </div>
+                {data.immunizations.length > 0 ? (
+                  <div className="space-y-2">
+                    {data.immunizations.map((immunization) => (
+                      <div key={immunization.id} className="rounded-lg bg-gray-50 p-3">
+                        <div className="mb-1 flex items-center gap-2">
+                          <p className="text-gray-900">{immunization.name}</p>
+                          <Badge className="border-0 bg-green-100 text-green-700">{immunization.status}</Badge>
+                        </div>
+                        <p className="text-sm text-gray-600">{immunization.detail}</p>
+                        <p className="mt-1 text-xs text-gray-500">
+                          {immunization.date ? `Date: ${immunization.date}` : 'No date recorded'}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyCard message="No immunizations are currently recorded in your health summary." />
+                )}
+              </div>
 
-          <div>
-            <h3 className="text-gray-900 mb-3">Resolved Problems</h3>
-            <div className="space-y-3">
-              {resolvedProblems.map((problem) => (
-                <div key={problem.id} className="bg-white rounded-xl border border-gray-200 p-4">
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <h3 className="text-gray-900 mb-1">{problem.problem}</h3>
-                      <p className="text-sm text-gray-500">
-                        {problem.dateIdentified} - {problem.dateResolved}
+              <div className="mt-4 rounded-xl border border-gray-200 bg-white p-4">
+                <div className="mb-3 flex items-center gap-2">
+                  <Users className="w-5 h-5 text-indigo-600" />
+                  <h4 className="text-gray-900">Family history</h4>
+                </div>
+                {data.familyHistory.length > 0 ? (
+                  <div className="space-y-2">
+                    {data.familyHistory.map((item) => (
+                      <div key={item.id} className="rounded-lg bg-gray-50 p-3">
+                        <p className="text-gray-900">{item.condition}</p>
+                        <p className="text-sm text-gray-600">{item.relation}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyCard message="No family history is currently stored in your health summary." />
+                )}
+              </div>
+            </section>
+
+            <section>
+              <SectionHeader
+                title="Edit audit"
+                description="Every create, update, and delete in the structured medical-history sections is logged here."
+              />
+
+              {data.auditEvents.length > 0 ? (
+                <div className="space-y-3">
+                  {data.auditEvents.map((event) => (
+                    <div key={event.id} className="rounded-xl border border-gray-200 bg-white p-4">
+                      <div className="mb-2 flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <History className="w-5 h-5 text-gray-500" />
+                          <div>
+                            <p className="text-gray-900">{event.summary}</p>
+                            <p className="mt-1 text-sm text-gray-500">{formatDateLabel(event.createdAt)}</p>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Badge className="border-0 bg-gray-100 text-gray-700">{event.sectionType}</Badge>
+                          <Badge
+                            className={
+                              event.actionType === 'created'
+                                ? 'border-0 bg-green-100 text-green-700'
+                                : event.actionType === 'updated'
+                                ? 'border-0 bg-blue-100 text-blue-700'
+                                : 'border-0 bg-red-100 text-red-700'
+                            }
+                          >
+                            {event.actionType}
+                          </Badge>
+                        </div>
+                      </div>
+                      <p className="text-sm text-gray-600">
+                        Actor: {event.actorType}
+                        {event.entryId ? ` • Entry ID: ${event.entryId}` : ''}
                       </p>
                     </div>
-                    <Badge className="bg-green-100 text-green-700 border-0">{problem.status}</Badge>
-                  </div>
-
-                  <div className="text-sm">
-                    <p className="text-gray-500">Resolution</p>
-                    <p className="text-gray-900">{problem.resolution}</p>
-                  </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Social History Section
-  if (activeSection === 'social') {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <div className="bg-white border-b border-gray-200 p-4 flex items-center justify-between sticky top-0 z-10">
-          <div className="flex items-center gap-3">
-            <button onClick={() => setActiveSection('overview')} className="text-gray-600">
-              <ArrowLeft className="w-6 h-6" />
-            </button>
-            <h1 className="text-gray-900">Social History</h1>
-          </div>
-          <button className="text-teal-600">
-            <Edit2 className="w-6 h-6" />
-          </button>
-        </div>
-
-        <div className="p-4 space-y-3">
-          {/* Smoking History */}
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center">
-                <Cigarette className="w-5 h-5 text-gray-600" />
-              </div>
-              <h3 className="text-gray-900">Smoking History</h3>
-            </div>
-            <div className="space-y-2 text-sm">
-              <div>
-                <p className="text-gray-500">Current Status</p>
-                <p className="text-gray-900">Former smoker</p>
-              </div>
-              <div>
-                <p className="text-gray-500">Pack-Years</p>
-                <p className="text-gray-900">5 pack-years</p>
-              </div>
-              <div>
-                <p className="text-gray-500">Quit Date</p>
-                <p className="text-gray-900">January 2018</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Alcohol Use */}
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
-                <Wine className="w-5 h-5 text-purple-600" />
-              </div>
-              <h3 className="text-gray-900">Alcohol Use</h3>
-            </div>
-            <div className="space-y-2 text-sm">
-              <div>
-                <p className="text-gray-500">Current Usage</p>
-                <p className="text-gray-900">Occasional - Social drinking only</p>
-              </div>
-              <div>
-                <p className="text-gray-500">Frequency</p>
-                <p className="text-gray-900">2-3 drinks per week</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Occupation History */}
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                <Briefcase className="w-5 h-5 text-blue-600" />
-              </div>
-              <h3 className="text-gray-900">Occupation History</h3>
-            </div>
-            <div className="space-y-3">
-              <div className="text-sm">
-                <p className="text-gray-900 mb-1">Software Engineer</p>
-                <p className="text-gray-500">2015 - Present</p>
-                <p className="text-sm text-gray-600 mt-1">Exposure: Prolonged computer use</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Travel History */}
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                <Plane className="w-5 h-5 text-green-600" />
-              </div>
-              <h3 className="text-gray-900">Recent Travel History</h3>
-            </div>
-            <div className="text-sm">
-              <p className="text-gray-900 mb-1">Mexico - Cancun</p>
-              <p className="text-gray-500">October 2025 (7 days)</p>
-              <p className="text-sm text-gray-600 mt-1">No illness reported</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Reproductive History Section
-  if (activeSection === 'reproductive') {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <div className="bg-white border-b border-gray-200 p-4 sticky top-0 z-10">
-          <div className="flex items-center gap-3 mb-3">
-            <button onClick={() => setActiveSection('overview')} className="text-gray-600">
-              <ArrowLeft className="w-6 h-6" />
-            </button>
-            <h1 className="text-gray-900">Reproductive History</h1>
-          </div>
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <AlertCircle className="w-4 h-4" />
-            <p>This information is private and protected</p>
-          </div>
-        </div>
-
-        <div className="p-4">
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <button
-              onClick={() => setSensitiveVisible(!sensitiveVisible)}
-              className="flex items-center gap-2 text-teal-600 mb-4"
-            >
-              {sensitiveVisible ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-              <span>{sensitiveVisible ? 'Hide' : 'Show'} Information</span>
-            </button>
-
-            {sensitiveVisible ? (
-              <div className="space-y-3 text-sm">
-                <div>
-                  <p className="text-gray-500">Pregnancies</p>
-                  <p className="text-gray-900">2 pregnancies, 2 live births</p>
-                </div>
-                <div>
-                  <p className="text-gray-500">Last Menstrual Period</p>
-                  <p className="text-gray-900">Nov 1, 2025</p>
-                </div>
-                <div>
-                  <p className="text-gray-500">Contraception</p>
-                  <p className="text-gray-900">Oral contraceptives</p>
-                </div>
-              </div>
-            ) : (
-              <p className="text-gray-500 text-sm">Click "Show Information" to view sensitive data</p>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Mental Health Section
-  if (activeSection === 'mental') {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <div className="bg-white border-b border-gray-200 p-4 sticky top-0 z-10">
-          <div className="flex items-center gap-3 mb-3">
-            <button onClick={() => setActiveSection('overview')} className="text-gray-600">
-              <ArrowLeft className="w-6 h-6" />
-            </button>
-            <h1 className="text-gray-900">Mental Health History</h1>
-          </div>
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <AlertCircle className="w-4 h-4" />
-            <p>This information is private and protected</p>
-          </div>
-        </div>
-
-        <div className="p-4 space-y-3">
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <button
-              onClick={() => setSensitiveVisible(!sensitiveVisible)}
-              className="flex items-center gap-2 text-teal-600 mb-4"
-            >
-              {sensitiveVisible ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-              <span>{sensitiveVisible ? 'Hide' : 'Show'} Information</span>
-            </button>
-
-            {sensitiveVisible ? (
-              <div className="space-y-4">
-                <div>
-                  <h3 className="text-gray-900 mb-2">Diagnoses</h3>
-                  <div className="text-sm space-y-2">
-                    <div className="p-3 bg-gray-50 rounded-lg">
-                      <p className="text-gray-900">Generalized Anxiety Disorder</p>
-                      <p className="text-gray-500">Diagnosed: June 2020</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <h3 className="text-gray-900 mb-2">Current Management</h3>
-                  <p className="text-sm text-gray-600">
-                    Cognitive Behavioral Therapy (weekly sessions) + Sertraline 50mg daily
-                  </p>
-                </div>
-
-                <div>
-                  <h3 className="text-gray-900 mb-2">Crisis Plan</h3>
-                  <div className="p-3 bg-blue-50 rounded-lg text-sm">
-                    <p className="text-gray-900">Emergency Contact: Dr. Lisa Chen</p>
-                    <p className="text-gray-600">(416) 555-7890</p>
-                    <p className="text-gray-600 mt-2">Crisis Line: 1-866-531-2600</p>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <p className="text-gray-500 text-sm">Click "Show Information" to view sensitive data</p>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Edit History/Audit Log Section
-  if (activeSection === 'audit') {
-    const auditLog = [
-      {
-        id: '1',
-        action: 'Updated Chronic Condition',
-        field: 'Hypertension status',
-        changedBy: 'Dr. Sarah Johnson',
-        changedFrom: 'Active',
-        changedTo: 'Active - Well Controlled',
-        timestamp: 'Nov 15, 2025 at 2:30 PM',
-      },
-      {
-        id: '2',
-        action: 'Added Medication',
-        field: 'Past Medications',
-        changedBy: 'Sarah Johnson (Patient)',
-        changedFrom: null,
-        changedTo: 'Amoxicillin (Nov 1-10, 2025)',
-        timestamp: 'Nov 10, 2025 at 4:15 PM',
-      },
-      {
-        id: '3',
-        action: 'Updated Social History',
-        field: 'Smoking Status',
-        changedBy: 'Dr. Sarah Johnson',
-        changedFrom: 'Current smoker',
-        changedTo: 'Former smoker',
-        timestamp: 'Jan 15, 2018 at 10:00 AM',
-      },
-    ];
-
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <div className="bg-white border-b border-gray-200 p-4 flex items-center gap-3 sticky top-0 z-10">
-          <button onClick={() => setActiveSection('overview')} className="text-gray-600">
-            <ArrowLeft className="w-6 h-6" />
-          </button>
-          <h1 className="text-gray-900">Edit History</h1>
-        </div>
-
-        <div className="p-4">
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-4">
-            <div className="flex items-start gap-2">
-              <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-              <div className="text-sm">
-                <p className="text-blue-900">Audit Trail</p>
-                <p className="text-blue-700">All changes to your medical history are tracked for accuracy and security.</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            {auditLog.map((log) => (
-              <div key={log.id} className="bg-white rounded-xl border border-gray-200 p-4">
-                <div className="flex items-start justify-between mb-2">
-                  <h3 className="text-gray-900">{log.action}</h3>
-                  <Badge className="bg-gray-100 text-gray-700 border-0">
-                    {log.changedBy.includes('Patient') ? 'Patient' : 'Provider'}
-                  </Badge>
-                </div>
-
-                <p className="text-sm text-gray-500 mb-3">{log.timestamp}</p>
-
-                <div className="space-y-2 text-sm">
-                  <div>
-                    <p className="text-gray-500">Changed by</p>
-                    <p className="text-gray-900">{log.changedBy}</p>
-                  </div>
-
-                  <div>
-                    <p className="text-gray-500">Field</p>
-                    <p className="text-gray-900">{log.field}</p>
-                  </div>
-
-                  {log.changedFrom && (
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <p className="text-gray-500">From</p>
-                        <p className="text-gray-900">{log.changedFrom}</p>
-                      </div>
-                      <div>
-                        <p className="text-gray-500">To</p>
-                        <p className="text-gray-900">{log.changedTo}</p>
-                      </div>
-                    </div>
-                  )}
-
-                  {!log.changedFrom && (
+              ) : (
+                <div className="rounded-xl border border-gray-200 bg-white p-5">
+                  <div className="flex items-start gap-3">
+                    <TriangleAlert className="mt-0.5 w-5 h-5 text-amber-700" />
                     <div>
-                      <p className="text-gray-500">Added</p>
-                      <p className="text-gray-900">{log.changedTo}</p>
+                      <p className="text-gray-900">No structured history edits logged yet</p>
+                      <p className="mt-1 text-sm text-gray-600">
+                        The audit feed starts populating once you create, update, or delete entries in the new sections.
+                      </p>
                     </div>
-                  )}
+                  </div>
                 </div>
-
-                <Button variant="outline" className="w-full mt-4 text-red-600 border-red-200 hover:bg-red-50">
-                  Report Error
-                </Button>
-              </div>
-            ))}
-          </div>
-        </div>
+              )}
+            </section>
+          </>
+        )}
       </div>
-    );
-  }
-
-  return null;
+    </div>
+  );
 }
