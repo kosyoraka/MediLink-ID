@@ -30,6 +30,7 @@ import ManageProviders from './components/ManageProviders';
 import EmergencyPublic from './components/EmergencyPublic';
 import PersonalInformationPage from './components/PersonalInformationPage';
 import Notifications from './components/Notifications';
+import SettingsDetailPages, { type SettingsPage } from './components/SettingsDetailPages';
 import { API_BASE } from "@/config/api";
 console.log("API_BASE =", API_BASE);
 
@@ -63,7 +64,8 @@ type Screen =
   | 'medical-history'
   | 'communication-preferences'
   | 'manage-providers'
-  | 'notifications';
+  | 'notifications'
+  | SettingsPage;
 
 type NavItem = 'home' | 'records' | 'appointments' | 'messages' | 'more';
 
@@ -574,6 +576,23 @@ export default function App() {
 
       case 'notifications':
         return <Notifications onBack={() => handleNavigation('dashboard', 'home')} onNavigate={(screen) => handleNavigation(screen as Screen)} />;
+
+      case 'privacy-settings':
+      case 'session-management':
+      case 'faqs':
+      case 'contact-support':
+      case 'tutorial-videos':
+      case 'about':
+      case 'app-version':
+      case 'privacy-policy':
+      case 'terms-of-service':
+        return (
+          <SettingsDetailPages
+            page={currentScreen}
+            onBack={() => handleNavigation('more', 'more')}
+            onNavigate={(screen) => handleNavigation(screen as Screen)}
+          />
+        );
 
       default:
         return <Dashboard onNavigate={handleNavigation} />;

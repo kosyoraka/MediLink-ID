@@ -11,6 +11,8 @@ import {
   ChevronRight,
   LogOut,
   Settings,
+  Smartphone,
+  Video,
 } from "lucide-react";
 
 interface MoreProps {
@@ -91,9 +93,8 @@ export default function More({
     {
       title: "Privacy & Security",
       items: [
-        { icon: Shield, label: "Privacy Settings", screen: null },
-        { icon: Settings, label: "Two-Factor Authentication", screen: null },
-        { icon: Shield, label: "Login History", screen: null },
+        { icon: Shield, label: "Privacy Settings", screen: "privacy-settings" },
+        { icon: Smartphone, label: "Session Management", screen: "session-management" },
       ],
     },
     {
@@ -103,17 +104,18 @@ export default function More({
     {
       title: "Help & Support",
       items: [
-        { icon: HelpCircle, label: "FAQs", screen: null },
-        { icon: HelpCircle, label: "Contact Support", screen: null },
-        { icon: HelpCircle, label: "Tutorial Videos", screen: null },
+        { icon: HelpCircle, label: "FAQs", screen: "faqs" },
+        { icon: HelpCircle, label: "Contact Support", screen: "contact-support" },
+        { icon: Video, label: "Tutorial Videos", screen: "tutorial-videos" },
       ],
     },
     {
       title: "About",
       items: [
-        { icon: Info, label: "Version 1.0.0", screen: null },
-        { icon: Info, label: "Privacy Policy", screen: null },
-        { icon: Info, label: "Terms of Service", screen: null },
+        { icon: Info, label: "About MediLink ID", screen: "about" },
+        { icon: Info, label: "Version 1.0.0", screen: "app-version" },
+        { icon: Info, label: "Privacy Policy", screen: "privacy-policy" },
+        { icon: Info, label: "Terms of Service", screen: "terms-of-service" },
       ],
     },
   ];

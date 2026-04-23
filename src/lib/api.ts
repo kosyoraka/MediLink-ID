@@ -90,6 +90,28 @@ export type PatientAppointment = {
   notes: string;
 };
 
+export type PatientSecurityEvent = {
+  id: string;
+  event_type: string;
+  severity: string;
+  ip_address: string | null;
+  user_agent: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
+
+export type PatientSigninSession = {
+  id: string;
+  device_id: string;
+  device_name: string | null;
+  last_signin_method: string | null;
+  first_seen_at: string;
+  last_seen_at: string;
+  last_ip_address: string | null;
+  last_user_agent: string | null;
+  is_current_device: boolean;
+};
+
 export type AppointmentAvailabilitySlot = {
   localDateTime: string;
   localTime: string;
@@ -565,4 +587,19 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ providerId, staffId }),
     }),
+  getPatientSecurityOverview: () =>
+    request<{
+      account: {
+        email: string;
+        email_verified: boolean;
+        email_verified_at: string | null;
+        terms_accepted_at: string | null;
+        created_at: string;
+      };
+      events: PatientSecurityEvent[];
+    }>("/api/patient/security/overview"),
+  listPatientSessions: (deviceId?: string) =>
+    request<{ sessions: PatientSigninSession[] }>(
+      `/api/patient/security/sessions${deviceId ? `?deviceId=${encodeURIComponent(deviceId)}` : ""}`
+    ),
 };

@@ -4253,6 +4253,74 @@ app.get("/api/patient/notifications", requirePatientAuth, async (req: any, res) 
   }
 });
 
+app.get("/api/patient/security/overview", requirePatientAuth, async (req: any, res) => {
+  try {
+    const patientId = req.patientId as string;
+
+    const [patientResult, eventResult] = await Promise.all([
+      pool.query(
+        `
+        SELECT email, email_verified, email_verified_at, terms_accepted_at, created_at
+        FROM patients
+        WHERE id = $1::uuid
+        LIMIT 1
+        `,
+        [patientId]
+      ),
+      pool.query(
+        `
+        SELECT id, event_type, severity, ip_address, user_agent, metadata, created_at
+        FROM patient_security_events
+        WHERE patient_id = $1::uuid
+        ORDER BY created_at DESC
+        LIMIT 20
+        `,
+        [patientId]
+      ),
+    ]);
+
+    if ((patientResult.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: "Patient not found" });
+    }
+
+    return res.json({
+      account: patientResult.rows[0],
+      events: eventResult.rows,
+    });
+  } catch (e: any) {
+    console.error("GET /api/patient/security/overview error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to load security overview" });
+  }
+});
+
+app.get("/api/patient/security/sessions", requirePatientAuth, async (req: any, res) => {
+  try {
+    const patientId = req.patientId as string;
+    const currentDeviceId = normalizePatientDeviceId(req.query?.deviceId);
+
+    const result = await pool.query(
+      `
+      SELECT id, device_id, device_name, last_signin_method, first_seen_at, last_seen_at, last_ip_address, last_user_agent
+      FROM patient_signin_devices
+      WHERE patient_id = $1::uuid
+      ORDER BY last_seen_at DESC
+      LIMIT 50
+      `,
+      [patientId]
+    );
+
+    return res.json({
+      sessions: result.rows.map((row) => ({
+        ...row,
+        is_current_device: currentDeviceId ? row.device_id === currentDeviceId : false,
+      })),
+    });
+  } catch (e: any) {
+    console.error("GET /api/patient/security/sessions error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to load sessions" });
+  }
+});
+
 app.post("/api/patient/notifications/read", requirePatientAuth, async (req: any, res) => {
   try {
     const patientId = req.patientId as string;
