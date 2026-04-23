@@ -280,8 +280,10 @@ function ContactSupport({ onBack }: { onBack: () => void }) {
             <p className="mt-2 text-xs text-red-600">MediLink ID is not for medical emergencies. Call emergency services if you need urgent help.</p>
           </div>
         </div>
-        <Button className="mt-4 w-full bg-teal-600 text-white hover:bg-teal-700" onClick={() => window.location.href = mailto}>
+        <Button asChild className="mt-4 w-full bg-teal-600 text-white hover:bg-teal-700">
+          <a href={mailto}>
           Email Support
+          </a>
         </Button>
       </Card>
     </Shell>
