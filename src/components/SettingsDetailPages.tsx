@@ -91,7 +91,7 @@ function PrivacySettings({ onBack }: { onBack: () => void }) {
     <Shell title="Privacy Settings" subtitle="Practical account security and consent details." onBack={onBack}>
       <Card>
         <div className="flex items-start gap-3">
-          <div className="rounded-full bg-teal-100 p-2 text-teal-600">
+          <div className="flex h-10 w-10 shrink-0 self-start items-center justify-center rounded-full bg-teal-100 text-teal-600">
             <Shield className="h-5 w-5" />
           </div>
           <div className="space-y-1">
@@ -217,7 +217,7 @@ function SessionManagement({ onBack }: { onBack: () => void }) {
       {sessionGroups.map((group) => (
         <Card key={group.id}>
           <div className="flex gap-3">
-            <div className="rounded-full bg-blue-100 p-2 text-blue-600">
+            <div className="flex h-10 w-10 shrink-0 self-start items-center justify-center rounded-full bg-blue-100 text-blue-600">
               <Smartphone className="h-5 w-5" />
             </div>
             <div className="min-w-0 flex-1">
@@ -271,7 +271,7 @@ function ContactSupport({ onBack }: { onBack: () => void }) {
     <Shell title="Contact Support" subtitle="Get help from the MediLink ID team." onBack={onBack}>
       <Card>
         <div className="flex gap-3">
-          <div className="rounded-full bg-teal-100 p-2 text-teal-600">
+          <div className="flex h-10 w-10 shrink-0 self-start items-center justify-center rounded-full bg-teal-100 text-teal-600">
             <Mail className="h-5 w-5" />
           </div>
           <div>
@@ -297,7 +297,7 @@ function TutorialVideos({ onBack }: { onBack: () => void }) {
       {videos.map((video) => (
         <Card key={video}>
           <div className="flex items-center gap-3">
-            <div className="rounded-full bg-blue-100 p-2 text-blue-600">
+            <div className="flex h-10 w-10 shrink-0 self-start items-center justify-center rounded-full bg-blue-100 text-blue-600">
               <Video className="h-5 w-5" />
             </div>
             <div>
