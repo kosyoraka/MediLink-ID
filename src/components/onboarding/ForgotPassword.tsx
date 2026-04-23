@@ -3,6 +3,7 @@ import { ArrowLeft, Mail } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { API_BASE } from '@/config/api';
+import { EMAIL_VALIDATION_MESSAGE, isValidEmail, normalizeEmail } from '@/lib/authValidation';
 
 interface ForgotPasswordProps {
   initialEmail?: string;
@@ -16,9 +17,16 @@ export default function ForgotPassword({ initialEmail = '', onBack, onComplete }
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
+  const emailLooksValid = email.trim().length === 0 || isValidEmail(email);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    const normalizedEmail = normalizeEmail(email);
+    if (!isValidEmail(normalizedEmail)) {
+      setError(EMAIL_VALIDATION_MESSAGE);
+      return;
+    }
 
     try {
       setLoading(true);
@@ -28,7 +36,7 @@ export default function ForgotPassword({ initialEmail = '', onBack, onComplete }
       const res = await fetch(`${API_BASE}/api/auth/forgot-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email: normalizedEmail }),
       });
 
       const data = await res.json().catch(() => null);
@@ -38,7 +46,7 @@ export default function ForgotPassword({ initialEmail = '', onBack, onComplete }
 
       setMessage(data?.message || 'If an account exists, a reset email has been sent.');
       setSubmitted(true);
-      onComplete(email);
+      onComplete(normalizedEmail);
     } catch (err: any) {
       setError(err?.message || 'Unable to send password reset email');
     } finally {
@@ -85,9 +93,16 @@ export default function ForgotPassword({ initialEmail = '', onBack, onComplete }
                 type="email"
                 placeholder="your.email@example.com"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setError(null);
+                }}
                 required
+                autoComplete="email"
               />
+              {email.trim().length > 0 && !emailLooksValid && (
+                <p className="mt-2 text-sm text-red-600">{EMAIL_VALIDATION_MESSAGE}</p>
+              )}
             </div>
 
             <Button

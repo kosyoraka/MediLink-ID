@@ -3,6 +3,7 @@ import { ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { GoogleLogin, type CredentialResponse } from '@react-oauth/google';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
+import { EMAIL_VALIDATION_MESSAGE, isValidEmail, normalizeEmail } from '@/lib/authValidation';
 import { getPatientDeviceId } from '@/lib/patientDevice';
 
 interface SignInProps {
@@ -21,11 +22,18 @@ export default function SignIn({ onSignIn, onRequireVerification, onForgotPasswo
   const [showPassword, setShowPassword] = useState(false);
   const [googleError, setGoogleError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const emailLooksValid = email.trim().length === 0 || isValidEmail(email);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!email || !password) return;
+
+    const normalizedEmail = normalizeEmail(email);
+    if (!isValidEmail(normalizedEmail)) {
+      setFormError(EMAIL_VALIDATION_MESSAGE);
+      return;
+    }
 
     try {
       setFormError(null);
@@ -34,7 +42,7 @@ export default function SignIn({ onSignIn, onRequireVerification, onForgotPasswo
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email,
+          email: normalizedEmail,
           password,
           deviceId: getPatientDeviceId(),
         }),
@@ -44,8 +52,8 @@ export default function SignIn({ onSignIn, onRequireVerification, onForgotPasswo
 
       if (!res.ok) {
         if (res.status === 403 && data?.code === 'EMAIL_NOT_VERIFIED') {
-          localStorage.setItem('email', email);
-          onRequireVerification(email);
+          localStorage.setItem('email', normalizedEmail);
+          onRequireVerification(normalizedEmail);
           return;
         }
         throw new Error(data?.message || 'Sign in failed');
@@ -132,9 +140,16 @@ export default function SignIn({ onSignIn, onRequireVerification, onForgotPasswo
             type="email"
             placeholder="your.email@example.com"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              setFormError(null);
+            }}
             required
+            autoComplete="email"
           />
+          {email.trim().length > 0 && !emailLooksValid && (
+            <p className="mt-2 text-sm text-red-600">{EMAIL_VALIDATION_MESSAGE}</p>
+          )}
         </div>
 
         <div>
@@ -147,8 +162,12 @@ export default function SignIn({ onSignIn, onRequireVerification, onForgotPasswo
               type={showPassword ? 'text' : 'password'}
               placeholder="Enter your password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                setFormError(null);
+              }}
               required
+              autoComplete="current-password"
             />
             <button
               type="button"

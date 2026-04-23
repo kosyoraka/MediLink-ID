@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { ArrowLeft, CheckCircle2, Mail, RefreshCw, TriangleAlert } from 'lucide-react';
 import { Button } from '../ui/button';
 import { API_BASE } from '@/config/api';
+import { EMAIL_VALIDATION_MESSAGE, isValidEmail, normalizeEmail } from '@/lib/authValidation';
 
 interface VerifyEmailProps {
   email: string;
@@ -59,6 +60,12 @@ export default function VerifyEmail({
       return;
     }
 
+    const normalizedEmail = normalizeEmail(email);
+    if (!isValidEmail(normalizedEmail)) {
+      setError(EMAIL_VALIDATION_MESSAGE);
+      return;
+    }
+
     try {
       setResending(true);
       setError(null);
@@ -67,7 +74,7 @@ export default function VerifyEmail({
       const res = await fetch(`${API_BASE}/api/auth/resend-verification`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email: normalizedEmail }),
       });
 
       const data = await res.json().catch(() => null);

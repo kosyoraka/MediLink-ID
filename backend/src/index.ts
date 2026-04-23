@@ -14,6 +14,13 @@ import { requirePatient } from "./middleware/requirePatient";
 //import { requireAuth, requirePatientAuth } from "./middleware/requireAuth";
 import { requireAuth, requireStaffAuth, requirePatientAuth } 
   from "./middleware/requireAuth";
+import {
+  INVALID_EMAIL_MESSAGE,
+  STRONG_PASSWORD_MESSAGE,
+  isStrongPassword,
+  isValidEmail,
+  normalizeEmail,
+} from "./authValidation";
 
 
 
@@ -1904,8 +1911,8 @@ app.post("/api/staff/me/change-password", requireStaffAuth, async (req: any, res
     if (!currentPassword || !newPassword) {
       return res.status(400).json({ message: "Missing currentPassword or newPassword" });
     }
-    if (typeof newPassword !== "string" || newPassword.length < 8) {
-      return res.status(400).json({ message: "New password must be at least 8 characters" });
+    if (!isStrongPassword(newPassword)) {
+      return res.status(400).json({ message: STRONG_PASSWORD_MESSAGE });
     }
 
     // Get existing hash
@@ -2064,14 +2071,17 @@ app.post("/api/auth/signup", async (req, res) => {
   if (!acceptedTerms) {
     return res.status(400).json({ message: "You must accept the terms" });
   }
-  if (typeof password !== "string" || password.length < 8) {
-    return res.status(400).json({ message: "Password must be at least 8 characters" });
+  const emailNorm = normalizeEmail(email);
+  if (!isValidEmail(emailNorm)) {
+    return res.status(400).json({ message: INVALID_EMAIL_MESSAGE });
+  }
+  if (!isStrongPassword(password)) {
+    return res.status(400).json({ message: STRONG_PASSWORD_MESSAGE });
   }
 
   try {
   const id = randomUUID();
   const passwordHash = await bcrypt.hash(password, 12);
-  const emailNorm = String(email).toLowerCase();
 
   // 1) create patient account
   const result = await pool.query(
@@ -2420,7 +2430,10 @@ app.post("/api/auth/signin", async (req, res) => {
     return res.status(400).json({ message: "Missing email or password" });
   }
 
-  const emailNorm = String(email).trim().toLowerCase();
+  const emailNorm = normalizeEmail(email);
+  if (!isValidEmail(emailNorm)) {
+    return res.status(400).json({ message: INVALID_EMAIL_MESSAGE });
+  }
 
   try {
     const result = await pool.query(
@@ -2476,10 +2489,13 @@ app.post("/api/auth/signin", async (req, res) => {
 });
 
 app.post("/api/auth/resend-verification", async (req, res) => {
-  const emailNorm = String(req.body?.email ?? "").trim().toLowerCase();
+  const emailNorm = normalizeEmail(req.body?.email);
 
   if (!emailNorm) {
     return res.status(400).json({ message: "Missing email" });
+  }
+  if (!isValidEmail(emailNorm)) {
+    return res.status(400).json({ message: INVALID_EMAIL_MESSAGE });
   }
 
   try {
@@ -2520,10 +2536,13 @@ app.post("/api/auth/resend-verification", async (req, res) => {
 });
 
 app.post("/api/auth/forgot-password", async (req, res) => {
-  const emailNorm = String(req.body?.email ?? "").trim().toLowerCase();
+  const emailNorm = normalizeEmail(req.body?.email);
 
   if (!emailNorm) {
     return res.status(400).json({ message: "Missing email" });
+  }
+  if (!isValidEmail(emailNorm)) {
+    return res.status(400).json({ message: INVALID_EMAIL_MESSAGE });
   }
 
   try {
@@ -2568,8 +2587,8 @@ app.post("/api/auth/reset-password", async (req, res) => {
     return res.status(400).json({ message: "Missing token or password" });
   }
 
-  if (password.length < 8) {
-    return res.status(400).json({ message: "Password must be at least 8 characters" });
+  if (!isStrongPassword(password)) {
+    return res.status(400).json({ message: STRONG_PASSWORD_MESSAGE });
   }
 
   try {
@@ -2779,12 +2798,15 @@ app.post("/api/staff/auth/signup", async (req, res) => {
     return res.status(400).json({ message: "Missing required fields" });
   }
 
-  if (typeof password !== "string" || password.length < 8) {
-    return res.status(400).json({ message: "Password must be at least 8 characters" });
+  const emailNorm = normalizeEmail(email);
+  if (!isValidEmail(emailNorm)) {
+    return res.status(400).json({ message: INVALID_EMAIL_MESSAGE });
+  }
+  if (!isStrongPassword(password)) {
+    return res.status(400).json({ message: STRONG_PASSWORD_MESSAGE });
   }
 
   const id = randomUUID();
-  const emailNorm = String(email).trim().toLowerCase();
   const passwordHash = await bcrypt.hash(password, 12);
 
   // demo code for now (later: send via email)
@@ -3061,7 +3083,10 @@ app.post("/api/staff/auth/signin", async (req, res) => {
   }
 
   try {
-    const emailNorm = String(email).toLowerCase().trim();
+    const emailNorm = normalizeEmail(email);
+    if (!isValidEmail(emailNorm)) {
+      return res.status(400).json({ message: INVALID_EMAIL_MESSAGE });
+    }
 
     const result = await pool.query(
       `

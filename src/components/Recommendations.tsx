@@ -1,88 +1,165 @@
-import { ArrowLeft, Calendar, TestTube, Syringe, Activity, Heart, Eye, Utensils, Moon, TrendingUp, CheckCircle } from 'lucide-react';
-import { Button } from './ui/button';
-import { Badge } from './ui/badge';
+import { useEffect, useState } from "react";
+import {
+  Activity,
+  AlertCircle,
+  ArrowLeft,
+  Calendar,
+  CheckCircle,
+  FileText,
+  Pill,
+  RefreshCw,
+  Shield,
+  Syringe,
+  Users,
+} from "lucide-react";
+import { Button } from "./ui/button";
+import { Badge } from "./ui/badge";
+import {
+  fetchRecommendationsData,
+  type RecommendationActionItem,
+  type RecommendationActionScreen,
+  type RecommendationIcon,
+  type RecommendationInsightItem,
+  type RecommendationsData,
+} from "@/lib/recommendations";
 
 interface RecommendationsProps {
   onBack: () => void;
+  onNavigate: (screen: RecommendationActionScreen) => void;
 }
 
-export default function Recommendations({ onBack }: RecommendationsProps) {
-  const preventiveCareScore = 80;
+const iconMap: Record<RecommendationIcon, typeof Calendar> = {
+  calendar: Calendar,
+  activity: Activity,
+  file: FileText,
+  syringe: Syringe,
+  shield: Shield,
+  pill: Pill,
+  users: Users,
+};
 
-  const screenings = [
-    {
-      name: 'Mammogram',
-      why: 'Routine breast cancer screening',
-      frequency: 'Every 2 years (ages 50-74)',
-      status: 'due',
-      lastDone: 'Oct 2023',
-      dueDate: 'Oct 2025',
-      category: 'Overdue',
-    },
-    {
-      name: 'Colonoscopy',
-      why: 'Colon cancer screening',
-      frequency: 'Every 10 years (ages 50+)',
-      status: 'upcoming',
-      lastDone: 'Never',
-      dueDate: 'Within 6 months',
-      category: 'Upcoming',
-    },
-    {
-      name: 'Eye Exam',
-      why: 'Diabetic retinopathy screening',
-      frequency: 'Annually for diabetics',
-      status: 'due',
-      lastDone: 'Nov 2024',
-      dueDate: 'Nov 2025',
-      category: 'Due This Month',
-    },
-  ];
+const priorityClasses = {
+  high: {
+    border: "border-red-200",
+    badge: "bg-red-100 text-red-700",
+  },
+  medium: {
+    border: "border-amber-200",
+    badge: "bg-amber-100 text-amber-700",
+  },
+  low: {
+    border: "border-blue-200",
+    badge: "bg-blue-100 text-blue-700",
+  },
+} as const;
 
-  const immunizations = [
-    {
-      name: 'Flu Shot',
-      status: 'Available now',
-      dueDate: 'Recommended annually',
-      priority: 'high',
-    },
-    {
-      name: 'COVID-19 Booster',
-      status: 'Due Jan 2026',
-      dueDate: '6 months since last dose',
-      priority: 'medium',
-    },
-    {
-      name: 'Shingles Vaccine',
-      status: 'Eligible at age 50',
-      dueDate: 'Recommended for age 50+',
-      priority: 'low',
-    },
-  ];
+const insightToneClasses = {
+  blue: "bg-blue-100 text-blue-600",
+  green: "bg-green-100 text-green-600",
+  orange: "bg-orange-100 text-orange-600",
+} as const;
 
-  const lifestyleRecs = [
-    {
-      title: 'Increase Physical Activity',
-      current: '90 minutes/week',
-      goal: '150 minutes/week',
-      icon: Activity,
-      color: 'bg-blue-100 text-blue-600',
-    },
-    {
-      title: 'Improve Sleep Hygiene',
-      current: '5.9 hours/night',
-      goal: '7-9 hours/night',
-      icon: Moon,
-      color: 'bg-purple-100 text-purple-600',
-    },
-    {
-      title: 'Heart Health Monitoring',
-      current: 'Weekly checks',
-      goal: 'Continue monitoring',
-      icon: Heart,
-      color: 'bg-red-100 text-red-600',
-    },
-  ];
+function ActionCard({
+  item,
+  onNavigate,
+}: {
+  item: RecommendationActionItem;
+  onNavigate: (screen: RecommendationActionScreen) => void;
+}) {
+  const Icon = iconMap[item.icon];
+  const styles = priorityClasses[item.priority];
+
+  return (
+    <div className={`bg-white rounded-xl border-2 p-5 ${styles.border}`}>
+      <div className="flex items-start gap-3 mb-4">
+        <div className="w-10 h-10 bg-teal-100 rounded-full flex items-center justify-center flex-shrink-0">
+          <Icon className="w-5 h-5 text-teal-600" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start justify-between gap-3 mb-2">
+            <h4 className="text-gray-900">{item.title}</h4>
+            <Badge className={`${styles.badge} border-0 shrink-0`}>{item.badge}</Badge>
+          </div>
+          <p className="text-sm text-gray-600 mb-2">{item.description}</p>
+          <p className="text-sm text-gray-500">{item.detail}</p>
+        </div>
+      </div>
+
+      <Button
+        size="sm"
+        className="bg-teal-600 hover:bg-teal-700 text-white"
+        onClick={() => onNavigate(item.actionScreen)}
+      >
+        {item.actionLabel}
+      </Button>
+    </div>
+  );
+}
+
+function InsightCard({
+  item,
+  onNavigate,
+}: {
+  item: RecommendationInsightItem;
+  onNavigate: (screen: RecommendationActionScreen) => void;
+}) {
+  const Icon = iconMap[item.icon];
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-5">
+      <div className="flex items-start gap-3 mb-3">
+        <div
+          className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${insightToneClasses[item.tone]}`}
+        >
+          <Icon className="w-5 h-5" />
+        </div>
+        <div className="flex-1">
+          <h4 className="text-gray-900 mb-2">{item.title}</h4>
+          <div className="space-y-1 text-sm">
+            <p className="text-gray-600">Current: {item.current}</p>
+            <p className="text-gray-600">Next step: {item.nextStep}</p>
+          </div>
+        </div>
+      </div>
+      <Button size="sm" variant="outline" className="w-full" onClick={() => onNavigate(item.actionScreen)}>
+        {item.actionLabel}
+      </Button>
+    </div>
+  );
+}
+
+export default function Recommendations({ onBack, onNavigate }: RecommendationsProps) {
+  const [data, setData] = useState<RecommendationsData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const next = await fetchRecommendationsData();
+        if (cancelled) return;
+        setData(next);
+      } catch (err: any) {
+        if (cancelled) return;
+        setError(err?.message || "Unable to load recommendations");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    void load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const score = data?.score ?? 0;
+  const scoreProgress = Math.max(0, Math.min(score, 100)) / 100;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -93,16 +170,19 @@ export default function Recommendations({ onBack }: RecommendationsProps) {
           </button>
           <h1 className="text-white">Recommendations</h1>
         </div>
-        <p className="text-green-100">Personalized health guidance for you</p>
+        <p className="text-green-100">Built from the information currently saved in your MediLink account.</p>
       </div>
 
       <div className="p-6 -mt-4 space-y-6">
-        {/* Preventive Care Score */}
         <div className="bg-gradient-to-br from-teal-50 to-green-50 rounded-xl border border-teal-200 p-6">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="text-gray-900 mb-1">Preventive Care Score</h3>
-              <p className="text-sm text-gray-600">You're doing great!</p>
+              <h3 className="text-gray-900 mb-1">Care Readiness Score</h3>
+              <p className="text-sm text-gray-600">
+                {loading
+                  ? "Reviewing your profile, records, appointments, and health summary..."
+                  : data?.scoreLabel || "Loading"}
+              </p>
             </div>
             <div className="relative w-20 h-20">
               <svg className="transform -rotate-90 w-20 h-20">
@@ -123,141 +203,141 @@ export default function Recommendations({ onBack }: RecommendationsProps) {
                   strokeWidth="6"
                   fill="transparent"
                   strokeDasharray={`${2 * Math.PI * 35}`}
-                  strokeDashoffset={`${2 * Math.PI * 35 * (1 - 0.8)}`}
+                  strokeDashoffset={`${2 * Math.PI * 35 * (1 - scoreProgress)}`}
                   className="text-green-600"
                   strokeLinecap="round"
                 />
               </svg>
               <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-xl text-gray-900">{preventiveCareScore}%</span>
+                <span className="text-xl text-gray-900">{loading ? "…" : `${score}%`}</span>
               </div>
             </div>
           </div>
           <div className="flex items-center justify-between text-sm">
-            <span className="text-gray-600">Completed: 8/10</span>
-            <span className="text-gray-600">Pending: 2</span>
+            <span className="text-gray-600">
+              Completed: {loading ? "…" : `${data?.completedCount ?? 0}/${data?.totalCount ?? 0}`}
+            </span>
+            <span className="text-gray-600">
+              Pending: {loading ? "…" : `${(data?.totalCount ?? 0) - (data?.completedCount ?? 0)}`}
+            </span>
           </div>
         </div>
 
-        {/* Screening Tests */}
-        <div>
-          <h3 className="text-gray-900 mb-3">Screening Tests</h3>
-          <div className="space-y-3">
-            {screenings.map((screening, index) => (
-              <div
-                key={index}
-                className={`bg-white rounded-xl border-2 p-5 ${
-                  screening.category === 'Overdue' ? 'border-red-200' : 'border-gray-200'
-                }`}
-              >
-                <div className="flex items-start gap-3 mb-3">
-                  <div className="w-10 h-10 bg-teal-100 rounded-full flex items-center justify-center flex-shrink-0">
-                    <TestTube className="w-5 h-5 text-teal-600" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-start justify-between mb-1">
-                      <h4 className="text-gray-900">{screening.name}</h4>
-                      <Badge className={`${
-                        screening.category === 'Overdue' ? 'bg-red-100 text-red-700' :
-                        screening.category === 'Due This Month' ? 'bg-orange-100 text-orange-700' :
-                        'bg-blue-100 text-blue-700'
-                      } border-0`}>
-                        {screening.category}
-                      </Badge>
-                    </div>
-                    <p className="text-sm text-gray-600 mb-2">{screening.why}</p>
-                    <div className="space-y-1 text-sm text-gray-500">
-                      <p>Frequency: {screening.frequency}</p>
-                      <p>Last done: {screening.lastDone}</p>
-                      <p>Due: {screening.dueDate}</p>
-                    </div>
-                  </div>
-                </div>
-                
-                <details className="mb-3">
-                  <summary className="text-sm text-teal-600 cursor-pointer">Learn More</summary>
-                  <p className="text-sm text-gray-600 mt-2 p-3 bg-gray-50 rounded-lg">
-                    This screening is recommended by Ontario health guidelines based on your age and health history.
-                  </p>
-                </details>
+        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+          This page uses your actual MediLink profile, records, appointments, medications, and health summary. It
+          helps surface follow-ups, but it is not a diagnosis or a substitute for professional medical advice.
+        </div>
 
-                <div className="flex gap-2">
-                  <Button size="sm" className="flex-1 bg-teal-600 hover:bg-teal-700 text-white">
-                    Schedule Now
-                  </Button>
-                  <Button size="sm" variant="outline">
-                    Remind Me Later
-                  </Button>
-                </div>
+        {loading && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6 text-sm text-gray-600">
+            Loading recommendations...
+          </div>
+        )}
+
+        {!loading && error && (
+          <div className="bg-white rounded-xl border border-red-200 p-6">
+            <div className="flex items-start gap-3 mb-4">
+              <AlertCircle className="w-5 h-5 text-red-600 mt-0.5" />
+              <div>
+                <h3 className="text-gray-900 mb-1">Could not load recommendations</h3>
+                <p className="text-sm text-gray-600">{error}</p>
               </div>
-            ))}
+            </div>
+            <Button variant="outline" onClick={() => window.location.reload()}>
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Refresh Page
+            </Button>
           </div>
-        </div>
+        )}
 
-        {/* Immunizations */}
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <Syringe className="w-5 h-5 text-gray-600" />
-            <h3 className="text-gray-900">Immunizations</h3>
-          </div>
-          <div className="space-y-3">
-            {immunizations.map((vaccine, index) => (
-              <div key={index} className="flex items-start justify-between p-3 bg-gray-50 rounded-lg">
-                <div className="flex-1">
-                  <p className="text-gray-900 mb-1">{vaccine.name}</p>
-                  <p className="text-sm text-gray-600 mb-1">{vaccine.status}</p>
-                  <p className="text-xs text-gray-500">{vaccine.dueDate}</p>
-                </div>
-                {vaccine.priority === 'high' && (
-                  <Button size="sm">Schedule</Button>
+        {!loading && !error && data && (
+          <>
+            <div>
+              <h3 className="text-gray-900 mb-3">Recommended Next Steps</h3>
+              <div className="space-y-3">
+                {data.nextSteps.length > 0 ? (
+                  data.nextSteps.map((item) => (
+                    <ActionCard key={item.id} item={item} onNavigate={onNavigate} />
+                  ))
+                ) : (
+                  <div className="bg-white rounded-xl border border-green-200 p-5">
+                    <div className="flex items-start gap-3">
+                      <CheckCircle className="w-5 h-5 text-green-600 mt-0.5" />
+                      <div>
+                        <h4 className="text-gray-900 mb-1">No urgent follow-ups right now</h4>
+                        <p className="text-sm text-gray-600">
+                          Your current MediLink data looks well covered. You can still review records, appointments,
+                          and your health summary whenever you want.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 )}
               </div>
-            ))}
-          </div>
-        </div>
+            </div>
 
-        {/* Lifestyle Recommendations */}
-        <div>
-          <h3 className="text-gray-900 mb-3">Lifestyle Recommendations</h3>
-          <div className="space-y-3">
-            {lifestyleRecs.map((rec, index) => (
-              <div key={index} className="bg-white rounded-xl border border-gray-200 p-5">
-                <div className="flex items-start gap-3 mb-3">
-                  <div className={`w-10 h-10 rounded-full ${rec.color} flex items-center justify-center flex-shrink-0`}>
-                    <rec.icon className="w-5 h-5" />
-                  </div>
-                  <div className="flex-1">
-                    <h4 className="text-gray-900 mb-2">{rec.title}</h4>
-                    <div className="space-y-1 text-sm">
-                      <p className="text-gray-600">Current: {rec.current}</p>
-                      <p className="text-gray-600">Goal: {rec.goal}</p>
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <div className="flex items-center gap-2 mb-4">
+                <Syringe className="w-5 h-5 text-gray-600" />
+                <h3 className="text-gray-900">Immunizations</h3>
+              </div>
+              <div className="space-y-3">
+                {data.immunizations.map((immunization) => (
+                  <div key={immunization.id} className="flex items-start justify-between gap-4 p-3 bg-gray-50 rounded-lg">
+                    <div className="flex-1">
+                      <p className="text-gray-900 mb-1">{immunization.name}</p>
+                      <p className="text-sm text-gray-600 mb-1">{immunization.detail}</p>
+                      <p className="text-xs text-gray-500">{immunization.dateLabel}</p>
+                    </div>
+                    <div className="flex flex-col items-end gap-2">
+                      <Badge className={`${immunization.emptyState ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"} border-0`}>
+                        {immunization.statusLabel}
+                      </Badge>
+                      {immunization.actionLabel && immunization.actionScreen && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => onNavigate(immunization.actionScreen!)}
+                        >
+                          {immunization.actionLabel}
+                        </Button>
+                      )}
                     </div>
                   </div>
-                </div>
-                <Button size="sm" variant="outline" className="w-full">
-                  View Resources
-                </Button>
+                ))}
               </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Completion Tracker */}
-        <div className="bg-gradient-to-br from-blue-50 to-teal-50 rounded-xl border border-blue-200 p-5">
-          <div className="flex items-center gap-3 mb-4">
-            <CheckCircle className="w-6 h-6 text-green-600" />
-            <div>
-              <h3 className="text-gray-900">You're Up to Date With</h3>
-              <p className="text-sm text-gray-600">8 out of 10 recommendations</p>
             </div>
-          </div>
-          <div className="space-y-2 text-sm text-gray-700">
-            <p>✓ Annual Physical (Oct 2025)</p>
-            <p>✓ Blood Pressure Monitoring</p>
-            <p>✓ A1C Testing</p>
-            <p>✓ Dental Checkup</p>
-          </div>
-        </div>
+
+            <div>
+              <h3 className="text-gray-900 mb-3">Care Insights</h3>
+              <div className="space-y-3">
+                {data.insights.map((item) => (
+                  <InsightCard key={item.id} item={item} onNavigate={onNavigate} />
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-blue-50 to-teal-50 rounded-xl border border-blue-200 p-5">
+              <div className="flex items-center gap-3 mb-4">
+                <CheckCircle className="w-6 h-6 text-green-600" />
+                <div>
+                  <h3 className="text-gray-900">What’s Already On Track</h3>
+                  <p className="text-sm text-gray-600">
+                    {data.completedCount} of {data.totalCount} account areas already look complete.
+                  </p>
+                </div>
+              </div>
+              <div className="space-y-2 text-sm text-gray-700">
+                {data.highlights.map((item) => (
+                  <p key={item.id}>
+                    ✓ {item.label}
+                    <span className="text-gray-500"> — {item.detail}</span>
+                  </p>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

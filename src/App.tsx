@@ -208,6 +208,28 @@ export default function App() {
     if (navItem) setActiveNav(navItem);
   };
 
+  const handleRecommendationNavigation = (
+    screen:
+      | 'appointments'
+      | 'health-summary'
+      | 'records'
+      | 'manage-providers'
+      | 'personal-information'
+      | 'emergency-profile'
+      | 'medications'
+  ) => {
+    const navItem: NavItem =
+      screen === 'appointments'
+        ? 'appointments'
+        : screen === 'records'
+        ? 'records'
+        : screen === 'manage-providers' || screen === 'personal-information'
+        ? 'more'
+        : 'home';
+
+    handleNavigation(screen, navItem);
+  };
+
   const completeOnboarding = () => {
     setIsOnboarded(true);
     setCurrentScreen('dashboard');
@@ -545,7 +567,12 @@ export default function App() {
         return <CareJourneys onBack={() => handleNavigation('dashboard', 'home')} />;
 
       case 'recommendations':
-        return <Recommendations onBack={() => handleNavigation('dashboard', 'home')} />;
+        return (
+          <Recommendations
+            onBack={() => handleNavigation('dashboard', 'home')}
+            onNavigate={handleRecommendationNavigation}
+          />
+        );
 
       case 'documents':
         return <DocumentCenter onBack={() => handleNavigation('dashboard', 'home')} />;

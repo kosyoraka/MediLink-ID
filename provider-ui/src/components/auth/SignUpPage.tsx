@@ -14,6 +14,13 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "@/components/ui/toast";
 import { apiFetch } from "@/lib/api";
+import {
+  EMAIL_VALIDATION_MESSAGE,
+  STRONG_PASSWORD_MESSAGE,
+  isValidEmail,
+  normalizeEmail,
+  validateStrongPassword,
+} from "@/lib/authValidation";
 import { MedilinkIcon } from "@/components/branding/MedilinkIcon";
 
 interface SignUpPageProps {
@@ -107,6 +114,11 @@ export function SignUpPage({ onSignUp, onBackToLogin }: SignUpPageProps) {
         h.city.toLowerCase().includes(q)
     );
   }, [searchQuery, hospitals]);
+  const emailLooksValid = formData.email.trim().length === 0 || isValidEmail(formData.email);
+  const passwordValidation = useMemo(
+    () => validateStrongPassword(formData.password),
+    [formData.password]
+  );
 
   const handleInputChange = (field: keyof typeof formData, value: string) => {
     setFormData((p) => ({ ...p, [field]: value }));
@@ -134,7 +146,7 @@ export function SignUpPage({ onSignUp, onBackToLogin }: SignUpPageProps) {
       return false;
     }
 
-    const emailTrim = formData.email.trim();
+    const emailTrim = normalizeEmail(formData.email);
 
     if (
       !formData.fullName.trim() ||
@@ -152,9 +164,13 @@ export function SignUpPage({ onSignUp, onBackToLogin }: SignUpPageProps) {
       return false;
     }
 
-    // match backend rule (8 chars per your example)
-    if (formData.password.length < 8) {
-      toast.error("Password must be at least 8 characters");
+    if (!isValidEmail(emailTrim)) {
+      toast.error(EMAIL_VALIDATION_MESSAGE);
+      return false;
+    }
+
+    if (!passwordValidation.isStrong) {
+      toast.error(STRONG_PASSWORD_MESSAGE);
       return false;
     }
 
@@ -185,7 +201,7 @@ export function SignUpPage({ onSignUp, onBackToLogin }: SignUpPageProps) {
         body: JSON.stringify({
           hospitalId: selectedHospital!.id,
           fullName: formData.fullName.trim(),
-          email: formData.email.trim(),
+          email: normalizeEmail(formData.email),
           password: formData.password,
           role: formData.role.trim(),
           phone: formData.phone.trim() || null,
@@ -240,7 +256,7 @@ export function SignUpPage({ onSignUp, onBackToLogin }: SignUpPageProps) {
       const login = await apiFetch<SignInResponse>("/api/staff/auth/signin", {
         method: "POST",
         body: JSON.stringify({
-          email: formData.email.trim(),
+          email: normalizeEmail(formData.email),
           password: formData.password,
         }),
       });
@@ -430,6 +446,9 @@ export function SignUpPage({ onSignUp, onBackToLogin }: SignUpPageProps) {
                   autoComplete="email"
                   disabled={isLoading}
                 />
+                {formData.email.trim().length > 0 && !emailLooksValid && (
+                  <p className="mt-2 text-sm text-red-600">{EMAIL_VALIDATION_MESSAGE}</p>
+                )}
               </div>
 
               <div>
@@ -472,7 +491,7 @@ export function SignUpPage({ onSignUp, onBackToLogin }: SignUpPageProps) {
                     id="password"
                     name="password"
                     type={showPassword ? "text" : "password"}
-                    placeholder="At least 8 characters"
+                    placeholder="Create a strong password"
                     value={formData.password}
                     onChange={(e) => handleInputChange("password", e.target.value)}
                     required
@@ -490,6 +509,17 @@ export function SignUpPage({ onSignUp, onBackToLogin }: SignUpPageProps) {
                     {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                   </button>
                 </div>
+                <p
+                  className={`mt-2 text-sm ${
+                    formData.password.length === 0
+                      ? "text-gray-500"
+                      : passwordValidation.isStrong
+                      ? "text-green-600"
+                      : "text-red-600"
+                  }`}
+                >
+                  {STRONG_PASSWORD_MESSAGE}
+                </p>
               </div>
 
               <div>
