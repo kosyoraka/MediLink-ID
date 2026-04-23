@@ -67,8 +67,16 @@ type Screen =
 
 type NavItem = 'home' | 'records' | 'appointments' | 'messages' | 'more';
 
+function getEmergencyTokenFromPath() {
+  const match = window.location.pathname.match(/^\/e\/([^/]+)\/?$/);
+  return match ? decodeURIComponent(match[1]) : "";
+}
+
 export default function App() {
-  const [currentScreen, setCurrentScreen] = useState<Screen>('welcome');
+  const initialEmergencyToken = getEmergencyTokenFromPath();
+  const [currentScreen, setCurrentScreen] = useState<Screen>(
+    initialEmergencyToken ? 'emergency-public' : 'welcome'
+  );
   const [activeNav, setActiveNav] = useState<NavItem>('home');
 
   const [userEmail, setUserEmail] = useState('');
@@ -91,8 +99,8 @@ export default function App() {
   // IMPORTANT: This now stores PROVIDER IDS (UUIDs), not names
   const [connectedProviders, setConnectedProviders] = useState<string[]>([]);
 
-  const [emergencyToken, setEmergencyToken] = useState('');
-  const [bootstrappingSession, setBootstrappingSession] = useState(true);
+  const [emergencyToken, setEmergencyToken] = useState(initialEmergencyToken);
+  const [bootstrappingSession, setBootstrappingSession] = useState(!initialEmergencyToken);
 
   const syncOnboardingState = async (
     email: string,
@@ -237,13 +245,13 @@ export default function App() {
       'communication-preferences',
       'manage-providers',
       'notifications',
+      'emergency-public',
     ].includes(currentScreen);
 
   useEffect(() => {
-    const path = window.location.pathname;
-    const match = path.match(/^\/e\/([^/]+)$/);
-    if (match) {
-      setEmergencyToken(match[1]);
+    const pathEmergencyToken = getEmergencyTokenFromPath();
+    if (pathEmergencyToken) {
+      setEmergencyToken(pathEmergencyToken);
       setCurrentScreen('emergency-public');
       setBootstrappingSession(false);
     }
