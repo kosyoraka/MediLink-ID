@@ -275,7 +275,7 @@ export function Appointments({ onNavigate }: AppointmentsProps) {
       olderMap.set(key, bucket);
     });
 
-    const olderGroups = Array.from(olderMap.entries())
+    const monthGroups = Array.from(olderMap.entries())
       .sort((a, b) => {
         const [aYear, aMonth] = a[0].split("-").map(Number);
         const [bYear, bMonth] = b[0].split("-").map(Number);
@@ -289,6 +289,10 @@ export function Appointments({ onNavigate }: AppointmentsProps) {
           items: items.sort((a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime()),
         };
       });
+
+    const currentMonthPrefix = `older-${now.getFullYear()}-${now.getMonth()}`;
+    const currentMonthGroups = monthGroups.filter((group) => group.key === currentMonthPrefix);
+    const olderGroups = monthGroups.filter((group) => group.key !== currentMonthPrefix);
 
     const pastGroups = [
       {
@@ -307,6 +311,7 @@ export function Appointments({ onNavigate }: AppointmentsProps) {
           return ts >= lastWeekStart.getTime() && ts <= lastWeekEnd.getTime();
         }),
       },
+      ...currentMonthGroups,
       {
         key: "last-month",
         label: "Last Month",
@@ -455,7 +460,7 @@ export function Appointments({ onNavigate }: AppointmentsProps) {
   const renderGroupedSection = (
     title: string,
     groups: Array<{ key: string; label: string; items: Appointment[] }>,
-    options?: { sectionKey: string; past?: boolean; topCollapsible?: boolean }
+    options?: { sectionKey: string; past?: boolean; topCollapsible?: boolean; subtitle?: string; tone?: "blue" | "gray" | "amber" }
   ) => {
     if (groups.length === 0) return null;
 
@@ -463,26 +468,50 @@ export function Appointments({ onNavigate }: AppointmentsProps) {
     const isSectionOpen = openSections[options?.sectionKey || ""] ?? false;
     const topCollapsible = options?.topCollapsible ?? true;
     const showGroups = topCollapsible ? isSectionOpen : true;
+    const tone = options?.tone || "gray";
+    const sectionAccent =
+      tone === "blue"
+        ? "bg-blue-50 text-blue-700"
+        : tone === "amber"
+          ? "bg-amber-50 text-amber-700"
+          : "bg-gray-100 text-gray-700";
 
     return (
-      <section className="rounded-2xl border border-gray-200 bg-white shadow-sm">
+      <section className="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm">
         {topCollapsible ? (
           <button
             type="button"
             onClick={() => toggleSection(options?.sectionKey || "")}
-            className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left text-base font-semibold text-gray-900 hover:bg-gray-50"
+            className="flex w-full items-center justify-between gap-4 px-5 py-5 text-left hover:bg-gray-50"
           >
-            <span className="flex items-center gap-2">
-              {isSectionOpen ? <ChevronDown className="h-4 w-4 text-gray-500" /> : <ChevronRight className="h-4 w-4 text-gray-500" />}
-              {title}
+            <span className="flex items-center gap-3">
+              <span className={`flex h-10 w-10 items-center justify-center rounded-2xl ${sectionAccent}`}>
+                {isSectionOpen ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+              </span>
+              <span>
+                <span className="block text-base font-semibold text-gray-900">{title}</span>
+                {options?.subtitle ? (
+                  <span className="mt-0.5 block text-sm font-normal text-gray-500">{options.subtitle}</span>
+                ) : null}
+              </span>
             </span>
             <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-600">
               {totalCount}
             </span>
           </button>
         ) : (
-          <div className="flex items-center justify-between gap-3 px-5 py-4 text-base font-semibold text-gray-900">
-            <span>{title}</span>
+          <div className="flex items-center justify-between gap-4 px-5 py-5">
+            <div className="flex items-center gap-3">
+              <span className={`flex h-10 w-10 items-center justify-center rounded-2xl ${sectionAccent}`}>
+                <Calendar className="h-5 w-5" />
+              </span>
+              <div>
+                <h2 className="text-base font-semibold text-gray-900">{title}</h2>
+                {options?.subtitle ? (
+                  <p className="mt-0.5 text-sm text-gray-500">{options.subtitle}</p>
+                ) : null}
+              </div>
+            </div>
             <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-600">
               {totalCount}
             </span>
@@ -490,18 +519,19 @@ export function Appointments({ onNavigate }: AppointmentsProps) {
         )}
 
         {showGroups ? (
-          <div className="space-y-3 border-t border-gray-100 px-4 py-4">
+          <div className="border-t border-gray-100 bg-gray-50/60 p-3">
+            <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
             {groups.map((group) => {
               const isGroupOpen = openGroups[group.key] ?? false;
               return (
                 <div
                   key={group.key}
-                  className="overflow-hidden rounded-xl border border-gray-200 bg-white"
+                  className="border-b border-gray-100 last:border-b-0"
                 >
                   <button
                     type="button"
                     onClick={() => toggleGroup(group.key)}
-                    className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold text-gray-800 hover:bg-gray-50"
+                    className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left text-sm font-semibold text-gray-800 hover:bg-gray-50"
                   >
                     <span className="flex items-center gap-2">
                       {isGroupOpen ? <ChevronDown className="h-4 w-4 text-gray-500" /> : <ChevronRight className="h-4 w-4 text-gray-500" />}
@@ -513,13 +543,14 @@ export function Appointments({ onNavigate }: AppointmentsProps) {
                   </button>
 
                   {isGroupOpen ? (
-                    <div className="space-y-4 border-t border-gray-100 bg-gray-50/60 px-3 py-3">
+                    <div className="space-y-4 border-t border-gray-100 bg-gray-50/70 px-3 py-3">
                       {group.items.map((appointment) => renderAppointmentCard(appointment, Boolean(options?.past)))}
                     </div>
                   ) : null}
                 </div>
               );
             })}
+            </div>
           </div>
         ) : null}
       </section>
@@ -606,18 +637,27 @@ export function Appointments({ onNavigate }: AppointmentsProps) {
               pendingConfirmations.length > 0
                 ? [{ key: "pending-confirmations", label: "Pending Confirmations", items: pendingConfirmations }]
                 : [],
-              { sectionKey: "needsAttention", topCollapsible: false }
+              {
+                sectionKey: "needsAttention",
+                topCollapsible: false,
+                subtitle: "Appointments waiting for provider confirmation",
+                tone: "amber",
+              }
             )}
 
             {renderGroupedSection("Upcoming", groupedAppointments.upcomingGroups, {
               sectionKey: "upcoming",
               topCollapsible: false,
+              subtitle: "Confirmed appointments organized by date",
+              tone: "blue",
             })}
 
             {renderGroupedSection("Past", groupedAppointments.pastGroups, {
               sectionKey: "past",
               past: true,
               topCollapsible: true,
+              subtitle: "Completed, cancelled, and elapsed appointment history",
+              tone: "gray",
             })}
           </div>
         </>
