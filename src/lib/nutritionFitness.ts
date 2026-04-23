@@ -11,25 +11,36 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 type VitalType = 'bloodPressure' | 'heartRate' | 'weight' | 'bloodSugar';
 type WeightUnit = 'lbs' | 'kg';
+export type NutritionFitnessEditorKind = 'exercise' | 'nutrition';
 
-export interface NutritionFitnessSummaryCard {
+type NutritionFitnessActionTarget =
+  | {
+      actionType: 'screen';
+      actionScreen: PatientDataScreen;
+      actionEditor?: never;
+    }
+  | {
+      actionType: 'editor';
+      actionEditor: NutritionFitnessEditorKind;
+      actionScreen?: never;
+    };
+
+export type NutritionFitnessSummaryCard = NutritionFitnessActionTarget & {
   id: string;
   label: string;
   value: string;
   detail: string;
   actionLabel: string;
-  actionScreen: PatientDataScreen;
-}
+};
 
-export interface NutritionFitnessSignalItem {
+export type NutritionFitnessSignalItem = NutritionFitnessActionTarget & {
   id: VitalType;
   label: string;
   value: string;
   statusLabel: string;
   detail: string;
   actionLabel: string;
-  actionScreen: PatientDataScreen;
-}
+};
 
 export interface NutritionFitnessHabitItem {
   id: string;
@@ -39,16 +50,16 @@ export interface NutritionFitnessHabitItem {
   detail: string;
   notes: string;
   sourceLabel: string;
+  entry: PatientSocialHistoryEntry;
 }
 
-export interface NutritionFitnessActionItem {
+export type NutritionFitnessActionItem = NutritionFitnessActionTarget & {
   id: string;
   title: string;
   description: string;
   priority: 'high' | 'medium' | 'low';
   actionLabel: string;
-  actionScreen: PatientDataScreen;
-}
+};
 
 export interface NutritionFitnessData {
   coverageCount: number;
@@ -202,6 +213,7 @@ function buildHabitItems(entries: PatientSocialHistoryEntry[], fallbackTitle: st
         `Saved in your ${fallbackTitle.toLowerCase()} history.`,
       notes: String(entry.notes || '').trim() || 'No extra notes added.',
       sourceLabel: buildSourceLabel(entry),
+      entry,
     })
   );
 }
@@ -254,6 +266,7 @@ function buildSignals(input: {
             previousWeight ? formatWeight(previousWeight, latestWeightUnit) : 'not available'
           }.`
         : 'Add a weight entry in Health Summary to start a trend.',
+      actionType: 'screen' as const,
       actionLabel: latestWeightVital ? 'Open Health Summary' : 'Log weight',
       actionScreen: 'health-summary' as const,
     },
@@ -271,6 +284,7 @@ function buildSignals(input: {
       detail: latestBloodPressure
         ? `Latest log: ${formatDateLabel(latestBloodPressure.recordedAt)}.`
         : 'Log blood pressure in Health Summary when you have a reading.',
+      actionType: 'screen' as const,
       actionLabel: latestBloodPressure ? 'Open Health Summary' : 'Log blood pressure',
       actionScreen: 'health-summary' as const,
     },
@@ -288,6 +302,7 @@ function buildSignals(input: {
       detail: latestHeartRate
         ? `Latest log: ${formatDateLabel(latestHeartRate.recordedAt)}. Previous: ${previousHeartRate?.heartRate ?? 'not available'} bpm.`
         : 'Add a heart rate entry to keep your wellness snapshot current.',
+      actionType: 'screen' as const,
       actionLabel: latestHeartRate ? 'Open Health Summary' : 'Log heart rate',
       actionScreen: 'health-summary' as const,
     },
@@ -309,6 +324,7 @@ function buildSignals(input: {
         : input.hasGlucoseFocus
         ? 'A glucose-related condition is on file, so adding blood sugar logs may help this page stay relevant.'
         : 'Add this if you or your care team track blood sugar.',
+      actionType: 'screen' as const,
       actionLabel: latestBloodSugar ? 'Open Health Summary' : 'Log blood sugar',
       actionScreen: 'health-summary' as const,
     },
@@ -330,6 +346,7 @@ function buildSummaryCards(input: {
       label: 'Tracked areas',
       value: `${input.coverageCount}/${input.coverageTotal}`,
       detail: 'Vitals plus nutrition and exercise history currently on file.',
+      actionType: 'screen' as const,
       actionLabel: 'Health Summary',
       actionScreen: 'health-summary' as const,
     },
@@ -340,6 +357,7 @@ function buildSummaryCards(input: {
       detail: input.signals.some((signal) => signal.id === 'weight' && !signal.value.toLowerCase().includes('not logged'))
         ? 'Includes your latest weight trend.'
         : 'Add vitals in Health Summary to populate this view.',
+      actionType: 'screen' as const,
       actionLabel: 'Open Health Summary',
       actionScreen: 'health-summary' as const,
     },
@@ -350,8 +368,9 @@ function buildSummaryCards(input: {
       detail:
         input.exerciseHabits[0]?.title ||
         'No movement history added yet.',
-      actionLabel: 'Medical History',
-      actionScreen: 'medical-history' as const,
+      actionType: 'editor' as const,
+      actionLabel: input.exerciseHabits.length > 0 ? 'Manage exercise' : 'Add exercise',
+      actionEditor: 'exercise' as const,
     },
     {
       id: 'nutrition',
@@ -360,8 +379,9 @@ function buildSummaryCards(input: {
       detail:
         input.nutritionHabits[0]?.title ||
         'No nutrition history added yet.',
-      actionLabel: 'Medical History',
-      actionScreen: 'medical-history' as const,
+      actionType: 'editor' as const,
+      actionLabel: input.nutritionHabits.length > 0 ? 'Manage nutrition' : 'Add nutrition',
+      actionEditor: 'nutrition' as const,
     },
   ];
 }
@@ -393,6 +413,7 @@ function buildActionItems(input: {
       title: 'Add a weight baseline',
       description: 'This page can show weight trends once you log at least one weight entry.',
       priority: 'high',
+      actionType: 'screen',
       actionLabel: 'Log weight',
       actionScreen: 'health-summary',
     });
@@ -402,6 +423,7 @@ function buildActionItems(input: {
       title: 'Refresh your weight trend',
       description: `Your latest weight log is from ${formatDateLabel(latestWeight.recordedAt)}.`,
       priority: 'medium',
+      actionType: 'screen',
       actionLabel: 'Update weight',
       actionScreen: 'health-summary',
     });
@@ -411,10 +433,11 @@ function buildActionItems(input: {
     items.push({
       id: 'add-exercise',
       title: 'Add an exercise habit',
-      description: 'Save your movement routine in Medical History so this page reflects it.',
+      description: 'Save your movement routine here so the exercise section reflects it.',
       priority: 'high',
-      actionLabel: 'Open Medical History',
-      actionScreen: 'medical-history',
+      actionType: 'editor',
+      actionLabel: 'Add exercise',
+      actionEditor: 'exercise',
     });
   } else if (isOlderThan(input.exerciseEntries[0]?.updatedAt || input.exerciseEntries[0]?.endDate || input.exerciseEntries[0]?.startDate, 180)) {
     items.push({
@@ -422,8 +445,9 @@ function buildActionItems(input: {
       title: 'Review your exercise history',
       description: 'Your movement history looks older, so a quick update would keep this page accurate.',
       priority: 'medium',
+      actionType: 'editor',
       actionLabel: 'Review exercise history',
-      actionScreen: 'medical-history',
+      actionEditor: 'exercise',
     });
   }
 
@@ -433,8 +457,9 @@ function buildActionItems(input: {
       title: 'Add a nutrition habit',
       description: 'Diet-related history is not on file yet, so the nutrition section is still sparse.',
       priority: 'high',
-      actionLabel: 'Open Medical History',
-      actionScreen: 'medical-history',
+      actionType: 'editor',
+      actionLabel: 'Add nutrition',
+      actionEditor: 'nutrition',
     });
   } else if (isOlderThan(input.nutritionEntries[0]?.updatedAt || input.nutritionEntries[0]?.endDate || input.nutritionEntries[0]?.startDate, 180)) {
     items.push({
@@ -442,8 +467,9 @@ function buildActionItems(input: {
       title: 'Review your nutrition history',
       description: 'A recent update would make the nutrition view more current.',
       priority: 'medium',
+      actionType: 'editor',
       actionLabel: 'Review nutrition history',
-      actionScreen: 'medical-history',
+      actionEditor: 'nutrition',
     });
   }
 
@@ -453,6 +479,7 @@ function buildActionItems(input: {
       title: 'Log a blood pressure reading',
       description: 'A heart or blood-pressure-related condition is on file, so this signal matters here.',
       priority: 'high',
+      actionType: 'screen',
       actionLabel: 'Log blood pressure',
       actionScreen: 'health-summary',
     });
@@ -462,6 +489,7 @@ function buildActionItems(input: {
       title: 'Update your blood pressure reading',
       description: `Your latest blood pressure log is from ${formatDateLabel(latestBloodPressure.recordedAt)}.`,
       priority: 'medium',
+      actionType: 'screen',
       actionLabel: 'Open Health Summary',
       actionScreen: 'health-summary',
     });
@@ -473,6 +501,7 @@ function buildActionItems(input: {
       title: 'Add a heart rate log',
       description: 'Heart rate is still missing, so your fitness snapshot is incomplete.',
       priority: 'medium',
+      actionType: 'screen',
       actionLabel: 'Log heart rate',
       actionScreen: 'health-summary',
     });
@@ -484,6 +513,7 @@ function buildActionItems(input: {
       title: 'Add a blood sugar reading',
       description: 'A glucose-related condition is on file, so this metric may be useful to keep current.',
       priority: 'medium',
+      actionType: 'screen',
       actionLabel: 'Log blood sugar',
       actionScreen: 'health-summary',
     });
@@ -493,6 +523,7 @@ function buildActionItems(input: {
       title: 'Refresh your blood sugar history',
       description: `Your latest blood sugar reading is from ${formatDateLabel(latestBloodSugar.recordedAt)}.`,
       priority: 'medium',
+      actionType: 'screen',
       actionLabel: 'Open Health Summary',
       actionScreen: 'health-summary',
     });
@@ -504,6 +535,7 @@ function buildActionItems(input: {
       title: 'Keep your wellness overview current',
       description: 'Your current data already fills this page well. Review it any time you add new vitals or lifestyle history.',
       priority: 'low',
+      actionType: 'screen',
       actionLabel: 'Open Health Summary',
       actionScreen: 'health-summary',
     });
