@@ -753,6 +753,120 @@ setAppointments(
     );
   }
 
+  if (rescheduleTarget) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="sticky top-0 z-10 border-b border-gray-200 bg-white p-4">
+          <div className="mx-auto flex w-full max-w-md items-start justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal-600">
+                Reschedule Request
+              </p>
+              <h3 className="mt-1 text-gray-900">{rescheduleTarget.specialty || "Appointment"}</h3>
+              <p className="text-sm text-gray-500">{rescheduleTarget.doctorName}</p>
+            </div>
+
+            <button
+              type="button"
+              onClick={closeRescheduleRequest}
+              className="rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-100"
+              aria-label="Cancel reschedule"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+
+        <div className="mx-auto w-full max-w-md space-y-4 p-4">
+          <div className="rounded-xl border border-gray-200 bg-white p-4">
+            <p className="text-sm text-gray-600">Current appointment</p>
+            <p className="mt-2 font-medium text-gray-900">
+              {formatWhen(rescheduleTarget.startTime).date} at {formatWhen(rescheduleTarget.startTime).time}
+            </p>
+          </div>
+
+          <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-4">
+            <div>
+              <label className="mb-2 block text-sm text-gray-600">Preferred new date</label>
+              <input
+                type="date"
+                min={toDateInputValue(new Date())}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                value={rescheduleDate}
+                onChange={(event) => {
+                  setRescheduleDate(event.target.value);
+                  setRescheduleSlot("");
+                }}
+              />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm text-gray-600">Available time</label>
+
+              {rescheduleLoading ? (
+                <div className="rounded-lg border border-gray-200 px-3 py-4 text-sm text-gray-500">
+                  Loading available times…
+                </div>
+              ) : rescheduleSlots.filter((slot) => slot.available).length === 0 ? (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-4 text-sm text-amber-800">
+                  No open time slots are available for that day.
+                </div>
+              ) : (
+                <select
+                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
+                  value={rescheduleSlot}
+                  onChange={(event) => setRescheduleSlot(event.target.value)}
+                >
+                  <option value="">Select a time…</option>
+                  {rescheduleSlots
+                    .filter((slot) => slot.available)
+                    .map((slot) => (
+                      <option key={slot.localDateTime} value={slot.localDateTime}>
+                        {slot.label}
+                      </option>
+                    ))}
+                </select>
+              )}
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm text-gray-600">Reason for rescheduling</label>
+              <textarea
+                className="min-h-[96px] w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
+                value={rescheduleReason}
+                onChange={(event) => setRescheduleReason(event.target.value)}
+                placeholder="Tell your provider why you need a new time."
+              />
+            </div>
+
+            {rescheduleError ? (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-700">
+                {rescheduleError}
+              </div>
+            ) : null}
+          </div>
+
+          <button
+            type="button"
+            onClick={submitRescheduleRequest}
+            disabled={rescheduleSubmitting || !rescheduleSlot}
+            className="w-full rounded-xl bg-teal-600 px-4 py-3 text-sm font-medium text-white hover:bg-teal-700 disabled:bg-gray-300"
+          >
+            {rescheduleSubmitting ? "Sending request…" : "Send Reschedule Request"}
+          </button>
+
+          <button
+            type="button"
+            onClick={closeRescheduleRequest}
+            className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-gray-700 hover:border-gray-300"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // ---------------- Main Screen ----------------
   return (
     <div className="min-h-screen bg-gray-50">
@@ -899,129 +1013,6 @@ setAppointments(
           </div>
         )}
       </div>
-
-      {rescheduleTarget
-        ? createPortal(
-            <div
-              className="fixed inset-0 z-[9999] overflow-y-auto bg-gray-50"
-              role="dialog"
-              aria-modal="true"
-            >
-              <div
-                className="min-h-screen"
-              >
-                <div className="sticky top-0 z-10 border-b border-gray-200 bg-white p-4">
-                  <div className="mx-auto flex w-full max-w-md items-start justify-between">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal-600">
-                        Reschedule Request
-                      </p>
-                      <h3 className="mt-1 text-gray-900">{rescheduleTarget.specialty || "Appointment"}</h3>
-                      <p className="text-sm text-gray-500">{rescheduleTarget.doctorName}</p>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={closeRescheduleRequest}
-                      className="rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-100"
-                      aria-label="Cancel reschedule"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mx-auto w-full max-w-md space-y-4 p-4">
-                  <div className="rounded-xl border border-gray-200 bg-white p-4">
-                    <p className="text-sm text-gray-600">Current appointment</p>
-                    <p className="mt-2 font-medium text-gray-900">
-                      {formatWhen(rescheduleTarget.startTime).date} at {formatWhen(rescheduleTarget.startTime).time}
-                    </p>
-                  </div>
-
-                  <div className="rounded-xl border border-gray-200 bg-white p-4 space-y-4">
-                    <div>
-                      <label className="block text-sm text-gray-600 mb-2">Preferred new date</label>
-                      <input
-                        type="date"
-                        min={toDateInputValue(new Date())}
-                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm"
-                        value={rescheduleDate}
-                        onChange={(event) => {
-                          setRescheduleDate(event.target.value);
-                          setRescheduleSlot("");
-                        }}
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm text-gray-600 mb-2">Available time</label>
-
-                      {rescheduleLoading ? (
-                        <div className="rounded-lg border border-gray-200 px-3 py-4 text-sm text-gray-500">
-                          Loading available times…
-                        </div>
-                      ) : rescheduleSlots.filter((slot) => slot.available).length === 0 ? (
-                        <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-4 text-sm text-amber-800">
-                          No open time slots are available for that day.
-                        </div>
-                      ) : (
-                        <select
-                          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm"
-                          value={rescheduleSlot}
-                          onChange={(event) => setRescheduleSlot(event.target.value)}
-                        >
-                          <option value="">Select a time…</option>
-                          {rescheduleSlots
-                            .filter((slot) => slot.available)
-                            .map((slot) => (
-                              <option key={slot.localDateTime} value={slot.localDateTime}>
-                                {slot.label}
-                              </option>
-                            ))}
-                        </select>
-                      )}
-                    </div>
-
-                    <div>
-                      <label className="block text-sm text-gray-600 mb-2">Reason for rescheduling</label>
-                      <textarea
-                        className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm min-h-[96px]"
-                        value={rescheduleReason}
-                        onChange={(event) => setRescheduleReason(event.target.value)}
-                        placeholder="Tell your provider why you need a new time."
-                      />
-                    </div>
-
-                    {rescheduleError ? (
-                      <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-700">
-                        {rescheduleError}
-                      </div>
-                    ) : null}
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={submitRescheduleRequest}
-                    disabled={rescheduleSubmitting || !rescheduleSlot}
-                    className="w-full rounded-xl bg-teal-600 px-4 py-3 text-sm font-medium text-white hover:bg-teal-700 disabled:bg-gray-300"
-                  >
-                    {rescheduleSubmitting ? "Sending request…" : "Send Reschedule Request"}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={closeRescheduleRequest}
-                    className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-gray-700 hover:border-gray-300"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </div>,
-            document.body
-          )
-        : null}
 
       {selectedSummary
         ? createPortal(
