@@ -5141,7 +5141,7 @@ app.post("/api/patient/appointments/:id/reschedule-request", requirePatientAuth,
         UPDATE appointments
         SET
           start_time = $1::timestamptz,
-          status = 'Pending',
+          status = 'Scheduled',
           notes = CASE
             WHEN COALESCE($4::text, '') = '' THEN notes
             WHEN COALESCE(notes, '') = '' THEN 'Reschedule request: ' || $4::text
