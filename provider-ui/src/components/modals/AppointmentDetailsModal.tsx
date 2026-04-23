@@ -70,6 +70,10 @@ export function AppointmentDetailsModal({
   const startTime = appointment.startTime
     ? new Date(appointment.startTime)
     : null;
+  const hasElapsed = startTime ? startTime.getTime() <= Date.now() : false;
+  const canModify = appointment.status !== "Completed" && appointment.status !== "Cancelled";
+  const canReschedule = canModify && !hasElapsed;
+  const canComplete = canModify && hasElapsed;
 
   useEffect(() => {
     if (!open) return;
@@ -82,7 +86,7 @@ export function AppointmentDetailsModal({
   }, [open, appointment.id]);
 
   useEffect(() => {
-    if (!open || !rescheduleDate) return;
+    if (!open || !rescheduleDate || !canReschedule) return;
 
     let cancelled = false;
 
@@ -110,7 +114,7 @@ export function AppointmentDetailsModal({
     return () => {
       cancelled = true;
     };
-  }, [open, rescheduleDate, appointment.id, appointment.appointmentType, appointment.type]);
+  }, [open, rescheduleDate, appointment.id, appointment.appointmentType, appointment.type, canReschedule]);
 
   async function handleReschedule() {
     if (!rescheduleSlot) {
@@ -259,24 +263,22 @@ export function AppointmentDetailsModal({
               Close
             </Button>
 
-            {appointment.status !== "Completed" &&
-              appointment.status !== "Cancelled" && (
-                <Button
-                  variant="outline"
-                  onClick={handleReschedule}
-                  disabled={rescheduling || !rescheduleSlot}
-                  className="flex-1"
-                >
-                  {rescheduling ? "Rescheduling…" : "Reschedule"}
-                </Button>
-              )}
+            {canReschedule && (
+              <Button
+                variant="outline"
+                onClick={handleReschedule}
+                disabled={rescheduling || !rescheduleSlot}
+                className="flex-1"
+              >
+                {rescheduling ? "Rescheduling…" : "Reschedule"}
+              </Button>
+            )}
 
-            {appointment.status !== "Completed" &&
-              appointment.status !== "Cancelled" && (
-                <Button onClick={onComplete} className="flex-1">
-                  Mark as Completed
-                </Button>
-              )}
+            {canComplete && (
+              <Button onClick={onComplete} className="flex-1">
+                Mark as Completed
+              </Button>
+            )}
           </div>
         </div>
       </DialogContent>

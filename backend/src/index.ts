@@ -5294,6 +5294,33 @@ app.patch("/api/staff/appointments/:id/status", requireStaffAuth, async (req: an
   }
 
   try {
+    const appointmentResult = await pool.query(
+      `
+      SELECT start_time, status
+      FROM appointments
+      WHERE id = $1::uuid
+        AND staff_id = $2::uuid
+      LIMIT 1
+      `,
+      [id, staffId]
+    );
+
+    if ((appointmentResult.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: "Appointment not found" });
+    }
+
+    const appointment = appointmentResult.rows[0];
+    const appointmentTime = new Date(appointment.start_time).getTime();
+    const hasElapsed = !Number.isNaN(appointmentTime) && appointmentTime <= Date.now();
+
+    if (status === "Completed" && !hasElapsed) {
+      return res.status(400).json({ message: "Future appointments cannot be marked completed" });
+    }
+
+    if ((status === "Confirmed" || status === "Cancelled") && hasElapsed) {
+      return res.status(400).json({ message: "Past appointments cannot be confirmed or cancelled" });
+    }
+
     const updated = await pool.query(
       `
       UPDATE appointments
@@ -5304,10 +5331,6 @@ app.patch("/api/staff/appointments/:id/status", requireStaffAuth, async (req: an
       `,
       [status, id, staffId]
     );
-
-    if ((updated.rowCount ?? 0) === 0) {
-      return res.status(404).json({ message: "Appointment not found" });
-    }
 
     return res.json({ message: "Status updated" });
   } catch (err: any) {
@@ -5390,6 +5413,10 @@ app.patch("/api/staff/appointments/:id/reschedule", requireStaffAuth, async (req
     const appointment = appointmentResult.rows[0];
     if (["Cancelled", "Completed"].includes(String(appointment.status))) {
       return res.status(400).json({ message: "This appointment can no longer be rescheduled" });
+    }
+    const currentAppointmentTime = new Date(appointment.start_time).getTime();
+    if (!Number.isNaN(currentAppointmentTime) && currentAppointmentTime <= Date.now()) {
+      return res.status(400).json({ message: "Past appointments cannot be rescheduled" });
     }
 
     const parsedLocal = parseLocalDateTimeInput(localDateTime);

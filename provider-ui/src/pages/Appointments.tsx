@@ -368,6 +368,11 @@ export function Appointments({ onNavigate }: AppointmentsProps) {
   };
 
   const renderAppointmentCard = (a: Appointment, isPastSection = false) => {
+    const appointmentTime = new Date(a.startTime).getTime();
+    const hasElapsed = !Number.isNaN(appointmentTime) && appointmentTime <= Date.now();
+    const canTakeActions = a.status !== "Completed" && a.status !== "Cancelled";
+    const canConfirmOrCancel = canTakeActions && !isPastSection && !hasElapsed;
+    const canComplete = canTakeActions && hasElapsed;
     const initials =
       (a.patientName || "Patient")
         .split(" ")
@@ -410,9 +415,9 @@ export function Appointments({ onNavigate }: AppointmentsProps) {
             </div>
 
             <div className="flex gap-2">
-              {!isPastSection && a.status !== "Completed" && a.status !== "Cancelled" && (
+              {canTakeActions && (
                 <>
-                  {a.status !== "Confirmed" && (
+                  {canConfirmOrCancel && a.status !== "Confirmed" && (
                     <Button
                       size="sm"
                       variant="outline"
@@ -422,7 +427,7 @@ export function Appointments({ onNavigate }: AppointmentsProps) {
                     </Button>
                   )}
 
-                  {a.status === "Confirmed" && (
+                  {canComplete && (
                     <Button
                       size="sm"
                       onClick={() => updateStatus(a.id, "Completed", "Marked completed")}
@@ -432,14 +437,16 @@ export function Appointments({ onNavigate }: AppointmentsProps) {
                     </Button>
                   )}
 
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    onClick={() => updateStatus(a.id, "Cancelled", "Cancelled")}
-                  >
-                    <XCircle className="w-3 h-3 mr-1" />
-                    Cancel
-                  </Button>
+                  {canConfirmOrCancel && (
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => updateStatus(a.id, "Cancelled", "Cancelled")}
+                    >
+                      <XCircle className="w-3 h-3 mr-1" />
+                      Cancel
+                    </Button>
+                  )}
                 </>
               )}
 
