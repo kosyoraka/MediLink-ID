@@ -3021,3 +3021,43 @@ html.dark .hover\:bg-green-50:hover,
 html.dark .hover\:bg-red-50:hover {
   background-color: #27272a !important;
 }
+
+html.dark .theme-preserve-light.bg-blue-100 {
+  background-color: oklch(.932 .032 255.585) !important;
+}
+
+html.dark .theme-preserve-light.bg-purple-100 {
+  background-color: oklch(.946 .033 307.174) !important;
+}
+
+html.dark .theme-preserve-light.bg-orange-100 {
+  background-color: oklch(.954 .038 75.164) !important;
+}
+
+html.dark .theme-preserve-light.bg-pink-100 {
+  background-color: oklch(.948 .028 342.258) !important;
+}
+
+html.dark .theme-preserve-light.bg-teal-100 {
+  background-color: oklch(.953 .051 180.801) !important;
+}
+
+html.dark .theme-preserve-light.text-blue-600 {
+  color: oklch(.546 .245 262.881) !important;
+}
+
+html.dark .theme-preserve-light.text-purple-600 {
+  color: oklch(.558 .288 302.321) !important;
+}
+
+html.dark .theme-preserve-light.text-orange-600 {
+  color: oklch(.646 .222 41.116) !important;
+}
+
+html.dark .theme-preserve-light.text-pink-600 {
+  color: oklch(.592 .249 .584) !important;
+}
+
+html.dark .theme-preserve-light.text-teal-600 {
+  color: oklch(.6 .118 184.704) !important;
+}

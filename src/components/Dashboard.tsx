@@ -523,7 +523,7 @@ export default function Dashboard({
               }}
               className="flex-1 min-w-0 flex flex-col items-center gap-1.5"
             >
-              <div className={`w-12 h-12 rounded-full ${action.color} flex items-center justify-center`}>
+              <div className={`theme-preserve-light w-12 h-12 rounded-full ${action.color} flex items-center justify-center`}>
                 <action.icon className="w-5 h-5" />
               </div>
               <span
