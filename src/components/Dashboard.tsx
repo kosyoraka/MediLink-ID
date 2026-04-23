@@ -266,7 +266,6 @@ export default function Dashboard({
     }
 
     setWalletError('');
-    setCopied(false);
     setWalletLoading(true);
 
     try {
@@ -286,7 +285,17 @@ export default function Dashboard({
         throw new Error((data as any)?.message || 'Failed to create emergency link');
       }
 
-      setEmergencyUrl(`${window.location.origin}/e/${data.token}`);
+      const nextEmergencyUrl =
+        (typeof data.url === 'string' && data.url.trim()) ||
+        (typeof data.token === 'string' && data.token.trim()
+          ? `${window.location.origin}/e/${data.token}`
+          : '');
+
+      if (!nextEmergencyUrl) {
+        throw new Error('Failed to create emergency link');
+      }
+
+      setEmergencyUrl(nextEmergencyUrl);
       setRecentEmergencyAccesses(Array.isArray(data.recentAccesses) ? data.recentAccesses : []);
 
     } catch (e: any) {
@@ -532,22 +541,6 @@ export default function Dashboard({
                 <span className="font-semibold text-gray-800">Add to Apple Wallet</span> — coming soon
               </div>
             </>
-          )}
-
-          {/* If nothing yet (rare) */}
-          {!walletLoading && !walletError && !emergencyUrl && (
-            <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-3">
-              <p className="text-sm text-gray-600">We couldn’t load your Emergency ID right now.</p>
-              <Button
-                onClick={regenerateEmergencyQr}
-                variant="outline"
-                className="w-full"
-                disabled={walletLoading}
-              >
-                <RefreshCw className="w-4 h-4 mr-2" />
-                Try Again
-              </Button>
-            </div>
           )}
         </div>
       </div>
