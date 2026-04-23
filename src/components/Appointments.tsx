@@ -757,7 +757,7 @@ setAppointments(
     return (
       <div className="min-h-screen bg-gray-50">
         <div className="sticky top-0 z-10 border-b border-gray-200 bg-white p-4">
-          <div className="mx-auto flex w-full max-w-md items-start justify-between">
+          <div className="mx-auto w-full max-w-md">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal-600">
                 Reschedule Request
@@ -765,15 +765,6 @@ setAppointments(
               <h3 className="mt-1 text-gray-900">{rescheduleTarget.specialty || "Appointment"}</h3>
               <p className="text-sm text-gray-500">{rescheduleTarget.doctorName}</p>
             </div>
-
-            <button
-              type="button"
-              onClick={closeRescheduleRequest}
-              className="rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-100"
-              aria-label="Cancel reschedule"
-            >
-              Cancel
-            </button>
           </div>
         </div>
 
