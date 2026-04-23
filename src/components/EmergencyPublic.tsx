@@ -26,19 +26,7 @@ type EmergencyPublicResponse = {
   living_will: string | null;
 };
 
-type AccessMode = "patient_code" | "staff_ticket" | "patient_session" | "patient_ticket";
-
-function getPatientToken() {
-  return (
-    localStorage.getItem("patient_token") ||
-    localStorage.getItem("patientToken") ||
-    localStorage.getItem("token") ||
-    sessionStorage.getItem("patient_token") ||
-    sessionStorage.getItem("patientToken") ||
-    sessionStorage.getItem("token") ||
-    null
-  );
-}
+type AccessMode = "patient_code" | "staff_ticket" | "patient_ticket";
 
 function getProviderOrigin() {
   const { protocol, hostname } = window.location;
@@ -60,8 +48,6 @@ export default function EmergencyPublic({ token }: { token: string }) {
   const [accessCode, setAccessCode] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [initializing, setInitializing] = useState(true);
-  const hasPatientSession = Boolean(getPatientToken());
-
   const searchParams = useMemo(() => new URLSearchParams(window.location.search), []);
   const staffAccessTicket = searchParams.get("staffAccessTicket");
   const patientAccessTicket = searchParams.get("patientAccessTicket");
@@ -74,14 +60,9 @@ export default function EmergencyPublic({ token }: { token: string }) {
     setErr("");
 
     try {
-      const tokenValue = getPatientToken();
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
       };
-
-      if (mode === "patient_session" && tokenValue) {
-        headers.Authorization = `Bearer ${tokenValue}`;
-      }
 
       const res = await fetch(`${API_BASE}/api/emergency/access`, {
         method: "POST",
@@ -118,7 +99,6 @@ export default function EmergencyPublic({ token }: { token: string }) {
 
     (async () => {
       try {
-        const patientToken = getPatientToken();
         if (patientAccessTicket) {
           await requestAccess("patient_ticket", { patientTicket: patientAccessTicket });
           return;
@@ -126,12 +106,6 @@ export default function EmergencyPublic({ token }: { token: string }) {
 
         if (staffAccessTicket) {
           await requestAccess("staff_ticket", { staffTicket: staffAccessTicket });
-          return;
-        }
-
-        if (patientToken) {
-          await requestAccess("patient_session");
-          return;
         }
       } finally {
         if (!cancelled) setInitializing(false);
@@ -183,17 +157,6 @@ export default function EmergencyPublic({ token }: { token: string }) {
         {!initializing ? (
           <div className="space-y-4">
             <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
-              {hasPatientSession ? (
-                <button
-                  type="button"
-                  onClick={() => requestAccess("patient_session")}
-                  className="w-full rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-teal-700"
-                  disabled={submitting}
-                >
-                  Continue as Logged-In Patient
-                </button>
-              ) : null}
-
               <p className="text-sm text-gray-900">Family / Friends Access</p>
               <input
                 type="password"
