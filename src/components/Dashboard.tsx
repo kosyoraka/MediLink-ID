@@ -15,8 +15,6 @@ import {
   FileText,
   Wallet, // ✅ NEW icon for Apple Wallet tile
   X,      // ✅ close icon for modal
-  ExternalLink,
-  Copy,
   RefreshCw,
 } from 'lucide-react';
 
@@ -83,9 +81,7 @@ export default function Dashboard({
   const [walletLoading, setWalletLoading] = useState(false);
   const [walletError, setWalletError] = useState('');
   const [emergencyUrl, setEmergencyUrl] = useState('');
-  const [patientAccessUrl, setPatientAccessUrl] = useState('');
   const [recentEmergencyAccesses, setRecentEmergencyAccesses] = useState<EmergencyAccessLog[]>([]);
-  const [copied, setCopied] = useState(false);
   const [appointments, setAppointments] = useState<PatientAppointment[]>([]);
   const [healthTasks, setHealthTasks] = useState<HealthTask[]>([]);
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
@@ -291,17 +287,11 @@ export default function Dashboard({
       }
 
       setEmergencyUrl(`${window.location.origin}/e/${data.token}`);
-      setPatientAccessUrl(
-        data.patientAccessTicket
-          ? `${window.location.origin}/e/${data.token}?patientAccessTicket=${encodeURIComponent(data.patientAccessTicket)}`
-          : `${window.location.origin}/e/${data.token}`
-      );
       setRecentEmergencyAccesses(Array.isArray(data.recentAccesses) ? data.recentAccesses : []);
 
     } catch (e: any) {
       setWalletError(e?.message || 'Failed to create emergency link');
       setEmergencyUrl('');
-      setPatientAccessUrl('');
       setRecentEmergencyAccesses([]);
     } finally {
       setWalletLoading(false);
@@ -316,33 +306,6 @@ export default function Dashboard({
 
   const regenerateEmergencyQr = async () => {
     await loadEmergencyLink('regenerate');
-  };
-
-  const copyLink = async () => {
-    const linkToCopy = patientAccessUrl || emergencyUrl;
-    if (!linkToCopy) return;
-
-    try {
-      await navigator.clipboard.writeText(linkToCopy);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Fallback for older Safari
-      const el = document.createElement('textarea');
-      el.value = linkToCopy;
-      document.body.appendChild(el);
-      el.select();
-      document.execCommand('copy');
-      document.body.removeChild(el);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    }
-  };
-
-  const openLink = () => {
-    const linkToOpen = patientAccessUrl || emergencyUrl;
-    if (!linkToOpen) return;
-    window.open(linkToOpen, '_blank', 'noopener,noreferrer');
   };
   const formatDOB = (dob?: string | null) => {
   if (!dob) return "—";
@@ -514,15 +477,6 @@ export default function Dashboard({
           {/* Success */}
           {!walletLoading && !walletError && emergencyUrl && (
             <>
-              {/* Emergency URL card */}
-              <div className="bg-teal-50 border border-teal-200 rounded-xl p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <Wallet className="w-5 h-5 text-teal-700" />
-                  <p className="text-sm text-teal-900">Emergency Access</p>
-                </div>
-                <p className="text-xs text-teal-800 break-all">{emergencyUrl}</p>
-              </div>
-
               {/* QR Code */}
               <div className="bg-white border border-gray-200 rounded-xl p-4 flex flex-col items-center gap-3">
                 <QRCodeCanvas
@@ -540,22 +494,6 @@ export default function Dashboard({
                 <p className="text-xs text-gray-500 text-center">
                   Scan to open the emergency responder view
                 </p>
-              </div>
-
-              {/* Actions */}
-              <div className="grid grid-cols-2 gap-2">
-                <Button onClick={copyLink} variant="outline" className="w-full">
-                  <Copy className="w-4 h-4 mr-2" />
-                  {copied ? "Copied" : "Copy"}
-                </Button>
-
-                <Button
-                  onClick={openLink}
-                  className="w-full bg-teal-600 hover:bg-teal-700 text-white"
-                >
-                  <ExternalLink className="w-4 h-4 mr-2" />
-                  Open
-                </Button>
               </div>
 
               <Button

@@ -395,7 +395,7 @@ export default function EmergencyProfile({ onBack }: EmergencyProfileProps) {
                 <div className="space-y-2">
                   {allergyLines.map((a, idx) => (
                     <div key={idx} className="bg-red-50 rounded-lg p-3">
-                      <p className="text-red-900">{a}</p>
+                      <p className="text-gray-900 dark:text-white">{a}</p>
                     </div>
                   ))}
                 </div>
