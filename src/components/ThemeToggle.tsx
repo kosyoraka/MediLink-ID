@@ -16,3 +16,18 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
     </button>
   );
 }
+
+export function ThemeIconButton({ className = "" }: { className?: string }) {
+  const { isDark, toggleTheme } = useTheme();
+
+  return (
+    <button
+      type="button"
+      onClick={toggleTheme}
+      className={className}
+      aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+    >
+      {isDark ? <Sun className="h-6 w-6 text-white" /> : <Moon className="h-6 w-6 text-white" />}
+    </button>
+  );
+}

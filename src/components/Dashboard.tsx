@@ -35,6 +35,7 @@ import {
 } from "@/lib/notifications";
 import { createPortal } from "react-dom";
 import { QRCodeCanvas } from "qrcode.react";
+import { ThemeIconButton } from "./ThemeToggle";
 
 
 interface DashboardProps {
@@ -491,6 +492,7 @@ export default function Dashboard({
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <ThemeIconButton />
             <button className="relative" onClick={() => onNavigate('notifications')}>
               <Bell className="w-6 h-6 text-white" />
               {unreadNotificationCount > 0 && (
