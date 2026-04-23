@@ -2893,6 +2893,10 @@ html.dark .bg-gray-100 {
   background-color: #27272a !important;
 }
 
+html.dark .bg-gray-200 {
+  background-color: #3f3f46 !important;
+}
+
 html.dark .bg-gray-50\/60,
 html.dark .bg-gray-50\/70 {
   background-color: rgb(24 24 27 / .72) !important;
@@ -2904,24 +2908,35 @@ html.dark .bg-white\/10 {
 
 html.dark .bg-teal-50,
 html.dark .bg-green-50,
-html.dark .bg-blue-50 {
+html.dark .bg-blue-50,
+html.dark .bg-teal-100,
+html.dark .bg-green-100,
+html.dark .bg-blue-100 {
   background-color: rgb(20 184 166 / .12) !important;
 }
 
-html.dark .bg-red-50 {
+html.dark .bg-red-50,
+html.dark .bg-red-100 {
   background-color: rgb(239 68 68 / .12) !important;
 }
 
 html.dark .bg-amber-50,
 html.dark .bg-yellow-50,
-html.dark .bg-orange-50 {
+html.dark .bg-orange-50,
+html.dark .bg-amber-100,
+html.dark .bg-yellow-100,
+html.dark .bg-orange-100 {
   background-color: rgb(245 158 11 / .12) !important;
 }
 
 html.dark .bg-sky-50,
 html.dark .bg-purple-50,
 html.dark .bg-pink-50,
-html.dark .bg-indigo-50 {
+html.dark .bg-indigo-50,
+html.dark .bg-sky-100,
+html.dark .bg-purple-100,
+html.dark .bg-pink-100,
+html.dark .bg-indigo-100 {
   background-color: rgb(99 102 241 / .12) !important;
 }
 
@@ -2935,6 +2950,36 @@ html.dark .text-gray-600,
 html.dark .text-gray-500,
 html.dark .text-gray-400 {
   color: #a1a1aa !important;
+}
+
+html.dark .text-green-600,
+html.dark .text-green-700,
+html.dark .text-green-800,
+html.dark .text-teal-600,
+html.dark .text-teal-700,
+html.dark .text-teal-800 {
+  color: #5eead4 !important;
+}
+
+html.dark .text-blue-600,
+html.dark .text-blue-700,
+html.dark .text-blue-800,
+html.dark .text-sky-600,
+html.dark .text-sky-700 {
+  color: #93c5fd !important;
+}
+
+html.dark .text-red-600,
+html.dark .text-red-700,
+html.dark .text-red-800 {
+  color: #fca5a5 !important;
+}
+
+html.dark .text-amber-600,
+html.dark .text-amber-700,
+html.dark .text-yellow-700,
+html.dark .text-yellow-800 {
+  color: #fcd34d !important;
 }
 
 html.dark .border-gray-100,
