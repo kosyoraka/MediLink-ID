@@ -1,6 +1,6 @@
 {
   "name": "Medilink ID Provider",
-  "short_name": "Medilink ID",
+  "short_name": "Medilink ID Provider",
   "description": "Provider portal for Medilink ID.",
   "start_url": "/",
   "scope": "/",
