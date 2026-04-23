@@ -1,5 +1,4 @@
 import {
-  AlertCircle,
   Calendar,
   Activity,
   Pill,
@@ -13,7 +12,6 @@ import {
   TestTube,
   Stethoscope,
   CheckCircle2,
-  TrendingUp,
   FileText,
   Wallet, // ✅ NEW icon for Apple Wallet tile
   X,      // ✅ close icon for modal
@@ -407,74 +405,6 @@ export default function Dashboard({
     </div>
   );
 
-  const healthScoreCard = (
-    <div className="bg-gradient-to-br from-green-50 to-teal-50 rounded-xl border border-green-200 p-6">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex-1">
-          <h3 className="text-gray-900 mb-1">Health Score</h3>
-          <p className="text-sm text-gray-600">Great job staying on track!</p>
-        </div>
-        <div className="relative w-24 h-24">
-          <svg className="transform -rotate-90 w-24 h-24">
-            <circle cx="48" cy="48" r="40" stroke="currentColor" strokeWidth="8" fill="transparent" className="text-gray-200" />
-            <circle
-              cx="48"
-              cy="48"
-              r="40"
-              stroke="currentColor"
-              strokeWidth="8"
-              fill="transparent"
-              strokeDasharray={`${2 * Math.PI * 40}`}
-              strokeDashoffset={`${2 * Math.PI * 40 * (1 - 0.87)}`}
-              className="text-green-600"
-              strokeLinecap="round"
-            />
-          </svg>
-          <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className="text-2xl text-gray-900">87</span>
-            <span className="text-xs text-gray-500">/100</span>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 mb-4">
-        <div className="bg-white rounded-lg p-3">
-          <div className="flex items-center gap-2 mb-1">
-            <CheckCircle2 className="w-4 h-4 text-green-600" />
-            <span className="text-sm text-gray-600">Checkups</span>
-          </div>
-          <p className="text-gray-900">4/5</p>
-        </div>
-        <div className="bg-white rounded-lg p-3">
-          <div className="flex items-center gap-2 mb-1">
-            <AlertCircle className="w-4 h-4 text-orange-600" />
-            <span className="text-sm text-gray-600">Overdue</span>
-          </div>
-          <p className="text-gray-900">1</p>
-        </div>
-        <div className="bg-white rounded-lg p-3">
-          <div className="flex items-center gap-2 mb-1">
-            <Pill className="w-4 h-4 text-blue-600" />
-            <span className="text-sm text-gray-600">Adherence</span>
-          </div>
-          <p className="text-gray-900">95%</p>
-        </div>
-        <div className="bg-white rounded-lg p-3">
-          <div className="flex items-center gap-2 mb-1">
-            <Calendar className="w-4 h-4 text-purple-600" />
-            <span className="text-sm text-gray-600">Upcoming</span>
-          </div>
-          <p className="text-gray-900">2</p>
-        </div>
-      </div>
-
-      <Button variant="outline" className="w-full bg-white border-green-600 text-green-700 hover:bg-green-50">
-        <TrendingUp className="w-4 h-4 mr-2" />
-        Improve Your Score
-      </Button>
-    </div>
-  );
-
   return (
     <div className="min-h-screen bg-gray-50 pb-4">
       {/* Header */}
@@ -781,9 +711,6 @@ export default function Dashboard({
             </>
           )}
         </div>
-
-        {/* Health Score Card (moved lower) */}
-        {healthScoreCard}
       </div>
     </div>
   );
