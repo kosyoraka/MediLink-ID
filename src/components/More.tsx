@@ -12,6 +12,7 @@ import {
   LogOut,
   Settings,
 } from "lucide-react";
+import { ThemeToggle } from "./ThemeToggle";
 
 interface MoreProps {
   onNavigate: (screen: string) => void;
@@ -136,6 +137,14 @@ export default function More({
       </div>
 
       <div className="p-6 space-y-6">
+        <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-gray-900">Appearance</p>
+            <p className="text-sm text-gray-500">Switch between light and dark mode.</p>
+          </div>
+          <ThemeToggle />
+        </div>
+
         {menuSections.map((section, sectionIndex) => (
           <div key={sectionIndex}>
             <h3 className="text-gray-500 mb-3 px-2">{section.title}</h3>

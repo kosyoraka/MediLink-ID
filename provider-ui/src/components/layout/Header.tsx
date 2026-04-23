@@ -1,5 +1,6 @@
 import { Bell, Menu, LogOut, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 interface HeaderProps {
   onLogout: () => void;
@@ -59,6 +60,8 @@ export function Header({ onLogout, onMenuClick, onNotificationsClick, unreadCoun
 
       {/* Right: Notifications + User */}
       <div className="flex items-center gap-4">
+        <ThemeToggle />
+
         {/* Notifications */}
         <button className="relative p-2 rounded-lg hover:bg-gray-100" onClick={onNotificationsClick}>
           <Bell className="w-5 h-5 text-gray-700" />
