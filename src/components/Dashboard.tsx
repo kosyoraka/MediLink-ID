@@ -31,6 +31,7 @@ import { fetchHealthTasks, getTaskTimeLabel, type HealthTask } from "@/lib/healt
 import medilinkCircle from '@/assets/medilink-circle.png';
 import {
   getUnreadCount,
+  NOTIFICATIONS_UPDATED_EVENT,
 } from "@/lib/notifications";
 import { createPortal } from "react-dom";
 import { QRCodeCanvas } from "qrcode.react";
@@ -144,7 +145,7 @@ export default function Dashboard({
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    const loadNotificationCount = async () => {
       try {
         const data = await api.listMyNotifications();
         if (!cancelled) setUnreadNotificationCount(getUnreadCount(data.notifications || []));
@@ -152,10 +153,14 @@ export default function Dashboard({
         console.error("DASHBOARD NOTIFICATIONS FETCH ERROR:", e);
         if (!cancelled) setUnreadNotificationCount(0);
       }
-    })();
+    };
+
+    loadNotificationCount();
+    window.addEventListener(NOTIFICATIONS_UPDATED_EVENT, loadNotificationCount);
 
     return () => {
       cancelled = true;
+      window.removeEventListener(NOTIFICATIONS_UPDATED_EVENT, loadNotificationCount);
     };
   }, []);
 

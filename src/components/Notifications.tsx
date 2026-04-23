@@ -1,7 +1,7 @@
 import { ArrowLeft, Bell, ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api, type PatientNotification } from "@/lib/api";
-import { groupNotifications } from "@/lib/notifications";
+import { groupNotifications, NOTIFICATIONS_UPDATED_EVENT } from "@/lib/notifications";
 
 interface NotificationsProps {
   onBack: () => void;
@@ -51,6 +51,26 @@ export default function Notifications({ onBack, onNavigate }: NotificationsProps
 
   const sections = useMemo(() => groupNotifications(notifications), [notifications]);
 
+  const handleNotificationClick = async (item: PatientNotification) => {
+    if (item.unread) {
+      setNotifications((current) =>
+        current.map((notification) =>
+          notification.id === item.id ? { ...notification, unread: false } : notification
+        )
+      );
+      window.dispatchEvent(new Event(NOTIFICATIONS_UPDATED_EVENT));
+      try {
+        await api.markMyNotificationRead(item.id);
+      } catch (error) {
+        console.error("PATIENT NOTIFICATION READ ERROR:", error);
+      }
+    }
+
+    if (item.screen) {
+      onNavigate?.(item.screen);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="flex items-center justify-between mb-6">
@@ -85,7 +105,7 @@ export default function Notifications({ onBack, onNavigate }: NotificationsProps
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() => item.screen && onNavigate?.(item.screen)}
+                    onClick={() => handleNotificationClick(item)}
                     className={`w-full rounded-2xl border p-4 text-left transition ${
                       item.unread
                         ? "border-teal-200 bg-teal-50/80"

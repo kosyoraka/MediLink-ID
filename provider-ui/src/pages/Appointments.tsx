@@ -455,54 +455,65 @@ export function Appointments({ onNavigate }: AppointmentsProps) {
   const renderGroupedSection = (
     title: string,
     groups: Array<{ key: string; label: string; items: Appointment[] }>,
-    options?: { sectionKey: string; past?: boolean }
+    options?: { sectionKey: string; past?: boolean; topCollapsible?: boolean }
   ) => {
     if (groups.length === 0) return null;
 
     const totalCount = groups.reduce((sum, group) => sum + group.items.length, 0);
     const isSectionOpen = openSections[options?.sectionKey || ""] ?? false;
+    const topCollapsible = options?.topCollapsible ?? true;
+    const showGroups = topCollapsible ? isSectionOpen : true;
 
     return (
-      <div className="rounded-2xl border border-gray-200 bg-white">
-        <button
-          type="button"
-          onClick={() => toggleSection(options?.sectionKey || "")}
-          className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left text-sm font-medium text-gray-900"
-        >
-          <span className="flex items-center gap-2">
-            {isSectionOpen ? <ChevronDown className="h-4 w-4 text-gray-500" /> : <ChevronRight className="h-4 w-4 text-gray-500" />}
-            {title}
-          </span>
-          <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-600">
-            {totalCount}
-          </span>
-        </button>
+      <section className="rounded-2xl border border-gray-200 bg-white shadow-sm">
+        {topCollapsible ? (
+          <button
+            type="button"
+            onClick={() => toggleSection(options?.sectionKey || "")}
+            className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left text-base font-semibold text-gray-900 hover:bg-gray-50"
+          >
+            <span className="flex items-center gap-2">
+              {isSectionOpen ? <ChevronDown className="h-4 w-4 text-gray-500" /> : <ChevronRight className="h-4 w-4 text-gray-500" />}
+              {title}
+            </span>
+            <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-600">
+              {totalCount}
+            </span>
+          </button>
+        ) : (
+          <div className="flex items-center justify-between gap-3 px-5 py-4 text-base font-semibold text-gray-900">
+            <span>{title}</span>
+            <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-600">
+              {totalCount}
+            </span>
+          </div>
+        )}
 
-        {isSectionOpen ? (
-          <div className="space-y-4 border-t border-gray-100 px-4 py-4">
+        {showGroups ? (
+          <div className="space-y-3 border-t border-gray-100 px-4 py-4">
             {groups.map((group) => {
               const isGroupOpen = openGroups[group.key] ?? false;
               return (
                 <div
                   key={group.key}
-                  className="rounded-xl border border-gray-200 bg-gray-50"
+                  className="overflow-hidden rounded-xl border border-gray-200 bg-white"
                 >
                   <button
                     type="button"
                     onClick={() => toggleGroup(group.key)}
-                    className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm text-gray-900"
+                    className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold text-gray-800 hover:bg-gray-50"
                   >
                     <span className="flex items-center gap-2">
                       {isGroupOpen ? <ChevronDown className="h-4 w-4 text-gray-500" /> : <ChevronRight className="h-4 w-4 text-gray-500" />}
                       {group.label}
                     </span>
-                    <span className="rounded-full bg-white px-2.5 py-1 text-xs text-gray-600">
+                    <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs text-gray-600">
                       {group.items.length}
                     </span>
                   </button>
 
                   {isGroupOpen ? (
-                    <div className="space-y-4 border-t border-gray-200 px-3 py-3">
+                    <div className="space-y-4 border-t border-gray-100 bg-gray-50/60 px-3 py-3">
                       {group.items.map((appointment) => renderAppointmentCard(appointment, Boolean(options?.past)))}
                     </div>
                   ) : null}
@@ -511,7 +522,7 @@ export function Appointments({ onNavigate }: AppointmentsProps) {
             })}
           </div>
         ) : null}
-      </div>
+      </section>
     );
   };
 
@@ -595,16 +606,18 @@ export function Appointments({ onNavigate }: AppointmentsProps) {
               pendingConfirmations.length > 0
                 ? [{ key: "pending-confirmations", label: "Pending Confirmations", items: pendingConfirmations }]
                 : [],
-              { sectionKey: "needsAttention" }
+              { sectionKey: "needsAttention", topCollapsible: false }
             )}
 
             {renderGroupedSection("Upcoming", groupedAppointments.upcomingGroups, {
               sectionKey: "upcoming",
+              topCollapsible: false,
             })}
 
             {renderGroupedSection("Past", groupedAppointments.pastGroups, {
               sectionKey: "past",
               past: true,
+              topCollapsible: true,
             })}
           </div>
         </>

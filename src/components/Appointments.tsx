@@ -526,12 +526,29 @@ setAppointments(
     try {
       setRescheduleSubmitting(true);
       setRescheduleError("");
-      await api.requestAppointmentReschedule(rescheduleTarget.id, {
+      const result = await api.requestAppointmentReschedule(rescheduleTarget.id, {
         startTime: new Date(rescheduleSlot).toISOString(),
         localDateTime: rescheduleSlot,
         reason: rescheduleReason.trim() || undefined,
       });
-      alert("Reschedule request sent to your provider.");
+      if (result.appointment) {
+        setAppointments((current) =>
+          current.map((appointment) =>
+            appointment.id === result.appointment.id
+              ? {
+                  ...appointment,
+                  startTime: result.appointment.startTime,
+                  status: result.appointment.status as ApiAppointment["status"],
+                  notes: result.appointment.notes || null,
+                  durationMinutes: result.appointment.durationMinutes,
+                  specialty: result.appointment.appointmentType ?? appointment.specialty,
+                  type: result.appointment.visitMode ?? appointment.type,
+                }
+              : appointment
+          )
+        );
+      }
+      alert("Reschedule request sent. Waiting for provider confirmation.");
       setRescheduleTarget(null);
       setRescheduleSlot("");
       setRescheduleReason("");

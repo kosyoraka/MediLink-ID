@@ -787,6 +787,35 @@ async function ensureEmergencyAccessSecuritySchema() {
   }
 }
 
+async function ensureNotificationReadsSchema() {
+  const sql = `
+    CREATE TABLE IF NOT EXISTS notification_reads (
+      id UUID PRIMARY KEY,
+      user_type TEXT NOT NULL CHECK (user_type IN ('patient', 'staff')),
+      user_id UUID NOT NULL,
+      notification_key TEXT NOT NULL,
+      read_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (user_type, user_id, notification_key)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_notification_reads_user
+      ON notification_reads(user_type, user_id);
+  `;
+
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    try {
+      await pool.query(sql);
+      return;
+    } catch (error) {
+      if (attempt === 5) {
+        console.error("Notification reads schema setup skipped:", error);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+    }
+  }
+}
+
 function getRequestIp(req: any) {
   const forwardedFor = req.headers["x-forwarded-for"];
   if (Array.isArray(forwardedFor)) return String(forwardedFor[0] || "").split(",")[0].trim() || null;
@@ -3644,6 +3673,7 @@ app.get("/api/patients/me/messages/conversations", requirePatient, async (req: a
           FROM message_items mi
           WHERE mi.conversation_id = c.id
             AND mi.sender_type = 'staff'
+            AND mi.body NOT ILIKE '%has rescheduled your appointment%'
             AND mi.created_at > COALESCE(c.patient_last_read_at, '1970-01-01'::timestamptz)
         )::int AS unread_count
       FROM message_conversations c
@@ -3655,10 +3685,14 @@ app.get("/api/patients/me/messages/conversations", requirePatient, async (req: a
           FROM message_items mi
           WHERE mi.conversation_id = c.id
             AND (
-              mi.sender_type = 'staff'
+              (
+                mi.sender_type = 'staff'
+                AND mi.body NOT ILIKE '%has rescheduled your appointment%'
+              )
               OR (
                 mi.sender_type IN ('patient', 'system')
                 AND mi.body NOT ILIKE 'New health concern added: %'
+                AND mi.body NOT ILIKE 'Appointment reschedule request for %'
               )
             )
         )
@@ -3711,6 +3745,7 @@ app.get("/api/patient/notifications", requirePatientAuth, async (req: any, res) 
         JOIN hospitals h ON h.id = c.provider_id
         WHERE c.patient_id = $1::uuid
           AND mi.sender_type = 'staff'
+          AND mi.body NOT ILIKE '%has rescheduled your appointment%'
         ORDER BY mi.created_at DESC
         LIMIT 150
         `,
@@ -3805,6 +3840,36 @@ app.get("/api/patient/notifications", requirePatientAuth, async (req: any, res) 
 app.post("/api/patient/notifications/read", requirePatientAuth, async (req: any, res) => {
   try {
     const patientId = req.patientId as string;
+    const notificationId = String(req.body?.id || "").trim();
+
+    if (notificationId.startsWith("patient-message:")) {
+      const messageId = notificationId.replace("patient-message:", "");
+      await pool.query(
+        `
+        UPDATE message_conversations c
+        SET patient_last_read_at = NOW(), updated_at = NOW()
+        FROM message_items mi
+        WHERE mi.id = $1::uuid
+          AND mi.conversation_id = c.id
+          AND c.patient_id = $2::uuid
+        `,
+        [messageId, patientId]
+      );
+    }
+
+    if (notificationId.startsWith("patient-emergency-access:")) {
+      const accessId = notificationId.replace("patient-emergency-access:", "");
+      await pool.query(
+        `
+        UPDATE emergency_access_logs
+        SET read_at = NOW()
+        WHERE id = $1::uuid
+          AND patient_id = $2::uuid
+          AND read_at IS NULL
+        `,
+        [accessId, patientId]
+      );
+    }
 
     await pool.query(
       `
@@ -3812,8 +3877,9 @@ app.post("/api/patient/notifications/read", requirePatientAuth, async (req: any,
       SET read_at = NOW()
       WHERE patient_id = $1::uuid
         AND read_at IS NULL
+        AND COALESCE($2::text, '') = ''
       `,
-      [patientId]
+      [patientId, notificationId]
     );
 
     return res.json({ ok: true });
@@ -3914,6 +3980,8 @@ app.get("/api/patients/me/messages/conversations/:id/messages", requirePatient, 
       SELECT id, sender_type, body, created_at
       FROM message_items
       WHERE conversation_id = $1::uuid
+        AND body NOT ILIKE '%has rescheduled your appointment%'
+        AND body NOT ILIKE 'Appointment reschedule request for %'
       ORDER BY created_at ASC
       `,
       [conversationId]
@@ -4093,6 +4161,7 @@ app.get("/api/staff/messages/conversations", requireStaffAuth, async (req: any, 
           FROM message_items mi
           WHERE mi.conversation_id = c.id
             AND mi.sender_type IN ('patient', 'system')
+            AND mi.body NOT ILIKE 'Appointment reschedule request for %'
             AND mi.created_at > COALESCE(c.staff_last_read_at, '1970-01-01'::timestamptz)
         )::int AS unread_count
       FROM message_conversations c
@@ -4116,7 +4185,7 @@ app.get("/api/staff/notifications", requireStaffAuth, async (req: any, res) => {
   try {
     const staffId = req.staffId as string;
 
-    const [messageResult, appointmentResult, refillResult] = await Promise.all([
+    const [messageResult, appointmentResult, refillResult, readResult] = await Promise.all([
       pool.query(
         `
         SELECT
@@ -4131,6 +4200,7 @@ app.get("/api/staff/notifications", requireStaffAuth, async (req: any, res) => {
         LEFT JOIN patient_profiles pp ON pp.patient_id = p.id
         WHERE c.staff_id = $1::uuid
           AND mi.sender_type = 'patient'
+          AND mi.body NOT ILIKE 'Appointment reschedule request for %'
         ORDER BY mi.created_at DESC
         LIMIT 150
         `,
@@ -4173,15 +4243,28 @@ app.get("/api/staff/notifications", requireStaffAuth, async (req: any, res) => {
         `,
         [staffId]
       ),
+      pool.query(
+        `
+        SELECT notification_key
+        FROM notification_reads
+        WHERE user_type = 'staff'
+          AND user_id = $1::uuid
+        `,
+        [staffId]
+      ),
     ]);
+
+    const readKeys = new Set(readResult.rows.map((row) => String(row.notification_key || "")));
 
     const notifications = [
       ...messageResult.rows.map((row) => {
+        const notificationKey = `staff-message:${row.id}`;
         const body = String(row.body || "").trim();
         const patientName = String(row.patient_name || "Patient").trim();
         const unread =
           new Date(row.created_at).getTime() >
-          new Date(row.staff_last_read_at || "1970-01-01T00:00:00.000Z").getTime();
+          new Date(row.staff_last_read_at || "1970-01-01T00:00:00.000Z").getTime() &&
+          !readKeys.has(notificationKey);
 
         let title = `New message from ${patientName}`;
         if (body.startsWith("Condition change request for")) title = "Condition change request";
@@ -4191,7 +4274,7 @@ app.get("/api/staff/notifications", requireStaffAuth, async (req: any, res) => {
         else if (body.startsWith("Appointment reschedule request for")) title = "Appointment reschedule request";
 
         return {
-          id: `staff-message:${row.id}`,
+          id: notificationKey,
           title,
           detail: `${patientName} • ${body}`,
           isoDate: row.created_at,
@@ -4200,13 +4283,14 @@ app.get("/api/staff/notifications", requireStaffAuth, async (req: any, res) => {
         };
       }),
       ...appointmentResult.rows.map((row) => {
+        const notificationKey = `staff-appointment:${row.id}`;
         const status = String(row.status || "").trim().toLowerCase();
         let title = "Appointment update";
         let unread = false;
 
         if (status === "pending" || status === "scheduled") {
           title = "Pending appointment confirmation";
-          unread = true;
+          unread = !readKeys.has(notificationKey);
         } else if (status === "confirmed") {
           title = "Appointment confirmed";
         } else if (status === "completed") {
@@ -4214,7 +4298,7 @@ app.get("/api/staff/notifications", requireStaffAuth, async (req: any, res) => {
         }
 
         return {
-          id: `staff-appointment:${row.id}`,
+          id: notificationKey,
           title,
           detail: String(row.patient_name || "Patient").trim(),
           isoDate: row.created_at || row.start_time,
@@ -4228,7 +4312,7 @@ app.get("/api/staff/notifications", requireStaffAuth, async (req: any, res) => {
         title: "Refill request pending",
         detail: `${String(row.patient_name || "Patient").trim()} • ${String(row.medication_name || "Medication").trim()}`,
         isoDate: row.created_at,
-        unread: true,
+        unread: !readKeys.has(`staff-refill:${row.id}`),
         screen: "messages",
       })),
     ]
@@ -4239,6 +4323,47 @@ app.get("/api/staff/notifications", requireStaffAuth, async (req: any, res) => {
   } catch (e: any) {
     console.error("GET /api/staff/notifications error:", e);
     return res.status(500).json({ message: e?.message || "Failed to load notifications" });
+  }
+});
+
+app.post("/api/staff/notifications/read", requireStaffAuth, async (req: any, res) => {
+  try {
+    const staffId = req.staffId as string;
+    const notificationId = String(req.body?.id || "").trim();
+
+    if (!notificationId) {
+      return res.status(400).json({ message: "Missing notification id" });
+    }
+
+    await pool.query(
+      `
+      INSERT INTO notification_reads (id, user_type, user_id, notification_key, read_at)
+      VALUES ($1::uuid, 'staff', $2::uuid, $3, NOW())
+      ON CONFLICT (user_type, user_id, notification_key)
+      DO UPDATE SET read_at = EXCLUDED.read_at
+      `,
+      [randomUUID(), staffId, notificationId]
+    );
+
+    if (notificationId.startsWith("staff-message:")) {
+      const messageId = notificationId.replace("staff-message:", "");
+      await pool.query(
+        `
+        UPDATE message_conversations c
+        SET staff_last_read_at = NOW(), updated_at = NOW()
+        FROM message_items mi
+        WHERE mi.id = $1::uuid
+          AND mi.conversation_id = c.id
+          AND c.staff_id = $2::uuid
+        `,
+        [messageId, staffId]
+      );
+    }
+
+    return res.json({ ok: true });
+  } catch (e: any) {
+    console.error("POST /api/staff/notifications/read error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to mark notification as read" });
   }
 });
 
@@ -4268,6 +4393,8 @@ app.get("/api/staff/messages/conversations/:id/messages", requireStaffAuth, asyn
       SELECT id, sender_type, body, created_at
       FROM message_items
       WHERE conversation_id = $1::uuid
+        AND body NOT ILIKE '%has rescheduled your appointment%'
+        AND body NOT ILIKE 'Appointment reschedule request for %'
       ORDER BY created_at ASC
       `,
       [conversationId]
@@ -5008,37 +5135,59 @@ app.post("/api/patient/appointments/:id/reschedule-request", requirePatientAuth,
       return res.status(409).json({ message: "That requested time is not available" });
     }
 
-    const currentStart = new Date(appointment.start_time);
-    const requestedDate = new Date(requestedStartTime);
-    const currentLabel = currentStart.toLocaleString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    });
-    const requestedLabel = requestedDate.toLocaleString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    });
+    const updatedResult = await pool.query(
+      `
+      WITH updated AS (
+        UPDATE appointments
+        SET
+          start_time = $1::timestamptz,
+          status = 'Pending',
+          notes = CASE
+            WHEN COALESCE($4::text, '') = '' THEN notes
+            WHEN COALESCE(notes, '') = '' THEN 'Reschedule request: ' || $4::text
+            ELSE notes || E'\nReschedule request: ' || $4::text
+          END
+        WHERE id = $2::uuid
+          AND patient_id = $3::uuid
+        RETURNING *
+      )
+      SELECT
+        a.id,
+        a.patient_id,
+        a.staff_id,
+        a.hospital_id,
+        a.provider_name,
+        a.specialty,
+        a.start_time,
+        a.type,
+        a.status,
+        a.notes,
+        h.name AS hospital_name
+      FROM updated a
+      LEFT JOIN hospitals h ON h.id = a.hospital_id
+      `,
+      [requestedStartTime, appointmentId, patientId, reason || null]
+    );
 
-    const messageBody = reason
-      ? `Appointment reschedule request for ${appointment.specialty}: currently ${currentLabel}, requesting ${requestedLabel}. Reason: ${reason}`
-      : `Appointment reschedule request for ${appointment.specialty}: currently ${currentLabel}, requesting ${requestedLabel}.`;
+    const updated = updatedResult.rows[0];
 
-    await addConversationMessage({
-      patientId,
-      providerId: String(appointment.hospital_id),
-      staffId: String(appointment.staff_id),
-      senderType: "patient",
-      senderPatientId: patientId,
-      body: messageBody,
+    return res.json({
+      ok: true,
+      appointment: {
+        id: String(updated.id),
+        patientId: String(updated.patient_id),
+        staffId: updated.staff_id ? String(updated.staff_id) : null,
+        hospitalId: String(updated.hospital_id),
+        providerName: updated.provider_name,
+        hospitalName: updated.hospital_name ?? null,
+        appointmentType: updated.specialty,
+        visitMode: updated.type,
+        startTime: updated.start_time,
+        durationMinutes: getAppointmentDurationMinutes(updated.specialty),
+        status: updated.status,
+        notes: updated.notes ?? "",
+      },
     });
-
-    return res.json({ ok: true });
   } catch (err: any) {
     console.error("POST /api/patient/appointments/:id/reschedule-request error:", err);
     return res.status(500).json({ message: err?.message || "Failed to send reschedule request" });
@@ -5266,15 +5415,14 @@ app.patch("/api/staff/appointments/:id/reschedule", requireStaffAuth, async (req
 
     const updatedResult = await pool.query(
       `
-      UPDATE appointments a
-      SET start_time = $1::timestamptz
-      FROM patients p
-      LEFT JOIN patient_profiles pp ON pp.patient_id = p.id
-      LEFT JOIN hospitals h ON h.id = a.hospital_id
-      WHERE a.id = $2::uuid
-        AND a.staff_id = $3::uuid
-        AND p.id = a.patient_id
-      RETURNING
+      WITH updated AS (
+        UPDATE appointments
+        SET start_time = $1::timestamptz
+        WHERE id = $2::uuid
+          AND staff_id = $3::uuid
+        RETURNING *
+      )
+      SELECT
         a.id,
         a.patient_id,
         COALESCE(
@@ -5289,29 +5437,13 @@ app.patch("/api/staff/appointments/:id/reschedule", requireStaffAuth, async (req
         a.notes,
         a.provider_name,
         h.name AS hospital_name
+      FROM updated a
+      JOIN patients p ON p.id = a.patient_id
+      LEFT JOIN patient_profiles pp ON pp.patient_id = p.id
+      LEFT JOIN hospitals h ON h.id = a.hospital_id
       `,
       [nextStartTime, appointmentId, staffId]
     );
-
-    const requestedDate = new Date(nextStartTime);
-    const requestedLabel = requestedDate.toLocaleString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    });
-
-    const providerDisplayName = String(appointment.provider_name || "your provider").trim();
-
-    await addConversationMessage({
-      patientId: String(appointment.patient_id),
-      providerId: String(appointment.hospital_id),
-      staffId,
-      senderType: "staff",
-      senderStaffId: staffId,
-      body: `${providerDisplayName} has rescheduled your appointment to ${requestedLabel}.`,
-    });
 
     const updated = updatedResult.rows[0];
 
@@ -7865,6 +7997,7 @@ async function initializeSchemas() {
   await ensureConditionsSchema();
   await ensureEmergencyAccessSchema();
   await ensureEmergencyAccessSecuritySchema();
+  await ensureNotificationReadsSchema();
 }
 
 function startServer() {

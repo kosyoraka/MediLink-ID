@@ -367,13 +367,17 @@ export const api = {
     localDateTime: string;
     reason?: string;
   }) =>
-    request<{ ok: boolean }>(`/api/patient/appointments/${appointmentId}/reschedule-request`, {
+    request<{ ok: boolean; appointment: PatientAppointment }>(`/api/patient/appointments/${appointmentId}/reschedule-request`, {
       method: "POST",
       body: JSON.stringify(body),
     }),
   listMyNotifications: () => request<{ notifications: PatientNotification[] }>("/api/patient/notifications"),
   markMyNotificationsRead: () => request<{ ok: boolean }>("/api/patient/notifications/read", {
     method: "POST",
+  }),
+  markMyNotificationRead: (id: string) => request<{ ok: boolean }>("/api/patient/notifications/read", {
+    method: "POST",
+    body: JSON.stringify({ id }),
   }),
 
   listMyRecords: (params: {

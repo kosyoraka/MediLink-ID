@@ -52,6 +52,28 @@ export function Notifications({ onNavigate }: NotificationsProps) {
 
   const sections = useMemo(() => groupNotifications(notifications), [notifications]);
 
+  const handleNotificationClick = async (item: StaffNotification) => {
+    if (item.unread) {
+      setNotifications((current) =>
+        current.map((notification) =>
+          notification.id === item.id ? { ...notification, unread: false } : notification
+        )
+      );
+      try {
+        await apiFetch<{ ok: true }>("/api/staff/notifications/read", {
+          method: "POST",
+          body: JSON.stringify({ id: item.id }),
+        });
+      } catch (error) {
+        console.error("STAFF NOTIFICATION READ ERROR:", error);
+      }
+    }
+
+    if (item.screen) {
+      onNavigate(item.screen);
+    }
+  };
+
   return (
     <div className="p-4 lg:p-6">
       <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
@@ -80,7 +102,7 @@ export function Notifications({ onNavigate }: NotificationsProps) {
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() => item.screen && onNavigate(item.screen)}
+                    onClick={() => handleNotificationClick(item)}
                     className={`w-full rounded-2xl border p-4 text-left transition ${
                       item.unread
                         ? "border-blue-200 bg-blue-50/70"
