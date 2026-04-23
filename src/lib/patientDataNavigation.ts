@@ -3,6 +3,7 @@ export type PatientDataScreen =
   | 'health-summary'
   | 'records'
   | 'manage-providers'
+  | 'medical-history'
   | 'personal-information'
   | 'emergency-profile'
   | 'medications';

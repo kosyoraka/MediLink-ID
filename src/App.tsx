@@ -575,7 +575,12 @@ export default function App() {
         return <DocumentCenter onBack={() => handleNavigation('dashboard', 'home')} />;
 
       case 'nutrition-fitness':
-        return <NutritionFitness onBack={() => handleNavigation('dashboard', 'home')} />;
+        return (
+          <NutritionFitness
+            onBack={() => handleNavigation('dashboard', 'home')}
+            onNavigate={handlePatientDataNavigation}
+          />
+        );
 
       case 'symptom-checker':
         return (
