@@ -981,6 +981,7 @@ async function sendPatientPasswordChangedEmail(email: string, details: {
 
 async function sendPatientEmergencyAccessAlertEmail(email: string, details: {
   occurredAt: string;
+  accessLabel: string;
   staffName?: string | null;
   hospitalName?: string | null;
   ipAddress: string | null;
@@ -989,13 +990,18 @@ async function sendPatientEmergencyAccessAlertEmail(email: string, details: {
     details.staffName && details.hospitalName
       ? `${details.staffName} at ${details.hospitalName}`
       : details.staffName || details.hospitalName || "an authorized responder";
+  const intro =
+    details.staffName || details.hospitalName
+      ? `Emergency access to your MediLink ID profile was used by ${responder}.`
+      : `Emergency access to your MediLink ID profile was used with ${details.accessLabel}.`;
 
   return sendPatientSecurityEmail({
     to: email,
     subject: "Emergency access was used for your MediLink ID",
     heading: "Emergency access alert",
-    intro: `Emergency access to your MediLink ID profile was used by ${responder}.`,
+    intro,
     bullets: [
+      `Access method: ${details.accessLabel}`,
       `Time: ${details.occurredAt}`,
       ...(details.ipAddress ? [`IP address: ${details.ipAddress}`] : []),
     ],
@@ -3781,7 +3787,7 @@ app.post("/api/emergency/access", async (req: any, res) => {
       ]
     );
 
-    if (resolvedAccessMethod === "staff_login" && data?.email) {
+    if (data?.email) {
       const occurredAt = new Date().toLocaleString("en-CA", {
         dateStyle: "medium",
         timeStyle: "short",
@@ -3790,6 +3796,12 @@ app.post("/api/emergency/access", async (req: any, res) => {
 
       let responderName: string | null = null;
       let responderHospital: string | null = null;
+      const accessLabel =
+        resolvedAccessMethod === "staff_login"
+          ? "provider emergency access"
+          : resolvedAccessMethod === "patient_code"
+          ? "emergency access code"
+          : "patient session access";
 
       if (staffId) {
         const staffResult = await pool.query(
@@ -3816,6 +3828,7 @@ app.post("/api/emergency/access", async (req: any, res) => {
         req,
         metadata: {
           accessMethod: resolvedAccessMethod,
+          accessLabel,
           staffId,
           responderName,
           responderHospital,
@@ -3825,6 +3838,7 @@ app.post("/api/emergency/access", async (req: any, res) => {
       try {
         await sendPatientEmergencyAccessAlertEmail(String(data.email), {
           occurredAt,
+          accessLabel,
           staffName: responderName,
           hospitalName: responderHospital,
           ipAddress: getRequestIp(req),
