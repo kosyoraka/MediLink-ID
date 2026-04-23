@@ -839,6 +839,22 @@ async function ensurePatientSecuritySchema() {
   }
 }
 
+async function ensurePatientMedicalHistorySchema() {
+  const sql = await readFile(path.resolve(__dirname, "../012_patient_medical_history.sql"), "utf8");
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    try {
+      await pool.query(sql);
+      return;
+    } catch (error) {
+      if (attempt === 5) {
+        console.error("Patient medical history schema setup skipped:", error);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+    }
+  }
+}
+
 function getRequestIp(req: any) {
   const forwardedFor = req.headers["x-forwarded-for"];
   if (Array.isArray(forwardedFor)) return String(forwardedFor[0] || "").split(",")[0].trim() || null;
@@ -1579,6 +1595,493 @@ function mapConditionRow(row: any) {
     isActive: Boolean(row.is_active),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+type MedicalHistorySectionKey =
+  | "surgical"
+  | "hospitalizations"
+  | "emergency"
+  | "social"
+  | "reproductive"
+  | "mental";
+
+type MedicalHistorySectionConfig = {
+  table: string;
+  responseKey: string;
+  columns: string[];
+  orderBy: string;
+  label: string;
+  mapRow: (row: any) => any;
+  normalizeInput: (input: any) => { values: Record<string, any>; summary: string };
+  getEntryLabel: (entry: any) => string;
+};
+
+const MEDICAL_HISTORY_SECTION_KEYS: MedicalHistorySectionKey[] = [
+  "surgical",
+  "hospitalizations",
+  "emergency",
+  "social",
+  "reproductive",
+  "mental",
+];
+
+function createBadRequest(message: string) {
+  const error: any = new Error(message);
+  error.statusCode = 400;
+  return error;
+}
+
+function normalizeNullableText(value: unknown) {
+  const normalized = String(value ?? "").trim();
+  return normalized ? normalized : null;
+}
+
+function normalizeOptionalDate(value: unknown, fieldLabel: string) {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized) || Number.isNaN(Date.parse(`${normalized}T00:00:00Z`))) {
+    throw createBadRequest(`Invalid ${fieldLabel}`);
+  }
+  return normalized;
+}
+
+function mapSurgicalHistoryRow(row: any) {
+  return {
+    id: String(row.id),
+    patientId: String(row.patient_id),
+    hospitalId: row.hospital_id ? String(row.hospital_id) : null,
+    staffId: row.staff_id ? String(row.staff_id) : null,
+    sourceType: String(row.source_type || "patient"),
+    verificationStatus: String(row.verification_status || "patient_reported"),
+    procedureName: String(row.procedure_name || ""),
+    surgeryDate: row.surgery_date || null,
+    facility: row.facility || "",
+    surgeon: row.surgeon || "",
+    indication: row.indication || "",
+    complications: row.complications || "",
+    notes: row.notes || "",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapHospitalizationRow(row: any) {
+  return {
+    id: String(row.id),
+    patientId: String(row.patient_id),
+    hospitalId: row.hospital_id ? String(row.hospital_id) : null,
+    staffId: row.staff_id ? String(row.staff_id) : null,
+    sourceType: String(row.source_type || "patient"),
+    verificationStatus: String(row.verification_status || "patient_reported"),
+    reason: String(row.reason || ""),
+    admissionDate: row.admission_date || null,
+    dischargeDate: row.discharge_date || null,
+    facility: row.facility || "",
+    attendingProvider: row.attending_provider || "",
+    diagnosis: row.diagnosis || "",
+    treatmentSummary: row.treatment_summary || "",
+    notes: row.notes || "",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapEmergencyVisitRow(row: any) {
+  return {
+    id: String(row.id),
+    patientId: String(row.patient_id),
+    hospitalId: row.hospital_id ? String(row.hospital_id) : null,
+    staffId: row.staff_id ? String(row.staff_id) : null,
+    sourceType: String(row.source_type || "patient"),
+    verificationStatus: String(row.verification_status || "patient_reported"),
+    reason: String(row.reason || ""),
+    visitDate: row.visit_date || null,
+    visitTime: row.visit_time || "",
+    facility: row.facility || "",
+    diagnosis: row.diagnosis || "",
+    treatment: row.treatment || "",
+    disposition: row.disposition || "",
+    notes: row.notes || "",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapSocialHistoryRow(row: any) {
+  return {
+    id: String(row.id),
+    patientId: String(row.patient_id),
+    sourceType: String(row.source_type || "patient"),
+    verificationStatus: String(row.verification_status || "patient_reported"),
+    category: String(row.category || "other"),
+    title: String(row.title || ""),
+    status: row.status || "",
+    startDate: row.start_date || null,
+    endDate: row.end_date || null,
+    detail: row.detail || "",
+    notes: row.notes || "",
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapReproductiveHistoryRow(row: any) {
+  return {
+    id: String(row.id),
+    patientId: String(row.patient_id),
+    sourceType: String(row.source_type || "patient"),
+    verificationStatus: String(row.verification_status || "patient_reported"),
+    eventType: String(row.event_type || "general"),
+    title: String(row.title || ""),
+    eventDate: row.event_date || null,
+    outcome: row.outcome || "",
+    detail: row.detail || "",
+    notes: row.notes || "",
+    isSensitive: Boolean(row.is_sensitive),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapMentalHealthHistoryRow(row: any) {
+  return {
+    id: String(row.id),
+    patientId: String(row.patient_id),
+    sourceType: String(row.source_type || "patient"),
+    verificationStatus: String(row.verification_status || "patient_reported"),
+    conditionName: String(row.condition_name || ""),
+    diagnosedDate: row.diagnosed_date || null,
+    status: row.status || "",
+    providerName: row.provider_name || "",
+    treatment: row.treatment || "",
+    notes: row.notes || "",
+    isSensitive: Boolean(row.is_sensitive),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapMedicalHistoryAuditRow(row: any) {
+  return {
+    id: String(row.id),
+    patientId: String(row.patient_id),
+    sectionType: String(row.section_type || ""),
+    entryId: String(row.entry_id || ""),
+    actionType: String(row.action_type || ""),
+    actorType: String(row.actor_type || ""),
+    actorId: row.actor_id ? String(row.actor_id) : null,
+    summary: String(row.summary || ""),
+    metadata:
+      row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
+        ? row.metadata
+        : {},
+    createdAt: row.created_at,
+  };
+}
+
+function normalizeSurgicalHistoryInput(input: any) {
+  const procedureName = String(input?.procedureName || "").trim();
+  if (!procedureName) {
+    throw createBadRequest("Procedure name is required");
+  }
+
+  return {
+    values: {
+      procedure_name: procedureName,
+      surgery_date: normalizeOptionalDate(input?.surgeryDate, "surgeryDate"),
+      facility: normalizeNullableText(input?.facility),
+      surgeon: normalizeNullableText(input?.surgeon),
+      indication: normalizeNullableText(input?.indication),
+      complications: normalizeNullableText(input?.complications),
+      notes: normalizeNullableText(input?.notes),
+    },
+    summary: procedureName,
+  };
+}
+
+function normalizeHospitalizationInput(input: any) {
+  const reason = String(input?.reason || "").trim();
+  if (!reason) {
+    throw createBadRequest("Reason is required");
+  }
+
+  return {
+    values: {
+      reason,
+      admission_date: normalizeOptionalDate(input?.admissionDate, "admissionDate"),
+      discharge_date: normalizeOptionalDate(input?.dischargeDate, "dischargeDate"),
+      facility: normalizeNullableText(input?.facility),
+      attending_provider: normalizeNullableText(input?.attendingProvider),
+      diagnosis: normalizeNullableText(input?.diagnosis),
+      treatment_summary: normalizeNullableText(input?.treatmentSummary),
+      notes: normalizeNullableText(input?.notes),
+    },
+    summary: reason,
+  };
+}
+
+function normalizeEmergencyVisitInput(input: any) {
+  const reason = String(input?.reason || "").trim();
+  if (!reason) {
+    throw createBadRequest("Reason is required");
+  }
+
+  return {
+    values: {
+      reason,
+      visit_date: normalizeOptionalDate(input?.visitDate, "visitDate"),
+      visit_time: normalizeNullableText(input?.visitTime),
+      facility: normalizeNullableText(input?.facility),
+      diagnosis: normalizeNullableText(input?.diagnosis),
+      treatment: normalizeNullableText(input?.treatment),
+      disposition: normalizeNullableText(input?.disposition),
+      notes: normalizeNullableText(input?.notes),
+    },
+    summary: reason,
+  };
+}
+
+function normalizeSocialHistoryInput(input: any) {
+  const allowedCategories = new Set([
+    "smoking",
+    "alcohol",
+    "occupation",
+    "exercise",
+    "travel",
+    "substance_use",
+    "diet",
+    "other",
+  ]);
+  const category = String(input?.category || "other")
+    .trim()
+    .toLowerCase();
+  const title = String(input?.title || "").trim();
+
+  if (!title) {
+    throw createBadRequest("Title is required");
+  }
+  if (!allowedCategories.has(category)) {
+    throw createBadRequest("Invalid social history category");
+  }
+
+  return {
+    values: {
+      category,
+      title,
+      status: normalizeNullableText(input?.status),
+      start_date: normalizeOptionalDate(input?.startDate, "startDate"),
+      end_date: normalizeOptionalDate(input?.endDate, "endDate"),
+      detail: normalizeNullableText(input?.detail),
+      notes: normalizeNullableText(input?.notes),
+    },
+    summary: title,
+  };
+}
+
+function normalizeReproductiveHistoryInput(input: any) {
+  const title = String(input?.title || "").trim();
+  if (!title) {
+    throw createBadRequest("Title is required");
+  }
+
+  return {
+    values: {
+      event_type: normalizeNullableText(input?.eventType) || "general",
+      title,
+      event_date: normalizeOptionalDate(input?.eventDate, "eventDate"),
+      outcome: normalizeNullableText(input?.outcome),
+      detail: normalizeNullableText(input?.detail),
+      notes: normalizeNullableText(input?.notes),
+      is_sensitive: typeof input?.isSensitive === "boolean" ? input.isSensitive : true,
+    },
+    summary: title,
+  };
+}
+
+function normalizeMentalHealthHistoryInput(input: any) {
+  const conditionName = String(input?.conditionName || "").trim();
+  if (!conditionName) {
+    throw createBadRequest("Condition name is required");
+  }
+
+  return {
+    values: {
+      condition_name: conditionName,
+      diagnosed_date: normalizeOptionalDate(input?.diagnosedDate, "diagnosedDate"),
+      status: normalizeNullableText(input?.status),
+      provider_name: normalizeNullableText(input?.providerName),
+      treatment: normalizeNullableText(input?.treatment),
+      notes: normalizeNullableText(input?.notes),
+      is_sensitive: typeof input?.isSensitive === "boolean" ? input.isSensitive : true,
+    },
+    summary: conditionName,
+  };
+}
+
+const MEDICAL_HISTORY_SECTION_CONFIG: Record<MedicalHistorySectionKey, MedicalHistorySectionConfig> = {
+  surgical: {
+    table: "patient_surgical_history",
+    responseKey: "surgicalHistory",
+    columns: [
+      "procedure_name",
+      "surgery_date",
+      "facility",
+      "surgeon",
+      "indication",
+      "complications",
+      "notes",
+    ],
+    orderBy: "COALESCE(surgery_date, DATE(created_at)) DESC, created_at DESC",
+    label: "surgical history entry",
+    mapRow: mapSurgicalHistoryRow,
+    normalizeInput: normalizeSurgicalHistoryInput,
+    getEntryLabel: (entry) => entry.procedureName || "surgery",
+  },
+  hospitalizations: {
+    table: "patient_hospitalizations",
+    responseKey: "hospitalizations",
+    columns: [
+      "reason",
+      "admission_date",
+      "discharge_date",
+      "facility",
+      "attending_provider",
+      "diagnosis",
+      "treatment_summary",
+      "notes",
+    ],
+    orderBy: "COALESCE(discharge_date, admission_date, DATE(created_at)) DESC, created_at DESC",
+    label: "hospitalization",
+    mapRow: mapHospitalizationRow,
+    normalizeInput: normalizeHospitalizationInput,
+    getEntryLabel: (entry) => entry.reason || "hospitalization",
+  },
+  emergency: {
+    table: "patient_emergency_visits",
+    responseKey: "emergencyVisits",
+    columns: [
+      "reason",
+      "visit_date",
+      "visit_time",
+      "facility",
+      "diagnosis",
+      "treatment",
+      "disposition",
+      "notes",
+    ],
+    orderBy: "COALESCE(visit_date, DATE(created_at)) DESC, created_at DESC",
+    label: "emergency visit",
+    mapRow: mapEmergencyVisitRow,
+    normalizeInput: normalizeEmergencyVisitInput,
+    getEntryLabel: (entry) => entry.reason || "emergency visit",
+  },
+  social: {
+    table: "patient_social_history",
+    responseKey: "socialHistory",
+    columns: ["category", "title", "status", "start_date", "end_date", "detail", "notes"],
+    orderBy: "COALESCE(start_date, DATE(created_at)) DESC, created_at DESC",
+    label: "social history entry",
+    mapRow: mapSocialHistoryRow,
+    normalizeInput: normalizeSocialHistoryInput,
+    getEntryLabel: (entry) => entry.title || "social history entry",
+  },
+  reproductive: {
+    table: "patient_reproductive_history",
+    responseKey: "reproductiveHistory",
+    columns: ["event_type", "title", "event_date", "outcome", "detail", "notes", "is_sensitive"],
+    orderBy: "COALESCE(event_date, DATE(created_at)) DESC, created_at DESC",
+    label: "reproductive history entry",
+    mapRow: mapReproductiveHistoryRow,
+    normalizeInput: normalizeReproductiveHistoryInput,
+    getEntryLabel: (entry) => entry.title || "reproductive history entry",
+  },
+  mental: {
+    table: "patient_mental_health_history",
+    responseKey: "mentalHealthHistory",
+    columns: ["condition_name", "diagnosed_date", "status", "provider_name", "treatment", "notes", "is_sensitive"],
+    orderBy: "COALESCE(diagnosed_date, DATE(created_at)) DESC, created_at DESC",
+    label: "mental health entry",
+    mapRow: mapMentalHealthHistoryRow,
+    normalizeInput: normalizeMentalHealthHistoryInput,
+    getEntryLabel: (entry) => entry.conditionName || "mental health entry",
+  },
+};
+
+function getMedicalHistorySectionConfig(value: unknown) {
+  const normalized = String(value || "").trim() as MedicalHistorySectionKey;
+  return MEDICAL_HISTORY_SECTION_CONFIG[normalized] || null;
+}
+
+async function recordMedicalHistoryAuditEvent(input: {
+  patientId: string;
+  section: MedicalHistorySectionKey;
+  entryId: string;
+  action: "created" | "updated" | "deleted";
+  actorType?: "patient" | "staff" | "system";
+  actorId?: string | null;
+  summary: string;
+  metadata?: Record<string, unknown>;
+}) {
+  await pool.query(
+    `
+    INSERT INTO patient_medical_history_audit_events (
+      patient_id,
+      section_type,
+      entry_id,
+      action_type,
+      actor_type,
+      actor_id,
+      summary,
+      metadata
+    )
+    VALUES ($1::uuid, $2, $3::uuid, $4, $5, $6::uuid, $7, $8::jsonb)
+    `,
+    [
+      input.patientId,
+      input.section,
+      input.entryId,
+      input.action,
+      input.actorType || "patient",
+      input.actorId || null,
+      input.summary,
+      JSON.stringify(input.metadata || {}),
+    ]
+  );
+}
+
+async function fetchPatientMedicalHistory(patientId: string) {
+  const sectionEntries = await Promise.all(
+    MEDICAL_HISTORY_SECTION_KEYS.map(async (section) => {
+      const config = MEDICAL_HISTORY_SECTION_CONFIG[section];
+      const result = await pool.query(
+        `
+        SELECT *
+        FROM ${config.table}
+        WHERE patient_id = $1::uuid
+        ORDER BY ${config.orderBy}
+        `,
+        [patientId]
+      );
+
+      return [config.responseKey, result.rows.map(config.mapRow)] as const;
+    })
+  );
+
+  const auditResult = await pool.query(
+    `
+    SELECT *
+    FROM patient_medical_history_audit_events
+    WHERE patient_id = $1::uuid
+    ORDER BY created_at DESC
+    LIMIT 50
+    `,
+    [patientId]
+  );
+
+  return {
+    ...Object.fromEntries(sectionEntries),
+    auditEvents: auditResult.rows.map(mapMedicalHistoryAuditRow),
   };
 }
 
@@ -7618,6 +8121,187 @@ app.put("/api/patient/health-summary", requirePatientAuth, async (req: any, res)
   }
 });
 
+app.get("/api/patient/medical-history", requirePatientAuth, async (req: any, res) => {
+  const patientId = req.patientId;
+
+  try {
+    const history = await fetchPatientMedicalHistory(patientId);
+    return res.json({ history });
+  } catch (e: any) {
+    console.error("GET /api/patient/medical-history error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to load medical history" });
+  }
+});
+
+app.post("/api/patient/medical-history/:section", requirePatientAuth, async (req: any, res) => {
+  const patientId = req.patientId;
+  const section = String(req.params.section || "");
+  const config = getMedicalHistorySectionConfig(section);
+
+  if (!config) {
+    return res.status(400).json({ message: "Invalid medical history section" });
+  }
+
+  try {
+    const normalized = config.normalizeInput(req.body ?? {});
+    const entryId = randomUUID();
+    const values = config.columns.map((column) => normalized.values[column] ?? null);
+    const placeholders = config.columns.map((_, index) => `$${index + 3}`).join(", ");
+    const insertColumns = config.columns.join(", ");
+
+    const created = await pool.query(
+      `
+      INSERT INTO ${config.table} (
+        id,
+        patient_id,
+        source_type,
+        verification_status,
+        ${insertColumns}
+      )
+      VALUES ($1::uuid, $2::uuid, 'patient', 'patient_reported', ${placeholders})
+      RETURNING *
+      `,
+      [entryId, patientId, ...values]
+    );
+
+    const entry = config.mapRow(created.rows[0]);
+
+    await recordMedicalHistoryAuditEvent({
+      patientId,
+      section: section as MedicalHistorySectionKey,
+      entryId,
+      action: "created",
+      actorType: "patient",
+      actorId: patientId,
+      summary: `Created ${config.label}: ${config.getEntryLabel(entry)}`,
+    });
+
+    return res.status(201).json({ entry });
+  } catch (e: any) {
+    if (e?.statusCode === 400) {
+      return res.status(400).json({ message: e.message });
+    }
+    console.error(`POST /api/patient/medical-history/${section} error:`, e);
+    return res.status(500).json({ message: e?.message || "Failed to save medical history entry" });
+  }
+});
+
+app.patch("/api/patient/medical-history/:section/:id", requirePatientAuth, async (req: any, res) => {
+  const patientId = req.patientId;
+  const section = String(req.params.section || "");
+  const entryId = String(req.params.id || "");
+  const config = getMedicalHistorySectionConfig(section);
+
+  if (!config) {
+    return res.status(400).json({ message: "Invalid medical history section" });
+  }
+  if (!isUuid(entryId)) {
+    return res.status(400).json({ message: "Invalid medical history entry id" });
+  }
+
+  try {
+    const normalized = config.normalizeInput(req.body ?? {});
+    const values = config.columns.map((column) => normalized.values[column] ?? null);
+    const assignments = config.columns.map((column, index) => `${column} = $${index + 3}`).join(", ");
+
+    const updated = await pool.query(
+      `
+      UPDATE ${config.table}
+      SET ${assignments},
+          updated_at = NOW()
+      WHERE id = $1::uuid
+        AND patient_id = $2::uuid
+        AND source_type = 'patient'
+      RETURNING *
+      `,
+      [entryId, patientId, ...values]
+    );
+
+    if ((updated.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: "Medical history entry not found" });
+    }
+
+    const entry = config.mapRow(updated.rows[0]);
+
+    await recordMedicalHistoryAuditEvent({
+      patientId,
+      section: section as MedicalHistorySectionKey,
+      entryId,
+      action: "updated",
+      actorType: "patient",
+      actorId: patientId,
+      summary: `Updated ${config.label}: ${config.getEntryLabel(entry)}`,
+    });
+
+    return res.json({ entry });
+  } catch (e: any) {
+    if (e?.statusCode === 400) {
+      return res.status(400).json({ message: e.message });
+    }
+    console.error(`PATCH /api/patient/medical-history/${section}/${entryId} error:`, e);
+    return res.status(500).json({ message: e?.message || "Failed to update medical history entry" });
+  }
+});
+
+app.delete("/api/patient/medical-history/:section/:id", requirePatientAuth, async (req: any, res) => {
+  const patientId = req.patientId;
+  const section = String(req.params.section || "");
+  const entryId = String(req.params.id || "");
+  const config = getMedicalHistorySectionConfig(section);
+
+  if (!config) {
+    return res.status(400).json({ message: "Invalid medical history section" });
+  }
+  if (!isUuid(entryId)) {
+    return res.status(400).json({ message: "Invalid medical history entry id" });
+  }
+
+  try {
+    const existing = await pool.query(
+      `
+      SELECT *
+      FROM ${config.table}
+      WHERE id = $1::uuid
+        AND patient_id = $2::uuid
+        AND source_type = 'patient'
+      LIMIT 1
+      `,
+      [entryId, patientId]
+    );
+
+    if ((existing.rowCount ?? 0) === 0) {
+      return res.status(404).json({ message: "Medical history entry not found" });
+    }
+
+    const mapped = config.mapRow(existing.rows[0]);
+
+    await pool.query(
+      `
+      DELETE FROM ${config.table}
+      WHERE id = $1::uuid
+        AND patient_id = $2::uuid
+        AND source_type = 'patient'
+      `,
+      [entryId, patientId]
+    );
+
+    await recordMedicalHistoryAuditEvent({
+      patientId,
+      section: section as MedicalHistorySectionKey,
+      entryId,
+      action: "deleted",
+      actorType: "patient",
+      actorId: patientId,
+      summary: `Deleted ${config.label}: ${config.getEntryLabel(mapped)}`,
+    });
+
+    return res.json({ ok: true });
+  } catch (e: any) {
+    console.error(`DELETE /api/patient/medical-history/${section}/${entryId} error:`, e);
+    return res.status(500).json({ message: e?.message || "Failed to delete medical history entry" });
+  }
+});
+
 app.get("/api/staff/patients/:id/medications", requireStaffAuth, async (req: any, res) => {
   const staffHospitalId = req.staffHospitalId;
   const patientId = String(req.params.id || "");
@@ -8694,6 +9378,7 @@ async function initializeSchemas() {
   await ensureEmergencyAccessSecuritySchema();
   await ensureNotificationReadsSchema();
   await ensurePatientSecuritySchema();
+  await ensurePatientMedicalHistorySchema();
 }
 
 function startServer() {

@@ -32,6 +32,7 @@ import PersonalInformationPage from './components/PersonalInformationPage';
 import Notifications from './components/Notifications';
 import SettingsDetailPages, { type SettingsPage } from './components/SettingsDetailPages';
 import { API_BASE } from "@/config/api";
+import type { PatientDataScreen } from '@/lib/patientDataNavigation';
 console.log("API_BASE =", API_BASE);
 
 type Screen =
@@ -208,16 +209,7 @@ export default function App() {
     if (navItem) setActiveNav(navItem);
   };
 
-  const handleRecommendationNavigation = (
-    screen:
-      | 'appointments'
-      | 'health-summary'
-      | 'records'
-      | 'manage-providers'
-      | 'personal-information'
-      | 'emergency-profile'
-      | 'medications'
-  ) => {
+  const handlePatientDataNavigation = (screen: PatientDataScreen) => {
     const navItem: NavItem =
       screen === 'appointments'
         ? 'appointments'
@@ -564,13 +556,18 @@ export default function App() {
         );
 
       case 'care-journeys':
-        return <CareJourneys onBack={() => handleNavigation('dashboard', 'home')} />;
+        return (
+          <CareJourneys
+            onBack={() => handleNavigation('dashboard', 'home')}
+            onNavigate={handlePatientDataNavigation}
+          />
+        );
 
       case 'recommendations':
         return (
           <Recommendations
             onBack={() => handleNavigation('dashboard', 'home')}
-            onNavigate={handleRecommendationNavigation}
+            onNavigate={handlePatientDataNavigation}
           />
         );
 
@@ -592,7 +589,12 @@ export default function App() {
         );
 
       case 'medical-history':
-        return <MedicalHistory onBack={() => handleNavigation('dashboard', 'home')} />;
+        return (
+          <MedicalHistory
+            onBack={() => handleNavigation('dashboard', 'home')}
+            onNavigate={handlePatientDataNavigation}
+          />
+        );
 
       case 'communication-preferences':
         return <CommunicationPreferences onBack={() => handleNavigation('more', 'more')} />;
