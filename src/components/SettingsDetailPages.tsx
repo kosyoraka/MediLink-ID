@@ -149,30 +149,89 @@ function SessionManagement({ onBack }: { onBack: () => void }) {
     };
   }, []);
 
+  const sessionGroups = useMemo(() => {
+    const groups = new Map<
+      string,
+      {
+        id: string;
+        deviceName: string;
+        signInMethod: string;
+        count: number;
+        isCurrentDevice: boolean;
+        firstSeenAt: string;
+        lastSeenAt: string;
+        ipAddresses: string[];
+      }
+    >();
+
+    sessions.forEach((session) => {
+      const deviceName = session.device_name || "Unknown device";
+      const signInMethod = session.last_signin_method || "Unknown";
+      const key = `${deviceName}::${signInMethod}`;
+      const existing = groups.get(key);
+      const firstSeenTime = new Date(session.first_seen_at).getTime();
+      const lastSeenTime = new Date(session.last_seen_at).getTime();
+
+      if (!existing) {
+        groups.set(key, {
+          id: key,
+          deviceName,
+          signInMethod,
+          count: 1,
+          isCurrentDevice: session.is_current_device,
+          firstSeenAt: session.first_seen_at,
+          lastSeenAt: session.last_seen_at,
+          ipAddresses: session.last_ip_address ? [session.last_ip_address] : [],
+        });
+        return;
+      }
+
+      existing.count += 1;
+      existing.isCurrentDevice = existing.isCurrentDevice || session.is_current_device;
+
+      if (firstSeenTime < new Date(existing.firstSeenAt).getTime()) {
+        existing.firstSeenAt = session.first_seen_at;
+      }
+      if (lastSeenTime > new Date(existing.lastSeenAt).getTime()) {
+        existing.lastSeenAt = session.last_seen_at;
+      }
+      if (session.last_ip_address && !existing.ipAddresses.includes(session.last_ip_address)) {
+        existing.ipAddresses.push(session.last_ip_address);
+      }
+    });
+
+    return Array.from(groups.values()).sort(
+      (a, b) => new Date(b.lastSeenAt).getTime() - new Date(a.lastSeenAt).getTime()
+    );
+  }, [sessions]);
+
   return (
     <Shell title="Session Management" subtitle="Devices that have signed in to this account." onBack={onBack}>
       <Card>
         <p className="text-sm text-gray-600">
-          MediLink currently tracks recognized devices and recent sign-ins. Remote sign-out for other devices is coming later.
+          MediLink groups repeated sign-ins from the same browser/device so the list is easier to read. Remote sign-out for other devices is coming later.
         </p>
       </Card>
       {loading ? <Card><p className="text-sm text-gray-500">Loading sessions…</p></Card> : null}
-      {!loading && sessions.length === 0 ? <Card><p className="text-sm text-gray-500">No device sessions recorded yet.</p></Card> : null}
-      {sessions.map((session) => (
-        <Card key={session.id}>
+      {!loading && sessionGroups.length === 0 ? <Card><p className="text-sm text-gray-500">No device sessions recorded yet.</p></Card> : null}
+      {sessionGroups.map((group) => (
+        <Card key={group.id}>
           <div className="flex gap-3">
             <div className="rounded-full bg-blue-100 p-2 text-blue-600">
               <Smartphone className="h-5 w-5" />
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-gray-900">{session.device_name || "Unknown device"}</p>
-                {session.is_current_device ? <span className="rounded-full bg-green-100 px-2 py-1 text-xs text-green-700">This device</span> : null}
+                <p className="text-gray-900">{group.deviceName}</p>
+                {group.isCurrentDevice ? <span className="rounded-full bg-green-100 px-2 py-1 text-xs text-green-700">This device</span> : null}
               </div>
-              <p className="mt-1 text-sm text-gray-600">Sign-in method: {session.last_signin_method || "Unknown"}</p>
-              <p className="text-sm text-gray-600">First seen: {formatDate(session.first_seen_at)}</p>
-              <p className="text-sm text-gray-600">Last active: {formatDate(session.last_seen_at)}</p>
-              <p className="text-xs text-gray-500">IP: {session.last_ip_address || "Not available"}</p>
+              <p className="mt-1 text-sm text-gray-600">Sign-in method: {group.signInMethod}</p>
+              <p className="text-sm text-gray-600">First seen: {formatDate(group.firstSeenAt)}</p>
+              <p className="text-sm text-gray-600">Last active: {formatDate(group.lastSeenAt)}</p>
+              <p className="text-xs text-gray-500">
+                {group.count > 1 ? `${group.count} recorded sign-ins` : "1 recorded sign-in"}
+                {group.ipAddresses.length > 0 ? ` • IP: ${group.ipAddresses.slice(0, 2).join(", ")}` : ""}
+              </p>
             </div>
           </div>
         </Card>
