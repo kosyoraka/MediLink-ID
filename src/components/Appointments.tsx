@@ -549,14 +549,24 @@ setAppointments(
         );
       }
       alert("Reschedule request sent. Waiting for provider confirmation.");
-      setRescheduleTarget(null);
-      setRescheduleSlot("");
-      setRescheduleReason("");
+      closeRescheduleRequest();
     } catch (e: any) {
       setRescheduleError(e?.message || "Failed to send reschedule request");
     } finally {
       setRescheduleSubmitting(false);
     }
+  }
+
+  function closeRescheduleRequest() {
+    setRescheduleTarget(null);
+    setRescheduleDate("");
+    setRescheduleSlot("");
+    setRescheduleReason("");
+    setRescheduleSlots([]);
+    setRescheduleDuration(null);
+    setRescheduleError("");
+    setRescheduleLoading(false);
+    setRescheduleSubmitting(false);
   }
 
   // ---------------- Booking Screen ----------------
@@ -893,36 +903,36 @@ setAppointments(
       {rescheduleTarget
         ? createPortal(
             <div
-              className="fixed inset-0 z-[9999] flex items-end justify-center bg-black/40 p-4 sm:items-center"
+              className="fixed inset-0 z-[9999] overflow-y-auto bg-gray-50"
               role="dialog"
               aria-modal="true"
-              onClick={() => setRescheduleTarget(null)}
             >
               <div
-                className="w-full max-w-md overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl"
-                onClick={(event) => event.stopPropagation()}
+                className="min-h-screen"
               >
-                <div className="flex items-start justify-between border-b border-gray-100 p-4">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal-600">
-                      Reschedule Request
-                    </p>
-                    <h3 className="mt-1 text-gray-900">{rescheduleTarget.specialty || "Appointment"}</h3>
-                    <p className="text-sm text-gray-500">{rescheduleTarget.doctorName}</p>
-                  </div>
+                <div className="sticky top-0 z-10 border-b border-gray-200 bg-white p-4">
+                  <div className="mx-auto flex w-full max-w-md items-start justify-between">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal-600">
+                        Reschedule Request
+                      </p>
+                      <h3 className="mt-1 text-gray-900">{rescheduleTarget.specialty || "Appointment"}</h3>
+                      <p className="text-sm text-gray-500">{rescheduleTarget.doctorName}</p>
+                    </div>
 
-                  <button
-                    type="button"
-                    onClick={() => setRescheduleTarget(null)}
-                    className="rounded-lg p-2 text-gray-600 hover:bg-gray-100"
-                    aria-label="Cancel"
-                  >
-                    Cancel
-                  </button>
+                    <button
+                      type="button"
+                      onClick={closeRescheduleRequest}
+                      className="rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-100"
+                      aria-label="Cancel reschedule"
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </div>
 
-                <div className="space-y-4 p-4">
-                  <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                <div className="mx-auto w-full max-w-md space-y-4 p-4">
+                  <div className="rounded-xl border border-gray-200 bg-white p-4">
                     <p className="text-sm text-gray-600">Current appointment</p>
                     <p className="mt-2 font-medium text-gray-900">
                       {formatWhen(rescheduleTarget.startTime).date} at {formatWhen(rescheduleTarget.startTime).time}
@@ -997,6 +1007,14 @@ setAppointments(
                     className="w-full rounded-xl bg-teal-600 px-4 py-3 text-sm font-medium text-white hover:bg-teal-700 disabled:bg-gray-300"
                   >
                     {rescheduleSubmitting ? "Sending request…" : "Send Reschedule Request"}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={closeRescheduleRequest}
+                    className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-medium text-gray-700 hover:border-gray-300"
+                  >
+                    Cancel
                   </button>
                 </div>
               </div>
