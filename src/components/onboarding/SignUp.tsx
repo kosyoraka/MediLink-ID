@@ -5,6 +5,13 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Checkbox } from '../ui/checkbox';
 import { API_BASE } from "@/config/api";
+import {
+  EMAIL_VALIDATION_MESSAGE,
+  STRONG_PASSWORD_MESSAGE,
+  isValidEmail,
+  normalizeEmail,
+  validateStrongPassword,
+} from '@/lib/authValidation';
 import { getPatientDeviceId } from '@/lib/patientDevice';
 
 interface SignUpProps {
@@ -29,17 +36,8 @@ export default function SignUp({ onBack, onGoToSignIn, onSignUp }: SignUpProps) 
 
   const [error, setError] = useState<string | null>(null);
   const [googleError, setGoogleError] = useState<string | null>(null);
-
-  const getPasswordStrength = (pwd: string) => {
-    if (pwd.length === 0) return { strength: 0, label: '' };
-    if (pwd.length < 6) return { strength: 1, label: 'Weak' };
-    if (pwd.length < 10) return { strength: 2, label: 'Medium' };
-    if (pwd.length >= 10 && /[A-Z]/.test(pwd) && /[0-9]/.test(pwd))
-      return { strength: 3, label: 'Strong' };
-    return { strength: 2, label: 'Medium' };
-  };
-
-  const passwordStrength = getPasswordStrength(password);
+  const emailLooksValid = email.trim().length === 0 || isValidEmail(email);
+  const passwordStrength = validateStrongPassword(password);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,15 +45,26 @@ export default function SignUp({ onBack, onGoToSignIn, onSignUp }: SignUpProps) 
 
     if (!email || !password || !agreed) return;
 
+    if (!isValidEmail(email)) {
+      setError(EMAIL_VALIDATION_MESSAGE);
+      return;
+    }
+
+    if (!passwordStrength.isStrong) {
+      setError(STRONG_PASSWORD_MESSAGE);
+      return;
+    }
+
     try {
       setLoading(true);
+      const normalizedEmail = normalizeEmail(email);
 
       const res = await fetch(`${API_BASE}/api/auth/signup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-          email,
+          email: normalizedEmail,
           password,
           acceptedTerms: agreed,
           hospitalId,
@@ -72,10 +81,10 @@ export default function SignUp({ onBack, onGoToSignIn, onSignUp }: SignUpProps) 
       localStorage.setItem('patientId', data.id);
 
       // optional but handy
-      localStorage.setItem('email', data.email);
+      localStorage.setItem('email', data.email || normalizedEmail);
 
       // continue your existing app flow
-      onSignUp(data.email);
+      onSignUp(data.email || normalizedEmail);
     } catch (err: any) {
       setError(err?.message ?? 'Signup failed');
     } finally {
@@ -152,9 +161,16 @@ export default function SignUp({ onBack, onGoToSignIn, onSignUp }: SignUpProps) 
             type="email"
             placeholder="your.email@example.com"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              setError(null);
+            }}
             required
+            autoComplete="email"
           />
+          {email.trim().length > 0 && !emailLooksValid && (
+            <p className="mt-2 text-sm text-red-600">{EMAIL_VALIDATION_MESSAGE}</p>
+          )}
         </div>
 
         <div>
@@ -167,8 +183,12 @@ export default function SignUp({ onBack, onGoToSignIn, onSignUp }: SignUpProps) 
               type={showPassword ? 'text' : 'password'}
               placeholder="Create a strong password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                setError(null);
+              }}
               required
+              autoComplete="new-password"
             />
             <button
               type="button"
@@ -213,11 +233,18 @@ export default function SignUp({ onBack, onGoToSignIn, onSignUp }: SignUpProps) 
                   passwordStrength.strength === 1
                     ? 'text-red-600'
                     : passwordStrength.strength === 2
-                    ? 'text-yellow-600'
+                    ? 'text-amber-600'
                     : 'text-green-600'
                 }`}
               >
                 {passwordStrength.label}
+              </p>
+              <p
+                className={`mt-1 text-sm ${
+                  passwordStrength.isStrong ? 'text-green-600' : 'text-red-600'
+                }`}
+              >
+                {STRONG_PASSWORD_MESSAGE}
               </p>
             </div>
           )}

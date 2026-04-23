@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/toast";
 import { apiFetch } from "@/lib/api";
+import { STRONG_PASSWORD_MESSAGE, validateStrongPassword } from "@/lib/authValidation";
 
 type StaffSession = {
   id: string;
@@ -61,6 +62,10 @@ export function Settings() {
     pushAppointments: true,
     pushMessages: false,
   });
+  const newPasswordValidation = useMemo(
+    () => validateStrongPassword(passwordData.newPassword),
+    [passwordData.newPassword]
+  );
 
   // Derived: disable editing email + hospital (recommended for now)
   const canEditEmail = false;
@@ -207,8 +212,8 @@ export function Settings() {
       toast.error("New passwords do not match");
       return;
     }
-    if (passwordData.newPassword.length < 8) {
-      toast.error("New password must be at least 8 characters");
+    if (!newPasswordValidation.isStrong) {
+      toast.error(STRONG_PASSWORD_MESSAGE);
       return;
     }
 
@@ -370,8 +375,19 @@ export function Settings() {
                 type="password"
                 value={passwordData.newPassword}
                 onChange={(e) => setPasswordData({ ...passwordData, newPassword: e.target.value })}
-                placeholder="At least 8 characters"
+                placeholder="Create a strong password"
               />
+              <p
+                className={`mt-2 text-sm ${
+                  passwordData.newPassword.length === 0
+                    ? "text-gray-500"
+                    : newPasswordValidation.isStrong
+                    ? "text-green-600"
+                    : "text-red-600"
+                }`}
+              >
+                {STRONG_PASSWORD_MESSAGE}
+              </p>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">Confirm New Password</label>

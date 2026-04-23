@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/toast";
 import { apiFetch } from "@/lib/api";
+import { EMAIL_VALIDATION_MESSAGE, isValidEmail, normalizeEmail } from "@/lib/authValidation";
 import { MedilinkIcon } from "@/components/branding/MedilinkIcon";
 
 interface LoginPageProps {
@@ -41,6 +42,7 @@ export function LoginPage({ onLogin, onSignUpClick }: LoginPageProps) {
   const [rememberMe, setRememberMe] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const emailLooksValid = email.trim().length === 0 || isValidEmail(email);
 
   useEffect(() => {
     const last = readLastEmail();
@@ -64,9 +66,13 @@ export function LoginPage({ onLogin, onSignUpClick }: LoginPageProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    const emailTrim = email.trim();
+    const emailTrim = normalizeEmail(email);
     if (!emailTrim || !password) {
       toast.error("Please enter both email and password");
+      return;
+    }
+    if (!isValidEmail(emailTrim)) {
+      toast.error(EMAIL_VALIDATION_MESSAGE);
       return;
     }
 
@@ -130,6 +136,9 @@ export function LoginPage({ onLogin, onSignUpClick }: LoginPageProps) {
                 disabled={isLoading}
                 autoComplete="email"
               />
+              {email.trim().length > 0 && !emailLooksValid && (
+                <p className="mt-2 text-sm text-red-600">{EMAIL_VALIDATION_MESSAGE}</p>
+              )}
             </div>
 
             <div>

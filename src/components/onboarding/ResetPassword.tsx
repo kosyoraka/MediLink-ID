@@ -3,6 +3,7 @@ import { ArrowLeft, Eye, EyeOff, Lock } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { API_BASE } from '@/config/api';
+import { STRONG_PASSWORD_MESSAGE, validateStrongPassword } from '@/lib/authValidation';
 
 interface ResetPasswordProps {
   token: string;
@@ -18,6 +19,7 @@ export default function ResetPassword({ token, onBack, onComplete }: ResetPasswo
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [completed, setCompleted] = useState(false);
+  const passwordValidation = validateStrongPassword(password);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,8 +29,8 @@ export default function ResetPassword({ token, onBack, onComplete }: ResetPasswo
       return;
     }
 
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters long.');
+    if (!passwordValidation.isStrong) {
+      setError(STRONG_PASSWORD_MESSAGE);
       return;
     }
 
@@ -101,9 +103,13 @@ export default function ResetPassword({ token, onBack, onComplete }: ResetPasswo
                   id="new-password"
                   type={showPassword ? 'text' : 'password'}
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    setError(null);
+                  }}
                   placeholder="Create a strong password"
                   required
+                  autoComplete="new-password"
                 />
                 <button
                   type="button"
@@ -113,7 +119,17 @@ export default function ResetPassword({ token, onBack, onComplete }: ResetPasswo
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
-              <p className="mt-2 text-sm text-gray-500">Use at least 8 characters.</p>
+              <p
+                className={`mt-2 text-sm ${
+                  password.length === 0
+                    ? 'text-gray-500'
+                    : passwordValidation.isStrong
+                    ? 'text-green-600'
+                    : 'text-red-600'
+                }`}
+              >
+                {STRONG_PASSWORD_MESSAGE}
+              </p>
             </div>
 
             <div>
@@ -127,6 +143,7 @@ export default function ResetPassword({ token, onBack, onComplete }: ResetPasswo
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="Repeat your new password"
                 required
+                autoComplete="new-password"
               />
             </div>
 
