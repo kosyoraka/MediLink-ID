@@ -85,41 +85,41 @@ const coreWalkthroughSteps: WalkthroughStep[] = [
   {
     title: 'Welcome to MediLink ID',
     description:
-      'This quick tour will show you the most important places to manage your care, records, and day-to-day health information.',
+      'Take a quick look at the main parts of your account.',
     screen: 'dashboard',
     navItem: 'home',
   },
   {
     title: 'Emergency Profile',
     description:
-      'Add the health details and contacts you want available in emergencies. You can control what is shown and set or update your emergency access code later in Settings.',
+      'Add emergency details and contacts here. You can change what is shown and update your access code later in Settings.',
     screen: 'emergency-profile',
     navItem: 'more',
   },
   {
     title: 'Connect Providers',
     description:
-      'Link your care team here so your records, communication, and shared care tools are ready when you need them.',
+      'Link your care team here.',
     screen: 'connect-providers',
   },
   {
     title: 'Health Summary',
     description:
-      'This is where you keep core health details up to date, including vitals, conditions, allergies, and the information providers rely on most.',
+      'Keep your main health details up to date here.',
     screen: 'health-summary',
     navItem: 'home',
   },
   {
     title: 'Documents',
     description:
-      'Upload, organize, and review medical records here so they stay easy to find whenever you need them.',
+      'Upload and review medical documents here.',
     screen: 'documents',
     navItem: 'home',
   },
   {
     title: 'Appointments and Messages',
     description:
-      'Use Appointments to stay on top of upcoming visits, and Messages to keep communication with your care team in one place.',
+      'Track visits in Appointments. Use Messages for care team updates.',
     screen: 'appointments',
     navItem: 'appointments',
     nextLabel: 'Finish core tour',
@@ -130,35 +130,35 @@ const featureWalkthroughSteps: WalkthroughStep[] = [
   {
     title: 'Find Care AI',
     description:
-      'Use Find Care AI when you need guided next steps, symptom support, or help deciding where to seek care.',
+      'Use this when you need guided next steps.',
     screen: 'symptom-checker',
     navItem: 'home',
   },
   {
     title: 'Medications',
     description:
-      'Keep your medication list current so doses, adherence, and ongoing treatment details are easier to follow.',
+      'Keep your medication list current here.',
     screen: 'medications',
     navItem: 'home',
   },
   {
     title: 'Recommendations',
     description:
-      'Check Recommendations for personalized guidance and follow-up suggestions based on the information in your account.',
+      'See personalized suggestions here.',
     screen: 'recommendations',
     navItem: 'home',
   },
   {
     title: 'Care Journey',
     description:
-      'Care Journey helps you see progress over time and understand the bigger picture of your treatment plan.',
+      'Follow your progress over time here.',
     screen: 'care-journeys',
     navItem: 'home',
   },
   {
     title: 'Nutrition and Fitness',
     description:
-      'Log routines and daily wellness habits here, including workouts, steps, hydration, calories, and sleep.',
+      'Log workouts, steps, sleep, hydration, and calories here.',
     screen: 'nutrition-fitness',
     navItem: 'home',
     nextLabel: 'You’re ready',
