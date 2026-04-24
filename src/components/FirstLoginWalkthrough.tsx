@@ -55,24 +55,24 @@ export default function FirstLoginWalkthrough({
     <div
       style={{
         position: 'fixed',
-        inset: '16px 0 auto 0',
+        inset: 'auto 0 88px 0',
         zIndex: 9999,
         display: 'flex',
-        justifyContent: 'center',
+        justifyContent: 'flex-end',
         padding: '0 16px',
         pointerEvents: 'none',
       }}
     >
-      <div style={{ position: 'relative', width: '100%', maxWidth: '340px', pointerEvents: 'auto' }}>
+      <div style={{ position: 'relative', width: '100%', maxWidth: '320px', pointerEvents: 'auto' }}>
         <div
           style={{
             position: 'absolute',
-            left: '54px',
-            top: 0,
+            right: '72px',
+            bottom: 0,
             width: '18px',
             height: '18px',
             backgroundColor: '#252a31',
-            transform: 'translateY(-45%) rotate(45deg)',
+            transform: 'translateY(45%) rotate(45deg)',
             borderRadius: '4px',
           }}
         />
@@ -84,7 +84,7 @@ export default function FirstLoginWalkthrough({
               alignItems: 'flex-start',
               justifyContent: 'space-between',
               gap: '16px',
-              padding: '20px 20px 0 20px',
+              padding: '16px 16px 0 16px',
             }}
           >
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', color: '#7dd3fc', fontSize: '14px', fontWeight: 700 }}>
@@ -111,11 +111,11 @@ export default function FirstLoginWalkthrough({
             </button>
           </div>
 
-          <div style={{ padding: '8px 20px 20px 20px' }}>
+          <div style={{ padding: '8px 16px 16px 16px' }}>
             <h2
               style={{
                 margin: 0,
-                fontSize: '24px',
+                fontSize: '22px',
                 lineHeight: 1.2,
                 fontWeight: 700,
                 letterSpacing: '-0.02em',
@@ -127,8 +127,8 @@ export default function FirstLoginWalkthrough({
             <p
               style={{
                 margin: '12px 0 0 0',
-                fontSize: '16px',
-                lineHeight: 1.55,
+                fontSize: '15px',
+                lineHeight: 1.5,
                 color: 'rgba(255,255,255,0.84)',
               }}
             >
@@ -139,13 +139,13 @@ export default function FirstLoginWalkthrough({
               <div
                 style={{
                   marginTop: '18px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  fontSize: '14px',
-                  color: 'rgba(255,255,255,0.70)',
-                }}
-              >
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                fontSize: '13px',
+                color: 'rgba(255,255,255,0.70)',
+              }}
+            >
                 <span>{currentStep} of {totalSteps}</span>
                 <span>Tour</span>
               </div>
@@ -157,7 +157,7 @@ export default function FirstLoginWalkthrough({
                 display: 'flex',
                 justifyContent: 'flex-end',
                 alignItems: 'center',
-                gap: '10px',
+                gap: '8px',
               }}
             >
               {onBack ? (
