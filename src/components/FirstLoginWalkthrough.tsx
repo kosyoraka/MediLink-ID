@@ -81,13 +81,14 @@ export default function FirstLoginWalkthrough({
                 type="button"
                 variant="outline"
                 onClick={onBack}
-                className="flex-1 rounded-full border-slate-200 text-slate-700"
+                className="flex-1 rounded-full border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
               >
                 Back
               </Button>
             ) : null}
             <Button
               type="button"
+              variant="secondary"
               onClick={onNext}
               className="flex-1 rounded-full bg-slate-900 text-white hover:bg-slate-800"
             >
