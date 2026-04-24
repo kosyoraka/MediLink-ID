@@ -5,10 +5,12 @@ import {
   type PatientSocialHistoryEntry,
 } from '@/lib/api';
 
-const TRACKER_NOTE_PATTERN = /^\[tracker:(steps|workouts|calories|water|sleep)\]\s*/i;
+const TRACKER_NOTE_PATTERN = /\[tracker:(steps|workouts|calories|water|sleep)\]/i;
+const MODE_NOTE_PATTERN = /\[mode:(log|routine)\]/i;
 
 export type NutritionFitnessTrackerKind = 'steps' | 'workouts' | 'calories' | 'water' | 'sleep';
 export type NutritionFitnessEditorKind = NutritionFitnessTrackerKind;
+export type NutritionFitnessEntryMode = 'log' | 'routine';
 
 export interface NutritionFitnessHabitItem {
   id: string;
@@ -16,15 +18,16 @@ export interface NutritionFitnessHabitItem {
   statusLabel: string;
   dateLabel: string;
   detail: string;
-  notes: string;
   sourceLabel: string;
   trackerKind: NutritionFitnessTrackerKind;
+  mode: NutritionFitnessEntryMode;
   entry: PatientSocialHistoryEntry;
 }
 
 export interface NutritionFitnessData {
   lastUpdatedLabel: string;
-  trackerEntries: Record<NutritionFitnessTrackerKind, NutritionFitnessHabitItem[]>;
+  trackerLogs: Record<NutritionFitnessTrackerKind, NutritionFitnessHabitItem[]>;
+  trackerRoutines: Record<NutritionFitnessTrackerKind, NutritionFitnessHabitItem[]>;
 }
 
 function parseDate(value?: string | null) {
@@ -78,12 +81,19 @@ function buildSourceLabel(entry: PatientSocialHistoryEntry) {
 }
 
 export function stripNutritionFitnessTrackerTag(notes?: string | null) {
-  return String(notes || '').replace(TRACKER_NOTE_PATTERN, '').trim();
+  return String(notes || '')
+    .replace(TRACKER_NOTE_PATTERN, '')
+    .replace(MODE_NOTE_PATTERN, '')
+    .trim();
 }
 
-export function encodeNutritionFitnessTrackerNotes(kind: NutritionFitnessTrackerKind, notes?: string | null) {
+export function encodeNutritionFitnessTrackerNotes(
+  kind: NutritionFitnessTrackerKind,
+  mode: NutritionFitnessEntryMode,
+  notes?: string | null
+) {
   const cleaned = stripNutritionFitnessTrackerTag(notes);
-  return cleaned ? `[tracker:${kind}] ${cleaned}` : `[tracker:${kind}]`;
+  return cleaned ? `[tracker:${kind}] [mode:${mode}] ${cleaned}` : `[tracker:${kind}] [mode:${mode}]`;
 }
 
 function detectTrackerKind(entry: PatientSocialHistoryEntry): NutritionFitnessTrackerKind {
@@ -122,17 +132,24 @@ function detectTrackerKind(entry: PatientSocialHistoryEntry): NutritionFitnessTr
   return 'workouts';
 }
 
+function detectEntryMode(entry: PatientSocialHistoryEntry): NutritionFitnessEntryMode {
+  const notesMatch = String(entry.notes || '').match(MODE_NOTE_PATTERN);
+  if (notesMatch?.[1] === 'routine') return 'routine';
+  return 'log';
+}
+
 function toHabitItem(entry: PatientSocialHistoryEntry): NutritionFitnessHabitItem {
   const trackerKind = detectTrackerKind(entry);
+  const mode = detectEntryMode(entry);
   return {
     id: entry.id,
     title: String(entry.title || '').trim() || formatLabel(trackerKind),
     statusLabel: formatLabel(entry.status, 'On file'),
     dateLabel: formatDateRangeLabel(entry.startDate, entry.endDate, formatDateLabel(entry.updatedAt)),
     detail: String(entry.detail || '').trim() || 'No details added yet.',
-    notes: stripNutritionFitnessTrackerTag(entry.notes) || 'No extra notes added.',
     sourceLabel: buildSourceLabel(entry),
     trackerKind,
+    mode,
     entry,
   };
 }
@@ -180,12 +197,19 @@ export async function fetchNutritionFitnessData(): Promise<NutritionFitnessData>
 
   return {
     lastUpdatedLabel: getLatestUpdatedLabel(summaryRes.summary, historyRes.history),
-    trackerEntries: {
-      steps: trackerEntries.filter((entry) => entry.trackerKind === 'steps'),
-      workouts: trackerEntries.filter((entry) => entry.trackerKind === 'workouts'),
-      calories: trackerEntries.filter((entry) => entry.trackerKind === 'calories'),
-      water: trackerEntries.filter((entry) => entry.trackerKind === 'water'),
-      sleep: trackerEntries.filter((entry) => entry.trackerKind === 'sleep'),
+    trackerLogs: {
+      steps: trackerEntries.filter((entry) => entry.trackerKind === 'steps' && entry.mode === 'log'),
+      workouts: trackerEntries.filter((entry) => entry.trackerKind === 'workouts' && entry.mode === 'log'),
+      calories: trackerEntries.filter((entry) => entry.trackerKind === 'calories' && entry.mode === 'log'),
+      water: trackerEntries.filter((entry) => entry.trackerKind === 'water' && entry.mode === 'log'),
+      sleep: trackerEntries.filter((entry) => entry.trackerKind === 'sleep' && entry.mode === 'log'),
+    },
+    trackerRoutines: {
+      steps: trackerEntries.filter((entry) => entry.trackerKind === 'steps' && entry.mode === 'routine'),
+      workouts: trackerEntries.filter((entry) => entry.trackerKind === 'workouts' && entry.mode === 'routine'),
+      calories: trackerEntries.filter((entry) => entry.trackerKind === 'calories' && entry.mode === 'routine'),
+      water: trackerEntries.filter((entry) => entry.trackerKind === 'water' && entry.mode === 'routine'),
+      sleep: trackerEntries.filter((entry) => entry.trackerKind === 'sleep' && entry.mode === 'routine'),
     },
   };
 }
