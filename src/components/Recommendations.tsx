@@ -174,7 +174,7 @@ export default function Recommendations({ onBack, onNavigate }: RecommendationsP
       </div>
 
       <div className="p-6 -mt-4 space-y-6">
-        <div className="bg-gradient-to-br from-teal-50 to-green-50 rounded-xl border border-teal-200 p-6">
+        <div className="recommendations-light-card bg-gradient-to-br from-teal-50 to-green-50 rounded-xl border border-teal-200 p-6">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h3 className="text-gray-900 dark:text-gray-900 mb-1">Care Readiness Score</h3>
@@ -317,7 +317,7 @@ export default function Recommendations({ onBack, onNavigate }: RecommendationsP
               </div>
             </div>
 
-            <div className="bg-gradient-to-br from-blue-50 to-teal-50 rounded-xl border border-blue-200 p-5">
+            <div className="recommendations-light-card bg-gradient-to-br from-blue-50 to-teal-50 rounded-xl border border-blue-200 p-5">
               <div className="flex items-center gap-3 mb-4">
                 <CheckCircle className="w-6 h-6 text-green-600" />
                 <div>

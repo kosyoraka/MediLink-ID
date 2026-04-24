@@ -2952,6 +2952,18 @@ html.dark .text-gray-400 {
   color: #a1a1aa !important;
 }
 
+html.dark .recommendations-light-card .text-gray-900,
+html.dark .recommendations-light-card .text-gray-800,
+html.dark .recommendations-light-card .text-gray-700 {
+  color: #111827 !important;
+}
+
+html.dark .recommendations-light-card .text-gray-600,
+html.dark .recommendations-light-card .text-gray-500,
+html.dark .recommendations-light-card .text-gray-400 {
+  color: #4b5563 !important;
+}
+
 html.dark .text-green-600,
 html.dark .text-green-700,
 html.dark .text-green-800,
