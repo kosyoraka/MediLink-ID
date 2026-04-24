@@ -471,6 +471,144 @@ async function ensurePatientHospitalConnection(patientId: string, hospitalId: st
   );
 }
 
+async function ensurePatientProviderConnection(patientId: string, providerId: string) {
+  const existing = await pool.query(
+    `
+    SELECT 1
+    FROM patient_provider_connections
+    WHERE patient_id = $1::uuid
+      AND provider_id = $2::uuid
+      AND disconnected_at IS NULL
+    LIMIT 1
+    `,
+    [patientId, providerId]
+  );
+
+  if ((existing.rowCount ?? 0) > 0) {
+    return;
+  }
+
+  await pool.query(
+    `
+    INSERT INTO patient_provider_connections (id, patient_id, provider_id, created_at)
+    VALUES ($1, $2::uuid, $3::uuid, NOW())
+    `,
+    [randomUUID(), patientId, providerId]
+  );
+
+  await ensurePatientHospitalConnection(patientId, providerId);
+}
+
+function splitPatientFullName(fullName: string | null | undefined) {
+  const full = String(fullName ?? "").trim();
+  const parts = full ? full.split(/\s+/) : [];
+
+  return {
+    firstName: parts.length ? parts[0] : null,
+    lastName: parts.length > 1 ? parts.slice(1).join(" ") : null,
+  };
+}
+
+async function ensurePatientProfileShell(patientId: string) {
+  await pool.query(
+    `
+    INSERT INTO patient_profiles (patient_id)
+    VALUES ($1::uuid)
+    ON CONFLICT (patient_id) DO NOTHING
+    `,
+    [patientId]
+  );
+}
+
+async function applyPatientIntakeToProfiles(
+  patientId: string,
+  intake: {
+    fullName?: string | null;
+    dob?: string | null;
+    phoneNumber?: string | null;
+    homeAddress?: string | null;
+    insurance?: string | null;
+    healthCard?: string | null;
+    bloodType?: string | null;
+    allergies?: string | null;
+    medicalConditions?: string | null;
+  }
+) {
+  const { firstName, lastName } = splitPatientFullName(intake.fullName);
+
+  await pool.query(
+    `
+    INSERT INTO patient_profiles (
+      patient_id,
+      first_name,
+      last_name,
+      dob,
+      phone_number,
+      home_address,
+      insurance,
+      health_card
+    )
+    VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8)
+    ON CONFLICT (patient_id) DO UPDATE SET
+      first_name = EXCLUDED.first_name,
+      last_name = EXCLUDED.last_name,
+      dob = EXCLUDED.dob,
+      phone_number = EXCLUDED.phone_number,
+      home_address = EXCLUDED.home_address,
+      insurance = EXCLUDED.insurance,
+      health_card = EXCLUDED.health_card
+    `,
+    [
+      patientId,
+      firstName,
+      lastName,
+      intake.dob ?? null,
+      intake.phoneNumber ?? null,
+      intake.homeAddress ?? null,
+      intake.insurance ?? null,
+      intake.healthCard ?? null,
+    ]
+  );
+
+  await pool.query(
+    `
+    INSERT INTO emergency_profiles (
+      id, patient_id,
+      share_personal_info, share_blood_type, share_allergies, share_medical_conditions,
+      share_current_medications, share_emergency_contacts, share_advance_directives,
+      blood_type, allergies, medical_conditions,
+      updated_at
+    )
+    VALUES (
+      $1::text, $2::uuid,
+      true, true, true, true,
+      true, true, false,
+      $3, $4, $5,
+      NOW()
+    )
+    ON CONFLICT (patient_id) DO UPDATE SET
+      share_personal_info = true,
+      share_blood_type = true,
+      share_allergies = true,
+      share_medical_conditions = true,
+      share_current_medications = true,
+      share_emergency_contacts = true,
+      share_advance_directives = false,
+      blood_type = EXCLUDED.blood_type,
+      allergies = EXCLUDED.allergies,
+      medical_conditions = EXCLUDED.medical_conditions,
+      updated_at = NOW()
+    `,
+    [
+      `ep_${patientId}`,
+      patientId,
+      intake.bloodType ?? null,
+      intake.allergies ?? null,
+      intake.medicalConditions ?? null,
+    ]
+  );
+}
+
 
 
 const isDev = process.env.NODE_ENV !== "production";
@@ -673,6 +811,43 @@ async function sendPatientPasswordResetEmail(email: string, token: string) {
       resetUrl,
       "",
       "If you did not request this, you can safely ignore this email.",
+      "This link expires in 1 hour.",
+    ].join("\n"),
+  });
+}
+
+async function sendPatientAccountSetupEmail(email: string, token: string, fullName?: string | null) {
+  const resetUrl = getPatientResetPasswordUrl(token);
+  const greetingName = String(fullName ?? "").trim();
+  const greeting = greetingName ? `Hi ${greetingName},` : "Hi,";
+
+  return sendTransactionalEmail({
+    to: email,
+    subject: "Welcome to MediLink ID. Complete your account setup",
+    html: `
+      <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #0f172a;">
+        <h2>Welcome to MediLink ID</h2>
+        <p>${greeting}</p>
+        <p>Your care team has created your MediLink ID account and added your basic medical profile so you can get started faster.</p>
+        <p>Take a moment to finish setting up your account by creating your password.</p>
+        <p>
+          <a href="${resetUrl}" style="display:inline-block;padding:12px 20px;background:#0f766e;color:#ffffff;text-decoration:none;border-radius:8px;">
+            Create password
+          </a>
+        </p>
+        <p>If the button does not work, copy and paste this link into your browser:</p>
+        <p>${resetUrl}</p>
+        <p>This link expires in 1 hour.</p>
+      </div>
+    `,
+    text: [
+      "Welcome to MediLink ID",
+      "",
+      greeting,
+      "Your care team has created your MediLink ID account and added your basic medical profile so you can get started faster.",
+      "Finish setting up your account by creating your password here:",
+      resetUrl,
+      "",
       "This link expires in 1 hour.",
     ].join("\n"),
   });
@@ -2495,10 +2670,10 @@ app.get("/api/patients", async (_req, res) => {
 });
 
 /**
- * Staff: create or update a pending patient intake record
+ * Staff: create a patient account or update an existing patient connection/profile.
  * POST /api/staff/patients/intake
  */
-app.post("/api/staff/patients/intake", async (req, res) => {
+app.post("/api/staff/patients/intake", requireStaffAuth, async (req: any, res) => {
   const {
     email,
     fullName,
@@ -2511,9 +2686,18 @@ app.post("/api/staff/patients/intake", async (req, res) => {
     allergies,
     medicalConditions,
   } = req.body ?? {};
+  const hospitalId = req.staffHospitalId as string | undefined;
+
+  if (!hospitalId) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
 
   if (!email) {
     return res.status(400).json({ message: "Missing email" });
+  }
+
+  if (!fullName || !String(fullName).trim()) {
+    return res.status(400).json({ message: "Missing full name" });
   }
 
   // basic DOB validation (optional)
@@ -2522,43 +2706,113 @@ app.post("/api/staff/patients/intake", async (req, res) => {
   }
 
   try {
-    const result = await pool.query(
+    const intake = {
+      email: normalizeEmail(email),
+      fullName: String(fullName).trim(),
+      dob: dob ?? null,
+      phoneNumber: phoneNumber ?? null,
+      homeAddress: homeAddress ?? null,
+      insurance: insurance ?? null,
+      healthCard: healthCard ?? null,
+      bloodType: bloodType ?? null,
+      allergies: allergies ?? null,
+      medicalConditions: medicalConditions ?? null,
+    };
+
+    if (!isValidEmail(intake.email)) {
+      return res.status(400).json({ message: INVALID_EMAIL_MESSAGE });
+    }
+
+    const existingPatientResult = await pool.query(
       `
-      INSERT INTO pending_patient_intake (
-        email, full_name, dob, phone_number, home_address, insurance,
-        health_card, blood_type, allergies, medical_conditions
-      )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-      ON CONFLICT (email)
-      DO UPDATE SET
-        full_name = EXCLUDED.full_name,
-        dob = EXCLUDED.dob,
-        phone_number = EXCLUDED.phone_number,
-        home_address = EXCLUDED.home_address,
-        insurance = EXCLUDED.insurance,
-        health_card = EXCLUDED.health_card,
-        blood_type = EXCLUDED.blood_type,
-        allergies = EXCLUDED.allergies,
-        medical_conditions = EXCLUDED.medical_conditions
-      RETURNING *;
+      SELECT id, email, email_verified
+      FROM patients
+      WHERE email = $1
+      LIMIT 1
       `,
-      [
-        String(email).toLowerCase(),
-        fullName ?? null,
-        dob ?? null,
-        phoneNumber ?? null,
-        homeAddress ?? null,
-        insurance ?? null,
-        healthCard ?? null,
-        bloodType ?? null,
-        allergies ?? null,
-        medicalConditions ?? null,
-      ]
+      [intake.email]
     );
 
-    return res.status(201).json(result.rows[0]);
+    if ((existingPatientResult.rowCount ?? 0) > 0) {
+      const existingPatient = existingPatientResult.rows[0];
+      const patientId = String(existingPatient.id);
+      const { firstName, lastName } = splitPatientFullName(intake.fullName);
+
+      await ensurePatientProfileShell(patientId);
+      await applyPatientIntakeToProfiles(patientId, intake);
+      await ensurePatientProviderConnection(patientId, hospitalId);
+
+      return res.status(200).json({
+        id: patientId,
+        email: intake.email,
+        firstName,
+        lastName,
+        fullName: intake.fullName,
+        dob: intake.dob,
+        phoneNumber: intake.phoneNumber,
+        homeAddress: intake.homeAddress,
+        insurance: intake.insurance,
+        healthCard: intake.healthCard,
+        bloodType: intake.bloodType,
+        allergies: intake.allergies,
+        medicalConditions: intake.medicalConditions,
+        existingAccount: true,
+        setupEmailSent: false,
+      });
+    }
+
+    const patientId = randomUUID();
+    const passwordHash = await bcrypt.hash(randomUUID(), 12);
+    const { firstName, lastName } = splitPatientFullName(intake.fullName);
+
+    await pool.query(
+      `
+      INSERT INTO patients (
+        id,
+        email,
+        password_hash,
+        terms_accepted_at,
+        email_verified,
+        email_verified_at
+      )
+      VALUES ($1::uuid, $2, $3, NULL, true, NOW())
+      `,
+      [patientId, intake.email, passwordHash]
+    );
+
+    await ensurePatientProfileShell(patientId);
+    await applyPatientIntakeToProfiles(patientId, intake);
+    await ensurePatientProviderConnection(patientId, hospitalId);
+
+    const setupToken = await createPatientPasswordReset(patientId);
+    let setupEmailSent = true;
+
+    try {
+      await sendPatientAccountSetupEmail(intake.email, setupToken, intake.fullName);
+    } catch (emailError) {
+      setupEmailSent = false;
+      console.error("PATIENT ACCOUNT SETUP EMAIL SEND ERROR:", emailError);
+    }
+
+    return res.status(201).json({
+      id: patientId,
+      email: intake.email,
+      firstName,
+      lastName,
+      fullName: intake.fullName,
+      dob: intake.dob,
+      phoneNumber: intake.phoneNumber,
+      homeAddress: intake.homeAddress,
+      insurance: intake.insurance,
+      healthCard: intake.healthCard,
+      bloodType: intake.bloodType,
+      allergies: intake.allergies,
+      medicalConditions: intake.medicalConditions,
+      existingAccount: false,
+      setupEmailSent,
+    });
   } catch (e: any) {
-    console.error("PENDING INTAKE ERROR:", e);
+    console.error("STAFF ADD PATIENT ERROR:", e);
     return res.status(500).json({ message: e?.message || String(e), code: e?.code });
   }
 });
@@ -4466,34 +4720,7 @@ app.post("/api/patients/me/providers", requirePatient, async (req: any, res) => 
       return res.status(400).json({ message: "Invalid providerId" });
     }
 
-    // If already connected (active), do nothing (idempotent)
-    const existing = await pool.query(
-      `
-      SELECT id
-      FROM patient_provider_connections
-      WHERE patient_id = $1
-        AND provider_id = $2
-        AND disconnected_at IS NULL
-      LIMIT 1
-      `,
-      [patientId, providerId]
-    );
-
-    if ((existing.rowCount ?? 0) > 0) {
-      return res.json({ ok: true, alreadyConnected: true });
-    }
-
-    // 1) Create staff/provider-level connection
-    await pool.query(
-      `
-      INSERT INTO patient_provider_connections (id, patient_id, provider_id, created_at)
-      VALUES ($1, $2, $3, NOW())
-      `,
-      [randomUUID(), patientId, providerId]
-    );
-
-    // 2) ALSO create hospital-level connection (so booking/staff list works)
-    await ensurePatientHospitalConnection(patientId, providerId);
+    await ensurePatientProviderConnection(patientId, providerId);
 
     return res.json({ ok: true });
   } catch (e: any) {

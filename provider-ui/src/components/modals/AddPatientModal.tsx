@@ -12,19 +12,22 @@ interface AddPatientModalProps {
   onAddPatient: (patient: Patient) => void;
 }
 
-type PendingIntakeResponse = {
+type AddPatientResponse = {
   id: string;
   email: string;
-  full_name: string | null;
+  fullName: string;
+  firstName: string | null;
+  lastName: string | null;
   dob: string | null;
-  phone_number: string | null;
-  home_address: string | null;
+  phoneNumber: string | null;
+  homeAddress: string | null;
   insurance: string | null;
-  health_card: string | null;
-  blood_type: string | null;
+  healthCard: string | null;
+  bloodType: string | null;
   allergies: string | null;
-  medical_conditions: string | null;
-  created_at: string;
+  medicalConditions: string | null;
+  existingAccount: boolean;
+  setupEmailSent: boolean;
 };
 
 export function AddPatientModal({ isOpen, onClose, onAddPatient }: AddPatientModalProps) {
@@ -113,8 +116,7 @@ export function AddPatientModal({ isOpen, onClose, onAddPatient }: AddPatientMod
         medicalConditions: formData.medicalConditions.trim() || null,
       };
 
-      // Creates/updates pending_patient_intake for this email
-      const created = await apiFetch<PendingIntakeResponse>("/api/staff/pending-patient-intake", {
+      const created = await apiFetch<AddPatientResponse>("/api/staff/patients/intake", {
         method: "POST",
         body: JSON.stringify(payload),
       });
@@ -127,19 +129,19 @@ export function AddPatientModal({ isOpen, onClose, onAddPatient }: AddPatientMod
         age: calculateAge(formData.dateOfBirth),
         email,
         phone: formData.phone.trim(),
-        address: formData.address.trim() || "Not provided",
-        insurance: formData.insurance.trim() || "Not provided",
+        address: created.homeAddress || formData.address.trim() || "Not provided",
+        insurance: created.insurance || formData.insurance.trim() || "Not provided",
         photo: avatarUrl(name),
         status: "Active",
         lastVisit: new Date().toISOString(),
         visitRecords: [],
         documents: [],
         emergencyInfo: {
-          healthCardNumber: formData.healthCardNumber.trim() || "Not provided",
+          healthCardNumber: created.healthCard || formData.healthCardNumber.trim() || "Not provided",
           allergies: formData.allergies
             ? formData.allergies.split(",").map((a) => a.trim()).filter(Boolean)
             : [],
-          bloodType: formData.bloodType.trim() || "Unknown",
+          bloodType: created.bloodType || formData.bloodType.trim() || "Unknown",
           medicalConditions: formData.medicalConditions
             ? formData.medicalConditions.split(",").map((m) => m.trim()).filter(Boolean)
             : [],
@@ -154,7 +156,14 @@ export function AddPatientModal({ isOpen, onClose, onAddPatient }: AddPatientMod
       };
 
       onAddPatient(patient);
-      toast.success("Patient intake saved. When the patient signs up with this email, their profile will auto-populate.");
+
+      if (created.existingAccount) {
+        toast.success("Patient account found and connected to your hospital.");
+      } else if (created.setupEmailSent) {
+        toast.success("Patient account created. A setup email was sent so they can create their password.");
+      } else {
+        toast.success("Patient account created, but the setup email could not be sent yet.");
+      }
 
       resetForm();
       onClose();
@@ -174,7 +183,7 @@ export function AddPatientModal({ isOpen, onClose, onAddPatient }: AddPatientMod
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
           <div>
             <h2 className="text-2xl font-bold text-gray-900">Add New Patient</h2>
-            <p className="text-gray-600 mt-1">Create a pending intake record (matched by email)</p>
+            <p className="text-gray-600 mt-1">Create a patient account and send a password setup email</p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors" aria-label="Close">
             <X className="w-6 h-6" />
