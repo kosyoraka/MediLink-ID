@@ -544,18 +544,20 @@ async function applyPatientIntakeToProfiles(
       last_name,
       dob,
       phone_number,
+      insurance,
       health_card,
       home_address_line1,
       blood_type,
       allergies,
       medical_conditions
     )
-    VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
     ON CONFLICT (patient_id) DO UPDATE SET
       first_name = EXCLUDED.first_name,
       last_name = EXCLUDED.last_name,
       dob = EXCLUDED.dob,
       phone_number = EXCLUDED.phone_number,
+      insurance = EXCLUDED.insurance,
       health_card = EXCLUDED.health_card,
       home_address_line1 = EXCLUDED.home_address_line1,
       blood_type = EXCLUDED.blood_type,
@@ -568,6 +570,7 @@ async function applyPatientIntakeToProfiles(
       lastName,
       intake.dob ?? null,
       intake.phoneNumber ?? null,
+      intake.insurance ?? null,
       intake.healthCard ?? null,
       intake.homeAddress ?? null,
       intake.bloodType ?? null,
@@ -677,27 +680,47 @@ async function sendTransactionalEmail(input: {
     return { delivered: false, provider: "console" as const };
   }
 
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${resendApiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from: getEmailSender(),
-      to: [input.to],
-      subject: input.subject,
-      html: input.html,
-      text: input.text,
-    }),
-  });
+  let lastError: Error | null = null;
 
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`Resend email failed (${response.status}): ${body || response.statusText}`);
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      const response = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${resendApiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from: getEmailSender(),
+          to: [input.to],
+          subject: input.subject,
+          html: input.html,
+          text: input.text,
+        }),
+      });
+
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        const error = new Error(`Resend email failed (${response.status}): ${body || response.statusText}`);
+        if (response.status >= 500 && attempt < 2) {
+          lastError = error;
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          continue;
+        }
+        throw error;
+      }
+
+      return { delivered: true, provider: "resend" as const };
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      if (attempt < 2) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        continue;
+      }
+    }
   }
 
-  return { delivered: true, provider: "resend" as const };
+  throw lastError ?? new Error("Unknown email delivery failure");
 }
 
 async function createPatientEmailVerification(patientId: string) {
@@ -1029,6 +1052,22 @@ async function ensurePatientMedicalHistorySchema() {
     } catch (error) {
       if (attempt === 5) {
         console.error("Patient medical history schema setup skipped:", error);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+    }
+  }
+}
+
+async function ensurePatientProfileInsuranceSchema() {
+  const sql = await readFile(path.resolve(__dirname, "../013_patient_profile_insurance.sql"), "utf8");
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    try {
+      await pool.query(sql);
+      return;
+    } catch (error) {
+      if (attempt === 5) {
+        console.error("Patient profile insurance schema setup skipped:", error);
         return;
       }
       await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
@@ -2888,96 +2927,19 @@ if (hospitalId) {
 
   if ((intakeRes.rowCount ?? 0) > 0) {
     const intake = intakeRes.rows[0];
+    await ensurePatientProfileShell(id);
+    await applyPatientIntakeToProfiles(id, {
+      fullName: intake.full_name,
+      dob: intake.dob,
+      phoneNumber: intake.phone_number,
+      homeAddress: intake.home_address,
+      insurance: intake.insurance,
+      healthCard: intake.health_card,
+      bloodType: intake.blood_type,
+      allergies: intake.allergies,
+      medicalConditions: intake.medical_conditions,
+    });
 
-    // Split full name safely (no funky SQL string parsing)
-    const full = String(intake.full_name ?? "").trim();
-    const parts = full ? full.split(/\s+/) : [];
-    const firstName = parts.length ? parts[0] : null;
-    const lastName = parts.length > 1 ? parts.slice(1).join(" ") : null;
-
-    // 3) upsert patient profile from pending intake
-    await pool.query(
-  `
-  INSERT INTO patient_profiles (
-    patient_id,
-    first_name,
-    last_name,
-    dob,
-    phone_number,
-    home_address,
-    insurance,
-    health_card
-  )
-  VALUES ($1::uuid,$2,$3,$4,$5,$6,$7,$8)
-  ON CONFLICT (patient_id) DO UPDATE SET
-    first_name = EXCLUDED.first_name,
-    last_name = EXCLUDED.last_name,
-    dob = EXCLUDED.dob,
-    phone_number = EXCLUDED.phone_number,
-    home_address = EXCLUDED.home_address,
-    insurance = EXCLUDED.insurance,
-    health_card = EXCLUDED.health_card
-  `,
-  [
-    id, // ✅ patient_id must be the patient's UUID
-    firstName,
-    lastName,
-    intake.dob ?? null,
-    intake.phone_number ?? null,
-    intake.home_address ?? null,
-    intake.insurance ?? null,
-    intake.health_card ?? null,
-  ]
-);
-
-
-
-    // 4) upsert emergency profile from pending intake
-    // NOTE: This assumes your emergency_profiles has blood_type, allergies, medical_conditions columns (as in your backend code).
-    // 4) upsert emergency profile from pending intake
-    console.log("RUNNING EMERGENCY UPSERT (line ~900)");
-
-await pool.query(
-  `
-  INSERT INTO emergency_profiles (
-    id, patient_id,
-    share_personal_info, share_blood_type, share_allergies, share_medical_conditions,
-    share_current_medications, share_emergency_contacts, share_advance_directives,
-    blood_type, allergies, medical_conditions,
-    updated_at
-  )
-  VALUES (
-    $1::text, $2::uuid,
-    true,true,true,true,
-    true,true,false,
-    $3,$4,$5,
-    NOW()
-  )
-  ON CONFLICT (patient_id) DO UPDATE SET
-  share_personal_info = true,
-  share_blood_type = true,
-  share_allergies = true,
-  share_medical_conditions = true,
-  share_current_medications = true,
-  share_emergency_contacts = true,
-  share_advance_directives = false,
-  blood_type = EXCLUDED.blood_type,
-  allergies = EXCLUDED.allergies,
-  medical_conditions = EXCLUDED.medical_conditions,
-  updated_at = NOW()
-
-  `,
-  [
-    `ep_${id}`, // text id (since emergency_profiles.id is TEXT)
-    id,         // patient_id (UUID)
-    intake.blood_type ?? null,
-    intake.allergies ?? null,
-    intake.medical_conditions ?? null,
-  ]
-);
-
-
-    // 5) remove pending intake once applied
     await pool.query(
       `DELETE FROM pending_patient_intake WHERE email = $1`,
       [emailNorm]
@@ -4080,6 +4042,7 @@ app.get("/api/patients/:id/profile", async (req, res) => {
         pp.dob,
         pp.health_card,
         pp.phone_number,
+        pp.insurance,
 
         pp.home_address_line1,
         pp.home_address_line2,
@@ -9769,6 +9732,7 @@ async function initializeSchemas() {
   await ensureNotificationReadsSchema();
   await ensurePatientSecuritySchema();
   await ensurePatientMedicalHistorySchema();
+  await ensurePatientProfileInsuranceSchema();
 }
 
 function startServer() {

@@ -69,6 +69,7 @@ type PatientProfileResponse = {
   dob: string | null;
   health_card: string | null;
   phone_number: string | null;
+  insurance: string | null;
 
   home_address_line1: string | null;
   home_address_line2: string | null;
@@ -901,10 +902,15 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
     [patientDocuments]
   );
   const insuranceSnapshot = useMemo(() => {
-    if (!latestInsuranceDocument) return '—';
-    const label = latestInsuranceDocument.title?.trim() || latestInsuranceDocument.subtype?.trim() || 'Insurance';
-    return `Available - ${label}`;
-  }, [latestInsuranceDocument]);
+    if (latestInsuranceDocument) {
+      const label = latestInsuranceDocument.title?.trim() || latestInsuranceDocument.subtype?.trim() || 'Insurance';
+      return `Available - ${label}`;
+    }
+    if (profile?.insurance?.trim()) {
+      return profile.insurance.trim();
+    }
+    return '—';
+  }, [latestInsuranceDocument, profile?.insurance]);
 
   useEffect(() => {
     if (!pendingMedicationResolve) return;
