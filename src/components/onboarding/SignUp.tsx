@@ -19,7 +19,8 @@ interface SignUpProps {
   onGoToSignIn: () => void;
   onSignUp: (
     email: string,
-    prefill?: { firstName?: string; lastName?: string }
+    prefill?: { firstName?: string; lastName?: string },
+    options?: { skipVerification?: boolean }
   ) => void;
 }
 
@@ -125,10 +126,14 @@ export default function SignUp({ onBack, onGoToSignIn, onSignUp }: SignUpProps) 
       localStorage.setItem("email", data.email);
       localStorage.setItem("patient_token", data.token);
 
-      onSignUp(data.email, {
-        firstName: data.firstName || "",
-        lastName: data.lastName || "",
-      });
+      onSignUp(
+        data.email,
+        {
+          firstName: data.firstName || "",
+          lastName: data.lastName || "",
+        },
+        { skipVerification: true }
+      );
     } catch (err: any) {
       setGoogleError(err?.message ?? "Google signup failed");
     } finally {

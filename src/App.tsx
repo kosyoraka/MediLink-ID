@@ -379,12 +379,21 @@ export default function App() {
           <SignUp
             onBack={() => handleNavigation('welcome')}
             onGoToSignIn={() => handleNavigation('signin')}
-            onSignUp={(email, prefill) => {
+            onSignUp={(email, prefill, options) => {
               setUserEmail(email);
               setProfilePrefill({
                 firstName: prefill?.firstName || '',
                 lastName: prefill?.lastName || '',
               });
+
+              if (options?.skipVerification) {
+                void syncOnboardingState(email, {
+                  firstName: prefill?.firstName || '',
+                  lastName: prefill?.lastName || '',
+                });
+                return;
+              }
+
               setVerificationStatus('pending');
               handleNavigation('verify-email');
             }}
