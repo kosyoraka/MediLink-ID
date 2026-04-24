@@ -333,8 +333,6 @@ function buildSignals(input: {
 
 function buildSummaryCards(input: {
   signals: NutritionFitnessSignalItem[];
-  exerciseHabits: NutritionFitnessHabitItem[];
-  nutritionHabits: NutritionFitnessHabitItem[];
   coverageCount: number;
   coverageTotal: number;
 }) {
@@ -360,28 +358,6 @@ function buildSummaryCards(input: {
       actionType: 'screen' as const,
       actionLabel: 'Open Health Summary',
       actionScreen: 'health-summary' as const,
-    },
-    {
-      id: 'exercise',
-      label: 'Exercise habits',
-      value: `${input.exerciseHabits.length}`,
-      detail:
-        input.exerciseHabits[0]?.title ||
-        'No movement history added yet.',
-      actionType: 'editor' as const,
-      actionLabel: input.exerciseHabits.length > 0 ? 'Manage exercise' : 'Add exercise',
-      actionEditor: 'exercise' as const,
-    },
-    {
-      id: 'nutrition',
-      label: 'Nutrition habits',
-      value: `${input.nutritionHabits.length}`,
-      detail:
-        input.nutritionHabits[0]?.title ||
-        'No nutrition history added yet.',
-      actionType: 'editor' as const,
-      actionLabel: input.nutritionHabits.length > 0 ? 'Manage nutrition' : 'Add nutrition',
-      actionEditor: 'nutrition' as const,
     },
   ];
 }
@@ -617,8 +593,6 @@ export async function fetchNutritionFitnessData(): Promise<NutritionFitnessData>
     overview,
     summaryCards: buildSummaryCards({
       signals,
-      exerciseHabits,
-      nutritionHabits,
       coverageCount,
       coverageTotal,
     }),

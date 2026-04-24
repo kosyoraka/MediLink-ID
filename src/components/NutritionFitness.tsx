@@ -657,20 +657,6 @@ export default function NutritionFitness({ onBack, onNavigate }: NutritionFitnes
           </div>
         </div>
 
-        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
-          <h3 className="text-gray-900">Current scope</h3>
-          <p className="mt-2 text-sm text-blue-900">
-            This page uses data already stored in MediLink. Device-synced daily tracking is still not connected here yet.
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {(data?.unsupportedTracking || ['Steps', 'Workouts', 'Calories', 'Water intake', 'Sleep']).map((item) => (
-              <Badge key={item} className="border-0 bg-white text-blue-700">
-                {item}
-              </Badge>
-            ))}
-          </div>
-        </div>
-
         {loading && (
           <div className="rounded-xl border border-gray-200 bg-white p-6 text-sm text-gray-600">
             Loading nutrition and fitness data...
@@ -713,7 +699,7 @@ export default function NutritionFitness({ onBack, onNavigate }: NutritionFitnes
             <HabitSection
               kind="exercise"
               title="Movement history"
-              description="Exercise habits are managed directly on this page now."
+              description="Your saved exercise routines and activity history."
               items={exerciseItems}
               emptyTitle="No exercise history saved yet"
               emptyDescription="Add movement routines, activity changes, or provider guidance here to make this section useful."
@@ -731,7 +717,7 @@ export default function NutritionFitness({ onBack, onNavigate }: NutritionFitnes
             <HabitSection
               kind="nutrition"
               title="Nutrition history"
-              description="Diet and nutrition habits are managed directly on this page now."
+              description="Your saved eating patterns, diet plans, and nutrition guidance."
               items={nutritionItems}
               emptyTitle="No nutrition history saved yet"
               emptyDescription="Add diet-related history, eating patterns, or guidance here so this section reflects your current approach."
@@ -754,25 +740,6 @@ export default function NutritionFitness({ onBack, onNavigate }: NutritionFitnes
                 {data.actionItems.map((item) => (
                   <ActionCard key={item.id} item={item} onAction={handleAction} />
                 ))}
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-dashed border-gray-300 bg-white p-5">
-              <h3 className="text-gray-900">Where to add more data</h3>
-              <p className="mt-2 text-sm text-gray-600">
-                Use Health Summary for vitals like weight, blood pressure, heart rate, and blood sugar. Use this page
-                for exercise and nutrition habits.
-              </p>
-              <div className="mt-4 flex flex-wrap gap-3">
-                <Button variant="outline" onClick={() => onNavigate('health-summary')}>
-                  Open Health Summary
-                </Button>
-                <Button variant="outline" onClick={() => openCreateEditor('exercise')}>
-                  Add exercise habit
-                </Button>
-                <Button variant="outline" onClick={() => openCreateEditor('nutrition')}>
-                  Add nutrition habit
-                </Button>
               </div>
             </div>
           </>
