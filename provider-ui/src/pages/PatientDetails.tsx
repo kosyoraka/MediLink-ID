@@ -1176,10 +1176,9 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
         Back to Patients
       </Button>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <Card className="xl:col-span-2">
-          <CardContent className="p-6">
-            <div className="flex flex-col gap-6 lg:flex-row">
+      <Card>
+        <CardContent className="p-6">
+          <div className="flex flex-col gap-6 lg:flex-row">
               {patient.photo ? (
                 <img src={patient.photo} alt={displayName} className="w-14 h-14 rounded-xl object-cover" />
               ) : (
@@ -1209,7 +1208,7 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
                   </div>
                 </div>
 
-                <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
+                <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
                   <div className="min-w-0 rounded-xl border border-gray-200 p-4">
                     <p className="text-xs uppercase tracking-wide text-gray-500">Patient Snapshot</p>
                     <div className="mt-3 space-y-3">
@@ -1270,9 +1269,7 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
               </div>
             </div>
           </CardContent>
-        </Card>
-
-      </div>
+      </Card>
 
       <div className="border-b border-gray-200">
         <div className="flex gap-6">
