@@ -1,20 +1,26 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import {
   AlertCircle,
-  Apple,
   ArrowLeft,
+  Droplets,
   Dumbbell,
+  Footprints,
+  GlassWater,
+  MoonStar,
   Pencil,
   Plus,
   RefreshCw,
-  Sparkles,
   Trash2,
 } from 'lucide-react';
+
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { api, type PatientSocialHistoryEntry } from '@/lib/api';
 import {
+  encodeNutritionFitnessTrackerNotes,
   fetchNutritionFitnessData,
+  getNutritionFitnessEntryCategory,
+  stripNutritionFitnessTrackerTag,
   type NutritionFitnessData,
   type NutritionFitnessEditorKind,
   type NutritionFitnessHabitItem,
@@ -41,9 +47,15 @@ type ActiveEditorState = {
   entryId?: string;
 } | null;
 
-const editorCopy: Record<
+const trackerOrder: NutritionFitnessEditorKind[] = ['steps', 'workouts', 'calories', 'water', 'sleep'];
+
+const trackerConfig: Record<
   NutritionFitnessEditorKind,
   {
+    sectionTitle: string;
+    sectionDescription: string;
+    emptyTitle: string;
+    emptyDescription: string;
     title: string;
     addLabel: string;
     titleLabel: string;
@@ -57,39 +69,118 @@ const editorCopy: Record<
     helperTitle: string;
     helperDescription: string;
     helperExamples: string[];
+    notesLabel: string;
+    icon: typeof Footprints;
   }
 > = {
-  exercise: {
-    title: 'Activity log',
-    addLabel: 'Add activity log',
-    titleLabel: 'Activity title',
-    titlePlaceholder: '10,200 steps, treadmill workout, evening walk',
-    statusLabel: 'Activity type or progress',
-    statusPlaceholder: 'Daily goal hit, active week, current routine',
-    startDateLabel: 'Activity date',
-    endDateLabel: 'End date (optional for routines)',
-    detailPlaceholder: 'Log steps, workout type, duration, distance, calories burned, or activity changes over time',
-    notesPlaceholder: 'Anything else you want to remember about this activity or movement routine',
+  steps: {
+    sectionTitle: 'Steps',
+    sectionDescription: 'Log daily step counts or walking totals one entry at a time.',
+    emptyTitle: 'No step logs saved yet',
+    emptyDescription: 'Add entries like 8,500 steps, 12,000 steps, or daily walking totals here.',
+    title: 'Step log',
+    addLabel: 'Add step log',
+    titleLabel: 'Step log title',
+    titlePlaceholder: '10,240 steps',
+    statusLabel: 'Step goal or result',
+    statusPlaceholder: 'Goal reached, under target, recovery day',
+    startDateLabel: 'Log date',
+    endDateLabel: 'End date (optional)',
+    detailPlaceholder: 'Track total steps, walking distance, or how the day felt physically',
+    notesPlaceholder: 'Anything else you want to remember about this step log',
     helperTitle: 'What to log here',
-    helperDescription: 'Use one entry for a single activity session or for a repeating routine you want to keep on file.',
-    helperExamples: ['Steps for the day', 'Workout or walk duration', 'Calories burned', 'Distance or routine details'],
+    helperDescription: 'Use one entry per day or per walking session when you want to track steps specifically.',
+    helperExamples: ['Daily step total', 'Walking distance', 'Step goal progress', 'How active the day felt'],
+    notesLabel: 'Step notes',
+    icon: Footprints,
   },
-  nutrition: {
-    title: 'Meal or nutrition log',
-    addLabel: 'Add nutrition log',
-    titleLabel: 'Meal or nutrition title',
-    titlePlaceholder: 'Breakfast, afternoon snack, 1,850 calorie day',
-    statusLabel: 'Meal type or nutrition status',
-    statusPlaceholder: 'On plan, higher protein, meal prep week',
-    startDateLabel: 'Meal or log date',
-    endDateLabel: 'End date (optional for plans)',
-    detailPlaceholder: 'Track meals, snacks, calories, portions, hydration, restrictions, or provider guidance you are following',
-    notesPlaceholder: 'Anything else you want to track about this meal, snack, or nutrition plan',
+  workouts: {
+    sectionTitle: 'Workouts',
+    sectionDescription: 'Log each workout, walk, run, gym session, or repeating exercise routine separately.',
+    emptyTitle: 'No workout logs saved yet',
+    emptyDescription: 'Add entries like strength training, treadmill workout, evening walk, or bike ride here.',
+    title: 'Workout log',
+    addLabel: 'Add workout log',
+    titleLabel: 'Workout title',
+    titlePlaceholder: 'Upper-body gym session',
+    statusLabel: 'Workout type or intensity',
+    statusPlaceholder: 'Strength, cardio, light recovery, intense session',
+    startDateLabel: 'Workout date',
+    endDateLabel: 'End date (optional for routines)',
+    detailPlaceholder: 'Track duration, workout type, calories burned, distance, or routine details',
+    notesPlaceholder: 'Anything else you want to remember about this workout',
     helperTitle: 'What to log here',
-    helperDescription: 'Use one entry for a meal, snack, or a single-day nutrition summary. Longer plans can still use an end date.',
-    helperExamples: ['Calories for the meal or day', 'Foods and snacks eaten', 'Portions or hydration', 'Goals or provider guidance'],
+    helperDescription: 'Use one entry for a single workout or keep a repeating routine on file with an optional end date.',
+    helperExamples: ['Workout duration', 'Type of exercise', 'Calories burned', 'Routine or program details'],
+    notesLabel: 'Workout notes',
+    icon: Dumbbell,
+  },
+  calories: {
+    sectionTitle: 'Calories',
+    sectionDescription: 'Log meals, snacks, or a full day of calorie intake as separate entries.',
+    emptyTitle: 'No calorie logs saved yet',
+    emptyDescription: 'Add entries like breakfast calories, dinner calories, snack totals, or full-day intake here.',
+    title: 'Calorie or meal log',
+    addLabel: 'Add calorie log',
+    titleLabel: 'Calorie or meal title',
+    titlePlaceholder: 'Lunch - 620 calories',
+    statusLabel: 'Meal type or nutrition status',
+    statusPlaceholder: 'Breakfast, snack, on plan, higher protein',
+    startDateLabel: 'Meal or log date',
+    endDateLabel: 'End date (optional)',
+    detailPlaceholder: 'Track calories, foods eaten, snacks, portions, or full-day intake',
+    notesPlaceholder: 'Anything else you want to remember about this meal or calorie log',
+    helperTitle: 'What to log here',
+    helperDescription: 'Use one entry for a meal, snack, or daily calorie summary.',
+    helperExamples: ['Meal calories', 'Snack calories', 'Foods eaten', 'Daily calorie total'],
+    notesLabel: 'Nutrition notes',
+    icon: Droplets,
+  },
+  water: {
+    sectionTitle: 'Water intake',
+    sectionDescription: 'Log glasses, bottles, liters, or hydration goals as separate entries.',
+    emptyTitle: 'No water logs saved yet',
+    emptyDescription: 'Add entries like 2 liters, 8 glasses, hydration goal reached, or low water intake here.',
+    title: 'Water intake log',
+    addLabel: 'Add water log',
+    titleLabel: 'Water intake title',
+    titlePlaceholder: '8 glasses of water',
+    statusLabel: 'Hydration status',
+    statusPlaceholder: 'Goal reached, catching up, low intake',
+    startDateLabel: 'Log date',
+    endDateLabel: 'End date (optional)',
+    detailPlaceholder: 'Track total water, drinks, hydration goals, or how consistent intake was',
+    notesPlaceholder: 'Anything else you want to remember about your hydration',
+    helperTitle: 'What to log here',
+    helperDescription: 'Use one entry per day or per hydration checkpoint when you want to track water intake.',
+    helperExamples: ['Glasses or bottles', 'Liters consumed', 'Hydration goal progress', 'Context for low or high intake'],
+    notesLabel: 'Hydration notes',
+    icon: GlassWater,
+  },
+  sleep: {
+    sectionTitle: 'Sleep',
+    sectionDescription: 'Log each night of sleep or a short sleep pattern period as separate entries.',
+    emptyTitle: 'No sleep logs saved yet',
+    emptyDescription: 'Add entries like 7.5 hours of sleep, poor sleep night, or early bedtime routine here.',
+    title: 'Sleep log',
+    addLabel: 'Add sleep log',
+    titleLabel: 'Sleep log title',
+    titlePlaceholder: '7 hours 45 minutes of sleep',
+    statusLabel: 'Sleep quality or pattern',
+    statusPlaceholder: 'Restful, interrupted, late bedtime, improved sleep',
+    startDateLabel: 'Sleep date',
+    endDateLabel: 'End date (optional)',
+    detailPlaceholder: 'Track hours slept, bedtime, wake time, interruptions, or how rested you felt',
+    notesPlaceholder: 'Anything else you want to remember about this sleep entry',
+    helperTitle: 'What to log here',
+    helperDescription: 'Use one entry per night or for a short pattern you want to keep on file.',
+    helperExamples: ['Hours slept', 'Bedtime and wake time', 'Sleep quality', 'Interruptions or naps'],
+    notesLabel: 'Sleep notes',
+    icon: MoonStar,
   },
 };
+
+const trackerChips = ['Steps', 'Workouts', 'Calories', 'Water intake', 'Sleep'];
 
 function emptyEditorValues(): HabitEditorValues {
   return {
@@ -109,12 +200,8 @@ function getEditorValuesFromEntry(entry: PatientSocialHistoryEntry): HabitEditor
     startDate: entry.startDate || '',
     endDate: entry.endDate || '',
     detail: entry.detail || '',
-    notes: entry.notes || '',
+    notes: stripNutritionFitnessTrackerTag(entry.notes) || '',
   };
-}
-
-function getCategoryFromKind(kind: NutritionFitnessEditorKind): 'exercise' | 'diet' {
-  return kind === 'exercise' ? 'exercise' : 'diet';
 }
 
 function HabitEditor({
@@ -136,16 +223,13 @@ function HabitEditor({
   onSave: () => void;
   onCancel: () => void;
 }) {
-  const copy = editorCopy[kind];
+  const copy = trackerConfig[kind];
+  const Icon = copy.icon;
 
   return (
     <div className="rounded-xl border border-teal-200 bg-teal-50 p-4">
       <div className="mb-4 flex items-center gap-2">
-        {kind === 'exercise' ? (
-          <Dumbbell className="h-5 w-5 text-teal-700" />
-        ) : (
-          <Apple className="h-5 w-5 text-teal-700" />
-        )}
+        <Icon className="h-5 w-5 text-teal-700" />
         <h4 className="text-gray-900">{copy.title} editor</h4>
       </div>
 
@@ -221,7 +305,7 @@ function HabitEditor({
         </label>
 
         <label className="text-sm text-gray-700">
-          Notes
+          {copy.notesLabel}
           <textarea
             className="mt-1 min-h-[80px] w-full rounded-lg border border-gray-200 px-3 py-2"
             value={values.notes}
@@ -244,15 +328,15 @@ function HabitEditor({
 }
 
 function HabitCard({
-  kind,
   item,
+  notesLabel,
   isEditing,
   editor,
   onEdit,
   onDelete,
 }: {
-  kind: NutritionFitnessEditorKind;
   item: NutritionFitnessHabitItem;
+  notesLabel: string;
   isEditing: boolean;
   editor?: ReactNode;
   onEdit: () => void;
@@ -284,7 +368,7 @@ function HabitCard({
         <>
           <p className="mb-3 text-sm text-gray-600">{item.detail}</p>
           <div className="space-y-1 text-sm text-gray-500">
-            <p>{kind === 'exercise' ? 'Routine notes' : 'Nutrition notes'}: {item.notes}</p>
+            <p>{notesLabel}: {item.notes}</p>
             <p>Source: {item.sourceLabel}</p>
           </div>
         </>
@@ -293,14 +377,9 @@ function HabitCard({
   );
 }
 
-function HabitSection({
+function TrackerSection({
   kind,
-  title,
-  description,
   items,
-  emptyTitle,
-  emptyDescription,
-  addLabel,
   createEditor,
   editingEntryId,
   renderEditEditor,
@@ -309,12 +388,7 @@ function HabitSection({
   onDelete,
 }: {
   kind: NutritionFitnessEditorKind;
-  title: string;
-  description: string;
   items: NutritionFitnessHabitItem[];
-  emptyTitle: string;
-  emptyDescription: string;
-  addLabel: string;
   createEditor?: ReactNode;
   editingEntryId?: string;
   renderEditEditor: (item: NutritionFitnessHabitItem) => ReactNode;
@@ -322,16 +396,22 @@ function HabitSection({
   onEdit: (item: NutritionFitnessHabitItem) => void;
   onDelete: (item: NutritionFitnessHabitItem) => void;
 }) {
+  const copy = trackerConfig[kind];
+  const Icon = copy.icon;
+
   return (
     <div>
       <div className="mb-3 flex items-start justify-between gap-4">
         <div>
-          <h3 className="text-gray-900">{title}</h3>
-          <p className="mt-1 text-sm text-gray-600">{description}</p>
+          <div className="flex items-center gap-2">
+            <Icon className="h-5 w-5 text-teal-700" />
+            <h3 className="text-gray-900">{copy.sectionTitle}</h3>
+          </div>
+          <p className="mt-1 text-sm text-gray-600">{copy.sectionDescription}</p>
         </div>
         <Button className="bg-teal-600 text-white hover:bg-teal-700" onClick={onAdd}>
           <Plus className="mr-2 h-4 w-4" />
-          {addLabel}
+          {copy.addLabel}
         </Button>
       </div>
 
@@ -342,8 +422,8 @@ function HabitSection({
           {items.map((item) => (
             <HabitCard
               key={item.id}
-              kind={kind}
               item={item}
+              notesLabel={copy.notesLabel}
               isEditing={editingEntryId === item.entry.id}
               editor={editingEntryId === item.entry.id ? renderEditEditor(item) : undefined}
               onEdit={() => onEdit(item)}
@@ -353,8 +433,8 @@ function HabitSection({
         </div>
       ) : (
         <div className="rounded-xl border border-dashed border-gray-300 bg-white p-6">
-          <h4 className="text-gray-900">{emptyTitle}</h4>
-          <p className="mt-2 text-sm text-gray-600">{emptyDescription}</p>
+          <h4 className="text-gray-900">{copy.emptyTitle}</h4>
+          <p className="mt-2 text-sm text-gray-600">{copy.emptyDescription}</p>
         </div>
       )}
     </div>
@@ -374,8 +454,7 @@ export default function NutritionFitness({ onBack, onNavigate }: NutritionFitnes
     try {
       setLoading(true);
       setError(null);
-      const next = await fetchNutritionFitnessData();
-      setData(next);
+      setData(await fetchNutritionFitnessData());
     } catch (err: any) {
       setError(err?.message || 'Unable to load nutrition and fitness data');
     } finally {
@@ -405,14 +484,11 @@ export default function NutritionFitness({ onBack, onNavigate }: NutritionFitnes
     setSaveError(null);
   };
 
-  const exerciseItems = data?.exerciseHabits || [];
-  const nutritionItems = data?.nutritionHabits || [];
-
   const handleSaveEditor = async () => {
     if (!activeEditor) return;
 
     if (!editorValues.title.trim()) {
-      setSaveError(`Please add a ${editorCopy[activeEditor.kind].titleLabel.toLowerCase()}.`);
+      setSaveError(`Please add a ${trackerConfig[activeEditor.kind].titleLabel.toLowerCase()}.`);
       return;
     }
 
@@ -420,13 +496,13 @@ export default function NutritionFitness({ onBack, onNavigate }: NutritionFitnes
     setSaveError(null);
 
     const payload = {
-      category: getCategoryFromKind(activeEditor.kind),
+      category: getNutritionFitnessEntryCategory(activeEditor.kind),
       title: editorValues.title.trim(),
       status: editorValues.status.trim(),
       startDate: editorValues.startDate || null,
       endDate: editorValues.endDate || null,
       detail: editorValues.detail.trim(),
-      notes: editorValues.notes.trim(),
+      notes: encodeNutritionFitnessTrackerNotes(activeEditor.kind, editorValues.notes),
     };
 
     try {
@@ -446,8 +522,8 @@ export default function NutritionFitness({ onBack, onNavigate }: NutritionFitnes
   };
 
   const handleDeleteEntry = async (kind: NutritionFitnessEditorKind, item: NutritionFitnessHabitItem) => {
-    const label = item.title || editorCopy[kind].title.toLowerCase();
-    if (!window.confirm(`Delete "${label}" from your ${kind} history?`)) {
+    const label = item.title || trackerConfig[kind].title.toLowerCase();
+    if (!window.confirm(`Delete "${label}" from your ${trackerConfig[kind].sectionTitle.toLowerCase()} logs?`)) {
       return;
     }
 
@@ -468,7 +544,7 @@ export default function NutritionFitness({ onBack, onNavigate }: NutritionFitnes
       values={editorValues}
       saving={saving}
       error={saveError}
-      submitLabel={activeEditor?.mode === 'edit' ? 'Save changes' : editorCopy[kind].addLabel}
+      submitLabel={activeEditor?.mode === 'edit' ? 'Save changes' : trackerConfig[kind].addLabel}
       onChange={(key, value) => setEditorValues((current) => ({ ...current, [key]: value }))}
       onSave={handleSaveEditor}
       onCancel={closeEditor}
@@ -477,49 +553,38 @@ export default function NutritionFitness({ onBack, onNavigate }: NutritionFitnes
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="border-b border-emerald-100 bg-white p-6 text-gray-900 dark:border-white/10 dark:bg-gradient-to-br dark:from-emerald-600 dark:via-teal-600 dark:to-cyan-700 dark:text-white">
+      <div className="border-b border-emerald-100 bg-white p-6 text-gray-900">
         <div className="mb-4 flex items-center gap-3">
-          <button onClick={onBack} className="text-gray-700 dark:text-white">
+          <button onClick={onBack} className="text-gray-700">
             <ArrowLeft className="h-6 w-6" />
           </button>
-          <h1 className="text-gray-900 dark:text-white">Nutrition & Fitness</h1>
+          <h1 className="text-gray-900">Nutrition & Fitness</h1>
         </div>
-        <p className="text-sm text-gray-600 dark:text-emerald-100">
+        <p className="text-sm text-gray-600">
           Built from the vitals and lifestyle history currently saved in your MediLink account.
         </p>
       </div>
 
-      <div className="-mt-4 space-y-6 p-6">
-        <div className="rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-cyan-50 p-6">
-          <div className="mb-4">
-            <div>
-              <div className="mb-2 flex items-center gap-2 text-emerald-700">
-                <Sparkles className="h-5 w-5" />
-                <span className="text-sm">Wellness Snapshot</span>
-              </div>
-              <h3 className="text-gray-900">What MediLink can show today</h3>
-              <p className="mt-2 text-sm text-gray-600">
-                {loading
-                  ? 'Reviewing your vitals plus nutrition and exercise history...'
-                  : data?.overview || 'Loading your current wellness data.'}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
-            <Badge className="border-0 bg-white text-gray-700">
-              {loading ? 'Checking updates...' : `Last updated ${data?.lastUpdatedLabel}`}
+      <div className="space-y-6 p-6">
+        <div className="rounded-xl border border-emerald-200 bg-white p-5">
+          <p className="text-sm text-gray-600">
+            Use Health Summary for vitals like weight, blood pressure, heart rate, and blood sugar. Use this page for
+            exercise and nutrition habits.
+          </p>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <Button variant="outline" onClick={() => onNavigate('health-summary')}>
+              Open Health Summary
+            </Button>
+            <Badge className="border-0 bg-emerald-100 text-emerald-800">
+              {loading ? 'Checking updates...' : `Last updated ${data?.lastUpdatedLabel ?? 'recently'}`}
             </Badge>
           </div>
         </div>
 
         <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
           <h3 className="text-gray-900">Current scope</h3>
-          <p className="mt-2 text-sm text-blue-900">
-            This page uses data already stored in MediLink. Device-synced daily tracking is still not connected here yet.
-          </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            {(data?.unsupportedTracking || ['Steps', 'Workouts', 'Calories', 'Water intake', 'Sleep']).map((item) => (
+            {trackerChips.map((item) => (
               <Badge key={item} className="border-0 bg-white text-blue-700">
                 {item}
               </Badge>
@@ -527,13 +592,13 @@ export default function NutritionFitness({ onBack, onNavigate }: NutritionFitnes
           </div>
         </div>
 
-        {loading && (
+        {loading ? (
           <div className="rounded-xl border border-gray-200 bg-white p-6 text-sm text-gray-600">
             Loading nutrition and fitness data...
           </div>
-        )}
+        ) : null}
 
-        {!loading && error && (
+        {!loading && error ? (
           <div className="rounded-xl border border-red-200 bg-white p-6">
             <div className="mb-4 flex items-start gap-3">
               <AlertCircle className="mt-0.5 h-5 w-5 text-red-600" />
@@ -547,68 +612,25 @@ export default function NutritionFitness({ onBack, onNavigate }: NutritionFitnes
               Retry
             </Button>
           </div>
-        )}
+        ) : null}
 
-        {!loading && !error && data && (
-          <>
-            <HabitSection
-              kind="exercise"
-              title="Activity, steps & workouts"
-              description="Use one entry per day, workout, walk, step count, or repeating routine."
-              items={exerciseItems}
-              emptyTitle="No activity logs saved yet"
-              emptyDescription="Add entries like steps, workouts, walks, calories burned, or recurring exercise plans here."
-              addLabel="Add activity log"
-              createEditor={
-                activeEditor?.kind === 'exercise' && activeEditor.mode === 'create' ? renderEditor('exercise') : undefined
-              }
-              editingEntryId={activeEditor?.kind === 'exercise' && activeEditor.mode === 'edit' ? activeEditor.entryId : undefined}
-              renderEditEditor={() => renderEditor('exercise')}
-              onAdd={() => openCreateEditor('exercise')}
-              onEdit={(item) => openEditEditor('exercise', item.entry)}
-              onDelete={(item) => void handleDeleteEntry('exercise', item)}
-            />
-
-            <HabitSection
-              kind="nutrition"
-              title="Meals, calories & snacks"
-              description="Use one entry per meal, snack, calorie summary, or longer nutrition plan."
-              items={nutritionItems}
-              emptyTitle="No meal or nutrition logs saved yet"
-              emptyDescription="Add entries like breakfast, lunch, dinner, snacks, calories, hydration, or meal plans here."
-              addLabel="Add nutrition log"
-              createEditor={
-                activeEditor?.kind === 'nutrition' && activeEditor.mode === 'create'
-                  ? renderEditor('nutrition')
-                  : undefined
-              }
-              editingEntryId={activeEditor?.kind === 'nutrition' && activeEditor.mode === 'edit' ? activeEditor.entryId : undefined}
-              renderEditEditor={() => renderEditor('nutrition')}
-              onAdd={() => openCreateEditor('nutrition')}
-              onEdit={(item) => openEditEditor('nutrition', item.entry)}
-              onDelete={(item) => void handleDeleteEntry('nutrition', item)}
-            />
-
-            <div className="rounded-xl border border-dashed border-gray-300 bg-white p-5">
-              <h3 className="text-gray-900">Where to add more data</h3>
-              <p className="mt-2 text-sm text-gray-600">
-                Use Health Summary for vitals like weight, blood pressure, heart rate, and blood sugar. Use this page
-                for exercise and nutrition habits.
-              </p>
-              <div className="mt-4 flex flex-wrap gap-3">
-                <Button variant="outline" onClick={() => onNavigate('health-summary')}>
-                  Open Health Summary
-                </Button>
-                <Button variant="outline" onClick={() => openCreateEditor('exercise')}>
-                  Add activity log
-                </Button>
-                <Button variant="outline" onClick={() => openCreateEditor('nutrition')}>
-                  Add nutrition log
-                </Button>
-              </div>
-            </div>
-          </>
-        )}
+        {!loading && !error && data ? (
+          <div className="space-y-6">
+            {trackerOrder.map((kind) => (
+              <TrackerSection
+                key={kind}
+                kind={kind}
+                items={data.trackerEntries[kind]}
+                createEditor={activeEditor?.kind === kind && activeEditor.mode === 'create' ? renderEditor(kind) : undefined}
+                editingEntryId={activeEditor?.kind === kind && activeEditor.mode === 'edit' ? activeEditor.entryId : undefined}
+                renderEditEditor={() => renderEditor(kind)}
+                onAdd={() => openCreateEditor(kind)}
+                onEdit={(item) => openEditEditor(kind, item.entry)}
+                onDelete={(item) => void handleDeleteEntry(kind, item)}
+              />
+            ))}
+          </div>
+        ) : null}
       </div>
     </div>
   );
