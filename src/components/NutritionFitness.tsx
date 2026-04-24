@@ -697,10 +697,6 @@ export default function NutritionFitness({ onBack, onNavigate }: NutritionFitnes
             <Button variant="outline" onClick={() => onNavigate('health-summary')}>
               Open Health Summary
             </Button>
-            <Button variant="outline" disabled>
-              Connect data
-            </Button>
-            <Badge className="border-0 bg-amber-100 text-amber-800">Coming soon</Badge>
           </div>
         </div>
 
@@ -787,6 +783,23 @@ export default function NutritionFitness({ onBack, onNavigate }: NutritionFitnes
                 onDelete={(item) => void handleDeleteEntry(kind, item)}
               />
             ))}
+
+            <div className="rounded-xl border border-dashed border-amber-200 bg-amber-50 p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-gray-900">Connect data</h3>
+                  <p className="mt-1 text-sm text-gray-600">
+                    Device and app sync for nutrition and fitness tracking is coming in a future update.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button variant="outline" disabled>
+                    Connect data
+                  </Button>
+                  <Badge className="border-0 bg-amber-100 text-amber-800">Coming soon</Badge>
+                </div>
+              </div>
+            </div>
           </div>
         ) : null}
       </div>
