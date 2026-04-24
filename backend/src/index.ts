@@ -8079,6 +8079,17 @@ app.put("/api/patient/health-summary", requirePatientAuth, async (req: any, res)
   try {
     await seedConditionRowsFromSummary(patientId);
     const syncedConditions = await syncPatientConditionSummary(patientId);
+    const existingSummary = await pool.query(
+      `
+      SELECT blood_type
+      FROM patient_health_summaries
+      WHERE patient_id = $1::uuid
+      LIMIT 1
+      `,
+      [patientId]
+    );
+    const existingBloodType =
+      (existingSummary.rowCount ?? 0) > 0 ? existingSummary.rows[0]?.blood_type ?? null : null;
     const result = await pool.query(
       `
       INSERT INTO patient_health_summaries (
@@ -8105,7 +8116,7 @@ app.put("/api/patient/health-summary", requirePatientAuth, async (req: any, res)
         JSON.stringify(vitals),
         JSON.stringify(syncedConditions),
         JSON.stringify(allergies),
-        bloodType ? String(bloodType).trim() : null,
+        existingBloodType,
         JSON.stringify(currentMedications),
         JSON.stringify(emergencyContacts),
         JSON.stringify(advanceDirectives),
@@ -8994,6 +9005,152 @@ app.get("/api/staff/patients/:id/health-summary", requireStaffAuth, async (req: 
   } catch (e: any) {
     console.error("GET /api/staff/patients/:id/health-summary error:", e);
     return res.status(500).json({ message: e?.message || "Failed to fetch patient health summary" });
+  }
+});
+
+app.put("/api/staff/patients/:id/health-summary", requireStaffAuth, async (req: any, res) => {
+  const staffHospitalId = req.staffHospitalId;
+  const patientId = String(req.params.id || "");
+  const {
+    vitals = [],
+    allergies = [],
+    bloodType = null,
+    currentMedications = [],
+    emergencyContacts = [],
+    advanceDirectives = {},
+    immunizations = [],
+    familyHistory = [],
+  } = req.body ?? {};
+
+  if (!isUuid(patientId)) {
+    return res.status(400).json({ message: "Invalid patient id" });
+  }
+
+  if (
+    !Array.isArray(vitals) ||
+    !Array.isArray(allergies) ||
+    !Array.isArray(currentMedications) ||
+    !Array.isArray(emergencyContacts) ||
+    typeof advanceDirectives !== "object" ||
+    Array.isArray(advanceDirectives) ||
+    !Array.isArray(immunizations) ||
+    !Array.isArray(familyHistory)
+  ) {
+    return res.status(400).json({ message: "Invalid health summary payload" });
+  }
+
+  try {
+    await seedConditionRowsFromSummary(patientId);
+    await syncPatientConditionSummary(patientId);
+    await syncPatientMedicationSummary(patientId);
+
+    const relation = await pool.query(
+      `
+      SELECT 1
+      WHERE EXISTS (
+        SELECT 1
+        FROM patient_hospital_connections phc
+        WHERE phc.patient_id = $1::uuid
+          AND phc.hospital_id = $2::uuid
+          AND phc.disconnected_at IS NULL
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM patient_provider_connections ppc
+        WHERE ppc.patient_id = $1::uuid
+          AND ppc.provider_id = $2::uuid
+          AND ppc.disconnected_at IS NULL
+      )
+      LIMIT 1
+      `,
+      [patientId, staffHospitalId]
+    );
+
+    if ((relation.rowCount ?? 0) === 0) {
+      return res.status(403).json({ message: "This patient is not linked to your hospital" });
+    }
+
+    const currentSummaryResult = await pool.query(
+      `
+      SELECT patient_id, vitals, conditions, allergies, blood_type, current_medications, emergency_contacts, advance_directives, immunizations, family_history, updated_at
+      FROM patient_health_summaries
+      WHERE patient_id = $1::uuid
+      LIMIT 1
+      `,
+      [patientId]
+    );
+
+    const currentSummary =
+      (currentSummaryResult.rowCount ?? 0) > 0
+        ? normalizeHealthSummaryRow(currentSummaryResult.rows[0])
+        : {
+            vitals: [],
+            conditions: [],
+            allergies: [],
+            bloodType: null,
+            currentMedications: [],
+            emergencyContacts: [],
+            advanceDirectives: {},
+            immunizations: [],
+            familyHistory: [],
+            updatedAt: null,
+          };
+
+    const syncedConditions = await syncPatientConditionSummary(patientId);
+    await syncPatientMedicationSummary(patientId);
+    const refreshedSummaryResult = await pool.query(
+      `
+      SELECT patient_id, vitals, conditions, allergies, blood_type, current_medications, emergency_contacts, advance_directives, immunizations, family_history, updated_at
+      FROM patient_health_summaries
+      WHERE patient_id = $1::uuid
+      LIMIT 1
+      `,
+      [patientId]
+    );
+    const refreshedCurrentSummary =
+      (refreshedSummaryResult.rowCount ?? 0) > 0
+        ? normalizeHealthSummaryRow(refreshedSummaryResult.rows[0])
+        : currentSummary;
+
+    const result = await pool.query(
+      `
+      INSERT INTO patient_health_summaries (
+        patient_id, vitals, conditions, allergies, blood_type, current_medications, emergency_contacts, advance_directives, immunizations, family_history, updated_at
+      )
+      VALUES (
+        $1::uuid, $2::jsonb, $3::jsonb, $4::jsonb, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9::jsonb, $10::jsonb, NOW()
+      )
+      ON CONFLICT (patient_id) DO UPDATE SET
+        vitals = EXCLUDED.vitals,
+        conditions = EXCLUDED.conditions,
+        allergies = EXCLUDED.allergies,
+        blood_type = EXCLUDED.blood_type,
+        current_medications = EXCLUDED.current_medications,
+        emergency_contacts = EXCLUDED.emergency_contacts,
+        advance_directives = EXCLUDED.advance_directives,
+        immunizations = EXCLUDED.immunizations,
+        family_history = EXCLUDED.family_history,
+        updated_at = NOW()
+      RETURNING patient_id, vitals, conditions, allergies, blood_type, current_medications, emergency_contacts, advance_directives, immunizations, family_history, updated_at
+      `,
+      [
+        patientId,
+        JSON.stringify(refreshedCurrentSummary.vitals || vitals),
+        JSON.stringify(syncedConditions),
+        JSON.stringify(allergies),
+        bloodType ? String(bloodType).trim() : null,
+        JSON.stringify(refreshedCurrentSummary.currentMedications || currentMedications),
+        JSON.stringify(emergencyContacts),
+        JSON.stringify(advanceDirectives),
+        JSON.stringify(immunizations),
+        JSON.stringify(familyHistory),
+      ]
+    );
+
+    return res.json({ summary: normalizeHealthSummaryRow(result.rows[0]) });
+  } catch (e: any) {
+    console.error("PUT /api/staff/patients/:id/health-summary error:", e);
+    return res.status(500).json({ message: e?.message || "Failed to save patient health summary" });
   }
 });
 

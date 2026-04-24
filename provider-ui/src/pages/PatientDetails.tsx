@@ -30,8 +30,12 @@ import { formatDate, formatDateTime } from '@/lib/utils';
 import {
   apiFetch,
   type ProviderDocument,
+  type ProviderHealthSummaryAllergy,
   type ProviderHealthSummary,
   type ProviderHealthSummaryCondition,
+  type ProviderHealthSummaryEmergencyContact,
+  type ProviderHealthSummaryFamilyHistory,
+  type ProviderHealthSummaryImmunization,
   type ProviderMedication,
 } from '@/lib/api';
 
@@ -254,6 +258,38 @@ const conditionStatusOptions = [
   'Resolved',
   'Inactive',
 ] as const;
+
+const bloodTypeOptions = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'] as const;
+const immunizationStatusOptions = ['Up to date', 'Scheduled', 'Due', 'Declined'] as const;
+
+const emptyProviderAllergy = (): ProviderHealthSummaryAllergy => ({
+  id: '',
+  name: '',
+  severity: 'MODERATE',
+  reaction: '',
+});
+
+const emptyProviderImmunization = (): ProviderHealthSummaryImmunization => ({
+  id: '',
+  name: '',
+  detail: '',
+  dose: '',
+  date: '',
+  status: 'Up to date',
+});
+
+const emptyProviderFamilyHistory = (): ProviderHealthSummaryFamilyHistory => ({
+  id: '',
+  relation: '',
+  condition: '',
+});
+
+const emptyProviderEmergencyContact = (): ProviderHealthSummaryEmergencyContact => ({
+  id: '',
+  name: '',
+  relationship: '',
+  phone: '',
+});
 
 const formatConditionDate = (value?: string | null) => {
   if (!value) return 'Not recorded';
@@ -485,6 +521,7 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
   const [editingMedication, setEditingMedication] = useState<ProviderMedication | null>(null);
   const [showConditionModal, setShowConditionModal] = useState(false);
   const [editingCondition, setEditingCondition] = useState<ProviderHealthSummaryCondition | null>(null);
+  const [summaryEditor, setSummaryEditor] = useState<null | 'allergy' | 'blood-contact' | 'immunization' | 'family-history' | 'advance-directives'>(null);
   const [showVitalsModal, setShowVitalsModal] = useState(false);
   const [resolvingRefillRequestId, setResolvingRefillRequestId] = useState<string | null>(null);
   const [vitalRange, setVitalRange] = useState<VitalRange>('1y');
@@ -512,6 +549,12 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
     metric: '',
     notes: '',
   });
+  const [allergyForm, setAllergyForm] = useState<ProviderHealthSummaryAllergy>(emptyProviderAllergy());
+  const [bloodTypeInput, setBloodTypeInput] = useState('');
+  const [emergencyContactForm, setEmergencyContactForm] = useState<ProviderHealthSummaryEmergencyContact>(emptyProviderEmergencyContact());
+  const [immunizationForm, setImmunizationForm] = useState<ProviderHealthSummaryImmunization>(emptyProviderImmunization());
+  const [familyHistoryForm, setFamilyHistoryForm] = useState<ProviderHealthSummaryFamilyHistory>(emptyProviderFamilyHistory());
+  const [advanceDirectiveForm, setAdvanceDirectiveForm] = useState({ dnrStatus: '', livingWill: '' });
 
   useEffect(() => {
     let alive = true;
@@ -1062,6 +1105,152 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
     }
   };
 
+  const saveStructuredSummary = async (nextSummary: ProviderHealthSummary) => {
+    try {
+      const res = await apiFetch<{ summary: ProviderHealthSummary }>(`/api/staff/patients/${patient.id}/health-summary`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          vitals: nextSummary.vitals || [],
+          allergies: nextSummary.allergies || [],
+          bloodType: nextSummary.bloodType || null,
+          currentMedications: nextSummary.currentMedications || [],
+          emergencyContacts: nextSummary.emergencyContacts || [],
+          advanceDirectives: nextSummary.advanceDirectives || {},
+          immunizations: nextSummary.immunizations || [],
+          familyHistory: nextSummary.familyHistory || [],
+        }),
+      });
+      setPatientHealthSummary(res.summary || null);
+      setSummaryEditor(null);
+    } catch (error) {
+      console.error('Failed to save structured health summary:', error);
+    }
+  };
+
+  const openSummaryEditor = (type: NonNullable<typeof summaryEditor>) => {
+    setSummaryEditor(type);
+    if (type === 'allergy') {
+      setAllergyForm(emptyProviderAllergy());
+    }
+    if (type === 'blood-contact') {
+      setBloodTypeInput(patientHealthSummary?.bloodType || '');
+      setEmergencyContactForm(emptyProviderEmergencyContact());
+    }
+    if (type === 'immunization') {
+      setImmunizationForm(emptyProviderImmunization());
+    }
+    if (type === 'family-history') {
+      setFamilyHistoryForm(emptyProviderFamilyHistory());
+    }
+    if (type === 'advance-directives') {
+      setAdvanceDirectiveForm({
+        dnrStatus: patientHealthSummary?.advanceDirectives?.dnrStatus || '',
+        livingWill: patientHealthSummary?.advanceDirectives?.livingWill || '',
+      });
+    }
+  };
+
+  const removeSummaryItem = async (
+    type: 'allergies' | 'emergencyContacts' | 'immunizations' | 'familyHistory',
+    idOrFallback: string
+  ) => {
+    if (!patientHealthSummary) return;
+
+    if (type === 'allergies') {
+      await saveStructuredSummary({
+        ...patientHealthSummary,
+        allergies: patientHealthSummary.allergies.filter((item) => item.id !== idOrFallback),
+      });
+    }
+
+    if (type === 'emergencyContacts') {
+      await saveStructuredSummary({
+        ...patientHealthSummary,
+        emergencyContacts: patientHealthSummary.emergencyContacts.filter(
+          (item) => (item.id || `${item.name}-${item.phone}`) !== idOrFallback
+        ),
+      });
+    }
+
+    if (type === 'immunizations') {
+      await saveStructuredSummary({
+        ...patientHealthSummary,
+        immunizations: patientHealthSummary.immunizations.filter((item) => item.id !== idOrFallback),
+      });
+    }
+
+    if (type === 'familyHistory') {
+      await saveStructuredSummary({
+        ...patientHealthSummary,
+        familyHistory: patientHealthSummary.familyHistory.filter((item) => item.id !== idOrFallback),
+      });
+    }
+  };
+
+  const submitSummaryEditor = async () => {
+    if (!patientHealthSummary || !summaryEditor) return;
+
+    if (summaryEditor === 'allergy' && allergyForm.name.trim()) {
+      await saveStructuredSummary({
+        ...patientHealthSummary,
+        allergies: [
+          ...(patientHealthSummary.allergies || []),
+          { ...allergyForm, id: crypto.randomUUID() },
+        ],
+      });
+    }
+
+    if (summaryEditor === 'blood-contact') {
+      const nextContacts =
+        emergencyContactForm.name.trim() && emergencyContactForm.phone.trim()
+          ? [
+              ...(patientHealthSummary.emergencyContacts || []),
+              { ...emergencyContactForm, id: crypto.randomUUID() },
+            ]
+          : patientHealthSummary.emergencyContacts || [];
+
+      await saveStructuredSummary({
+        ...patientHealthSummary,
+        bloodType: bloodTypeInput.trim() || null,
+        emergencyContacts: nextContacts,
+      });
+    }
+
+    if (summaryEditor === 'immunization' && immunizationForm.name.trim()) {
+      await saveStructuredSummary({
+        ...patientHealthSummary,
+        immunizations: [
+          ...(patientHealthSummary.immunizations || []),
+          {
+            ...immunizationForm,
+            id: crypto.randomUUID(),
+            detail: [immunizationForm.dose, immunizationForm.date].filter(Boolean).join(' • '),
+          },
+        ],
+      });
+    }
+
+    if (summaryEditor === 'family-history' && familyHistoryForm.relation.trim() && familyHistoryForm.condition.trim()) {
+      await saveStructuredSummary({
+        ...patientHealthSummary,
+        familyHistory: [
+          ...(patientHealthSummary.familyHistory || []),
+          { ...familyHistoryForm, id: crypto.randomUUID() },
+        ],
+      });
+    }
+
+    if (summaryEditor === 'advance-directives') {
+      await saveStructuredSummary({
+        ...patientHealthSummary,
+        advanceDirectives: {
+          dnrStatus: advanceDirectiveForm.dnrStatus.trim(),
+          livingWill: advanceDirectiveForm.livingWill.trim(),
+        },
+      });
+    }
+  };
+
   const allSharedVitals = patientHealthSummary?.vitals || [];
   const latestSharedBloodPressure = useMemo(
     () => getLatestProviderVitalForType(allSharedVitals, 'bloodPressure') || null,
@@ -1338,10 +1527,16 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <ShieldAlert className="w-5 h-5 text-red-600" />
-                  Allergies & Sensitivities
-                </CardTitle>
+                <div className="flex items-center justify-between gap-3">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <ShieldAlert className="w-5 h-5 text-red-600" />
+                    Allergies & Sensitivities
+                  </CardTitle>
+                  <Button size="sm" className="gap-2" onClick={() => openSummaryEditor('allergy')}>
+                    <Plus className="w-4 h-4" />
+                    Add Allergy
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 {patientHealthSummary?.allergies?.length ? (
@@ -1353,7 +1548,16 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
                             <p className="font-medium text-gray-900">{item.name}</p>
                             <p className="text-sm text-gray-600 mt-1">{item.reaction}</p>
                           </div>
-                          <Badge variant="outline">{item.severity}</Badge>
+                          <div className="flex flex-col items-end gap-2">
+                            <Badge variant="outline">{item.severity}</Badge>
+                            <button
+                              type="button"
+                              onClick={() => removeSummaryItem('allergies', item.id)}
+                              className="text-xs text-red-600"
+                            >
+                              Remove
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -1690,10 +1894,16 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <AlertCircle className="w-5 h-5 text-rose-600" />
-                  Blood Type & Emergency Contacts
-                </CardTitle>
+                <div className="flex items-center justify-between gap-3">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <AlertCircle className="w-5 h-5 text-rose-600" />
+                    Blood Type & Emergency Contacts
+                  </CardTitle>
+                  <Button size="sm" className="gap-2" onClick={() => openSummaryEditor('blood-contact')}>
+                    <Plus className="w-4 h-4" />
+                    Update
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
@@ -1704,9 +1914,20 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
                   <div className="space-y-3">
                     {patientHealthSummary.emergencyContacts.map((contact, index) => (
                       <div key={`${contact.name}-${index}`} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                        <p className="font-medium text-gray-900">{contact.name}</p>
-                        <p className="text-sm text-gray-600 mt-1">{contact.relationship}</p>
-                        <p className="text-sm text-gray-600 mt-1">{contact.phone}</p>
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-medium text-gray-900">{contact.name}</p>
+                            <p className="text-sm text-gray-600 mt-1">{contact.relationship}</p>
+                            <p className="text-sm text-gray-600 mt-1">{contact.phone}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeSummaryItem('emergencyContacts', contact.id || `${contact.name}-${contact.phone}`)}
+                            className="text-xs text-red-600"
+                          >
+                            Remove
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1720,10 +1941,16 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Syringe className="w-5 h-5 text-green-600" />
-                  Immunization Record
-                </CardTitle>
+                <div className="flex items-center justify-between gap-3">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Syringe className="w-5 h-5 text-green-600" />
+                    Immunization Record
+                  </CardTitle>
+                  <Button size="sm" className="gap-2" onClick={() => openSummaryEditor('immunization')}>
+                    <Plus className="w-4 h-4" />
+                    Add Immunization
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 {patientHealthSummary?.immunizations?.length ? (
@@ -1738,7 +1965,16 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
                               <p>Date taken: {item.date ? formatDate(item.date) : 'Not recorded'}</p>
                             </div>
                           </div>
-                          <Badge variant="secondary">{item.status}</Badge>
+                          <div className="flex flex-col items-end gap-2">
+                            <Badge variant="secondary">{item.status}</Badge>
+                            <button
+                              type="button"
+                              onClick={() => removeSummaryItem('immunizations', item.id)}
+                              className="text-xs text-red-600"
+                            >
+                              Remove
+                            </button>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -1756,18 +1992,35 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Users className="w-5 h-5 text-purple-600" />
-                  Family Health History
-                </CardTitle>
+                <div className="flex items-center justify-between gap-3">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Users className="w-5 h-5 text-purple-600" />
+                    Family Health History
+                  </CardTitle>
+                  <Button size="sm" className="gap-2" onClick={() => openSummaryEditor('family-history')}>
+                    <Plus className="w-4 h-4" />
+                    Add History
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 {patientHealthSummary?.familyHistory?.length ? (
                   <div className="space-y-3">
                     {patientHealthSummary.familyHistory.map((item) => (
                       <div key={item.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                        <p className="text-sm text-gray-900">{item.condition}</p>
-                        <p className="text-xs text-gray-500 mt-1">{item.relation}</p>
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm text-gray-900">{item.condition}</p>
+                            <p className="text-xs text-gray-500 mt-1">{item.relation}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeSummaryItem('familyHistory', item.id)}
+                            className="text-xs text-red-600"
+                          >
+                            Remove
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1784,10 +2037,16 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
 
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Clock3 className="w-5 h-5 text-gray-600" />
-                  Advance Directives
-                </CardTitle>
+                <div className="flex items-center justify-between gap-3">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Clock3 className="w-5 h-5 text-gray-600" />
+                    Advance Directives
+                  </CardTitle>
+                  <Button size="sm" className="gap-2" onClick={() => openSummaryEditor('advance-directives')}>
+                    <Plus className="w-4 h-4" />
+                    Update
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
@@ -2247,6 +2506,174 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
                 setEditingMedication(null);
               }}>Cancel</Button>
               <Button className="flex-1" onClick={addMedication}>{editingMedication ? 'Save Changes' : 'Save Medication'}</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {summaryEditor && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-gray-900">
+                {summaryEditor === 'allergy'
+                  ? 'Add Allergy'
+                  : summaryEditor === 'blood-contact'
+                  ? 'Update Blood Type & Emergency Contacts'
+                  : summaryEditor === 'immunization'
+                  ? 'Add Immunization'
+                  : summaryEditor === 'family-history'
+                  ? 'Add Family History'
+                  : 'Update Advance Directives'}
+              </h3>
+              <button type="button" onClick={() => setSummaryEditor(null)} className="text-sm text-gray-500">
+                Close
+              </button>
+            </div>
+
+            {summaryEditor === 'allergy' && (
+              <div className="space-y-3">
+                <input
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2"
+                  placeholder="Allergy"
+                  value={allergyForm.name}
+                  onChange={(e) => setAllergyForm({ ...allergyForm, name: e.target.value })}
+                />
+                <select
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2"
+                  value={allergyForm.severity}
+                  onChange={(e) => setAllergyForm({ ...allergyForm, severity: e.target.value as ProviderHealthSummaryAllergy['severity'] })}
+                >
+                  <option value="MILD">Mild</option>
+                  <option value="MODERATE">Moderate</option>
+                  <option value="SEVERE">Severe</option>
+                </select>
+                <input
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2"
+                  placeholder="Reaction"
+                  value={allergyForm.reaction}
+                  onChange={(e) => setAllergyForm({ ...allergyForm, reaction: e.target.value })}
+                />
+              </div>
+            )}
+
+            {summaryEditor === 'blood-contact' && (
+              <div className="space-y-4">
+                <div className="space-y-3">
+                  <p className="text-sm text-gray-600">Blood Type</p>
+                  <select
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2"
+                    value={bloodTypeInput}
+                    onChange={(e) => setBloodTypeInput(e.target.value)}
+                  >
+                    <option value="">Select blood type</option>
+                    {bloodTypeOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-3">
+                  <p className="text-sm text-gray-600">Add Emergency Contact</p>
+                  <input
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2"
+                    placeholder="Full name"
+                    value={emergencyContactForm.name}
+                    onChange={(e) => setEmergencyContactForm({ ...emergencyContactForm, name: e.target.value })}
+                  />
+                  <input
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2"
+                    placeholder="Relationship"
+                    value={emergencyContactForm.relationship}
+                    onChange={(e) => setEmergencyContactForm({ ...emergencyContactForm, relationship: e.target.value })}
+                  />
+                  <input
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2"
+                    placeholder="Phone number"
+                    value={emergencyContactForm.phone}
+                    onChange={(e) => setEmergencyContactForm({ ...emergencyContactForm, phone: e.target.value })}
+                  />
+                </div>
+              </div>
+            )}
+
+            {summaryEditor === 'immunization' && (
+              <div className="space-y-3">
+                <input
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2"
+                  placeholder="Immunization name"
+                  value={immunizationForm.name}
+                  onChange={(e) => setImmunizationForm({ ...immunizationForm, name: e.target.value })}
+                />
+                <input
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2"
+                  placeholder="Dose"
+                  value={immunizationForm.dose || ''}
+                  onChange={(e) => setImmunizationForm({ ...immunizationForm, dose: e.target.value })}
+                />
+                <input
+                  type="date"
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2"
+                  value={immunizationForm.date || ''}
+                  onChange={(e) => setImmunizationForm({ ...immunizationForm, date: e.target.value })}
+                />
+                <select
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2"
+                  value={immunizationForm.status}
+                  onChange={(e) => setImmunizationForm({ ...immunizationForm, status: e.target.value })}
+                >
+                  {immunizationStatusOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {summaryEditor === 'family-history' && (
+              <div className="space-y-3">
+                <input
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2"
+                  placeholder="Relationship"
+                  value={familyHistoryForm.relation}
+                  onChange={(e) => setFamilyHistoryForm({ ...familyHistoryForm, relation: e.target.value })}
+                />
+                <input
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2"
+                  placeholder="Condition"
+                  value={familyHistoryForm.condition}
+                  onChange={(e) => setFamilyHistoryForm({ ...familyHistoryForm, condition: e.target.value })}
+                />
+              </div>
+            )}
+
+            {summaryEditor === 'advance-directives' && (
+              <div className="space-y-3">
+                <input
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2"
+                  placeholder="DNR status"
+                  value={advanceDirectiveForm.dnrStatus}
+                  onChange={(e) => setAdvanceDirectiveForm({ ...advanceDirectiveForm, dnrStatus: e.target.value })}
+                />
+                <textarea
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 min-h-[120px]"
+                  placeholder="Living will or responder instructions"
+                  value={advanceDirectiveForm.livingWill}
+                  onChange={(e) => setAdvanceDirectiveForm({ ...advanceDirectiveForm, livingWill: e.target.value })}
+                />
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => setSummaryEditor(null)}>
+                Cancel
+              </Button>
+              <Button className="flex-1 gap-2" onClick={submitSummaryEditor}>
+                <Plus className="w-4 h-4" />
+                Save
+              </Button>
             </div>
           </div>
         </div>

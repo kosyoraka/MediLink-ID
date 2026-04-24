@@ -1228,14 +1228,11 @@ export default function HealthSummary({ onBack, onOpenMedications }: HealthSumma
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <div className="flex items-center justify-between gap-3 mb-4">
             <h3 className="text-gray-900">Blood Type</h3>
-            <Button variant="outline" size="sm" onClick={() => openEditor('bloodType')} className="gap-2">
-              <Edit3 className="w-4 h-4" />
-              Update
-            </Button>
           </div>
           <div className="rounded-xl bg-teal-50 p-4">
             <p className="text-sm text-gray-600 mb-1">Current blood type on file</p>
             <p className="text-3xl text-gray-900">{summary?.bloodType || '—'}</p>
+            <p className="mt-2 text-xs text-gray-500">Blood type is updated by your provider when verified.</p>
           </div>
         </div>
 
