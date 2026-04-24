@@ -100,7 +100,8 @@ const coreWalkthroughSteps: WalkthroughStep[] = [
     title: 'Connect Providers',
     description:
       'Link your care team here.',
-    screen: 'connect-providers',
+    screen: 'manage-providers',
+    navItem: 'more',
   },
   {
     title: 'Health Summary',
