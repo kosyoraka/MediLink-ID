@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { UploadDocumentModal } from "@/components/modals/UploadDocumentModal";
 import { apiFetch, type ProviderDocument, type ProviderDocumentRequest } from "@/lib/api";
 import { formatDate } from "@/lib/utils";
@@ -37,6 +38,7 @@ export function Documents() {
   const [patients, setPatients] = useState<PatientFilter[]>([]);
   const [requests, setRequests] = useState<ProviderDocumentRequest[]>([]);
   const [selectedRequest, setSelectedRequest] = useState<ProviderDocumentRequest | null>(null);
+  const [selectedDocument, setSelectedDocument] = useState<ProviderDocument | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -90,7 +92,7 @@ export function Documents() {
   };
 
   const openDocument = (doc: ProviderDocument) => {
-    window.open(doc.fileUrl, "_blank", "noopener,noreferrer");
+    setSelectedDocument(doc);
   };
 
   const downloadDocument = (doc: ProviderDocument) => {
@@ -98,6 +100,50 @@ export function Documents() {
     anchor.href = doc.fileUrl;
     anchor.download = doc.fileName;
     anchor.click();
+  };
+
+  const canPreviewDocument = (doc: ProviderDocument) => {
+    const mimeType = (doc.mimeType || "").toLowerCase();
+    return (
+      mimeType.startsWith("image/") ||
+      mimeType === "application/pdf" ||
+      mimeType.startsWith("text/")
+    );
+  };
+
+  const renderDocumentPreview = (doc: ProviderDocument) => {
+    const mimeType = (doc.mimeType || "").toLowerCase();
+
+    if (mimeType.startsWith("image/")) {
+      return (
+        <div className="flex max-h-[70vh] items-center justify-center overflow-auto rounded-lg bg-gray-100 p-4">
+          <img src={doc.fileUrl} alt={doc.title} className="max-h-[65vh] w-auto rounded-lg shadow-sm" />
+        </div>
+      );
+    }
+
+    if (mimeType === "application/pdf" || mimeType.startsWith("text/")) {
+      return (
+        <iframe
+          src={doc.fileUrl}
+          title={doc.title}
+          className="h-[70vh] w-full rounded-lg border border-gray-200 bg-white"
+        />
+      );
+    }
+
+    return (
+      <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 p-8 text-center">
+        <p className="text-sm text-gray-600">Preview is not available for this file type.</p>
+        <Button
+          variant="outline"
+          className="mt-4"
+          onClick={() => window.open(doc.fileUrl, "_blank", "noopener,noreferrer")}
+        >
+          Open in new tab
+        </Button>
+      </div>
+    );
   };
 
   return (
@@ -300,6 +346,38 @@ export function Documents() {
             toast.success("Document added to patient record");
           }}
         />
+      ) : null}
+
+      {selectedDocument ? (
+        <Dialog open={!!selectedDocument} onOpenChange={(open) => !open && setSelectedDocument(null)}>
+          <DialogContent className="max-w-5xl">
+            <DialogHeader>
+              <DialogTitle>{selectedDocument.title}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-gray-600">
+                <span>{selectedDocument.fileName}</span>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => downloadDocument(selectedDocument)}>
+                    <Download className="mr-2 h-4 w-4" />
+                    Download
+                  </Button>
+                  {!canPreviewDocument(selectedDocument) ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => window.open(selectedDocument.fileUrl, "_blank", "noopener,noreferrer")}
+                    >
+                      <ExternalLink className="mr-2 h-4 w-4" />
+                      Open in new tab
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+              {renderDocumentPreview(selectedDocument)}
+            </div>
+          </DialogContent>
+        </Dialog>
       ) : null}
     </div>
   );
