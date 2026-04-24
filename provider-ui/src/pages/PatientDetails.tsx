@@ -1437,6 +1437,288 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
 
   const getDocumentIcon = (_type: string) => FileTextIcon;
 
+  if (showVitalsModal) {
+    return (
+      <div className="p-4 lg:p-6 space-y-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setShowVitalsModal(false);
+              setShowAddVitalForm(false);
+            }}
+            className="gap-2"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to Health Summary
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            onClick={() => setShowAddVitalForm((current) => !current)}
+          >
+            <Plus className="w-4 h-4" />
+            {showAddVitalForm ? 'Hide Form' : 'Add Vitals'}
+          </Button>
+        </div>
+
+        <Card>
+          <CardContent className="p-6 space-y-5">
+            <div>
+              <h2 className="text-2xl font-semibold text-gray-900">Vitals and Trends</h2>
+              <p className="mt-1 text-sm text-gray-500">
+                Review logged vitals and generate trend graphs only when needed.
+              </p>
+            </div>
+
+            {showAddVitalForm ? (
+              <div className="rounded-2xl border border-gray-200 p-4 space-y-4">
+                <div>
+                  <h3 className="text-gray-900 font-medium">Log provider-checked vitals</h3>
+                  <p className="text-sm text-gray-500 mt-1">Add any values measured during a visit or hospital check.</p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="rounded-xl bg-gray-50 p-4 space-y-3">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">Blood Pressure</p>
+                      <p className="text-xs text-gray-500 mt-1">Enter both values if blood pressure was measured.</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <label className="space-y-2">
+                        <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Systolic</span>
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2"
+                          placeholder="120"
+                          value={vitalEntryForm.systolic}
+                          onChange={(e) => setVitalEntryForm((current) => ({ ...current, systolic: e.target.value }))}
+                        />
+                      </label>
+                      <label className="space-y-2">
+                        <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Diastolic</span>
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2"
+                          placeholder="80"
+                          value={vitalEntryForm.diastolic}
+                          onChange={(e) => setVitalEntryForm((current) => ({ ...current, diastolic: e.target.value }))}
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl bg-gray-50 p-4 space-y-3">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">Heart Rate</p>
+                      <p className="text-xs text-gray-500 mt-1">Beats per minute.</p>
+                    </div>
+                    <label className="space-y-2">
+                      <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Heart Rate (bpm)</span>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2"
+                        placeholder="72"
+                        value={vitalEntryForm.heartRate}
+                        onChange={(e) => setVitalEntryForm((current) => ({ ...current, heartRate: e.target.value }))}
+                      />
+                    </label>
+                  </div>
+
+                  <div className="rounded-xl bg-gray-50 p-4 space-y-3">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">Weight</p>
+                      <p className="text-xs text-gray-500 mt-1">Record the measured weight and unit.</p>
+                    </div>
+                    <div className="grid grid-cols-[minmax(0,1fr)_110px] gap-3">
+                      <label className="space-y-2">
+                        <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Weight</span>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2"
+                          placeholder="165"
+                          value={vitalEntryForm.weight}
+                          onChange={(e) => setVitalEntryForm((current) => ({ ...current, weight: e.target.value }))}
+                        />
+                      </label>
+                      <label className="space-y-2">
+                        <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Unit</span>
+                        <select
+                          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2"
+                          value={vitalEntryForm.weightUnit}
+                          onChange={(e) => setVitalEntryForm((current) => ({ ...current, weightUnit: e.target.value as WeightUnit }))}
+                        >
+                          <option value="lbs">lbs</option>
+                          <option value="kg">kg</option>
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl bg-gray-50 p-4 space-y-3">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">Blood Sugar</p>
+                      <p className="text-xs text-gray-500 mt-1">Use mg/dL.</p>
+                    </div>
+                    <label className="space-y-2">
+                      <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Blood Sugar (mg/dL)</span>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2"
+                        placeholder="98"
+                        value={vitalEntryForm.bloodSugar}
+                        onChange={(e) => setVitalEntryForm((current) => ({ ...current, bloodSugar: e.target.value }))}
+                      />
+                    </label>
+                  </div>
+
+                  <div className="rounded-xl bg-gray-50 p-4 space-y-3 md:col-span-2">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">Recorded Time</p>
+                      <p className="text-xs text-gray-500 mt-1">Leave blank to use the current time.</p>
+                    </div>
+                    <label className="space-y-2">
+                      <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Recorded At</span>
+                      <input
+                        type="datetime-local"
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2"
+                        value={vitalEntryForm.recordedAt}
+                        onChange={(e) => setVitalEntryForm((current) => ({ ...current, recordedAt: e.target.value }))}
+                      />
+                    </label>
+                  </div>
+                </div>
+                <div className="flex gap-3">
+                  <Button variant="outline" onClick={() => setShowAddVitalForm(false)}>
+                    Cancel
+                  </Button>
+                  <Button className="gap-2" onClick={submitProviderVitals}>
+                    <Plus className="w-4 h-4" />
+                    Save Vitals
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="rounded-2xl border border-gray-200 bg-gray-50/70 p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-medium text-gray-700">Time range</span>
+                {vitalRangeOptions.map((option) => (
+                  <button
+                    key={option.key}
+                    type="button"
+                    onClick={() => setVitalRange(option.key)}
+                    className={`rounded-full px-3 py-1 text-xs ${
+                      vitalRange === option.key ? 'bg-blue-600 text-white' : 'border border-gray-200 bg-white text-gray-600'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              {providerVitalSections.map((section) => (
+                <div key={section.key} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                  <div className="mb-3 flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm text-gray-500">{section.label}</p>
+                      <p className="text-lg font-semibold text-gray-900">{section.latest}</p>
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      {latestSharedVitalAt ? `Latest: ${formatDateTime(latestSharedVitalAt)}` : 'No logs yet'}
+                    </p>
+                  </div>
+                  {generatedTrendGraphs[section.key] ? (
+                    <div className="space-y-3">
+                      <TrendChart values={section.values} labels={section.labels} />
+                      <div className="flex justify-end">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            setGeneratedTrendGraphs((current) => ({
+                              ...current,
+                              [section.key]: false,
+                            }))
+                          }
+                        >
+                          Hide Graph
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-6 text-center">
+                      <p className="text-sm font-medium text-gray-700">Trend graph hidden</p>
+                      <p className="mt-1 text-sm text-gray-500">
+                        Generate a clean graph for {section.label.toLowerCase()} when you want to review the pattern.
+                      </p>
+                      <Button
+                        variant="outline"
+                        className="mt-4"
+                        size="sm"
+                        onClick={() =>
+                          setGeneratedTrendGraphs((current) => ({
+                            ...current,
+                            [section.key]: true,
+                          }))
+                        }
+                        disabled={section.values.length === 0}
+                      >
+                        Generate Trend Graph
+                      </Button>
+                    </div>
+                  )}
+                  <div className="mt-3 space-y-2">
+                    {section.logs.length > 0 ? (
+                      section.logs.map((group) => (
+                        <div key={`${section.key}-${group.label}`} className="space-y-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedProviderVitalGroups((current) => ({
+                                ...current,
+                                [`${section.key}-${group.label}`]: !current[`${section.key}-${group.label}`],
+                              }))
+                            }
+                            className="flex w-full items-center justify-between rounded-xl bg-gray-50 px-3 py-2 text-left"
+                          >
+                            <span className="text-xs font-medium uppercase tracking-wide text-gray-500">{group.label}</span>
+                            <span className="text-xs text-gray-500">
+                              {group.items.length} {group.items.length === 1 ? 'entry' : 'entries'}
+                            </span>
+                          </button>
+                          {expandedProviderVitalGroups[`${section.key}-${group.label}`] ? (
+                            group.items.map((log, index) => (
+                              <div key={`${section.key}-${group.label}-${log.date}-${index}`} className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2">
+                                <span className="text-sm text-gray-900">{log.value}</span>
+                                <span className="text-xs text-gray-500">{formatDateTime(log.date)}</span>
+                              </div>
+                            ))
+                          ) : null}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-gray-200 px-3 py-6 text-center text-sm text-gray-500">
+                        No shared logs yet.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="p-4 lg:p-6 space-y-6">
       <Button variant="ghost" onClick={() => onNavigate('patients')} className="gap-2">
@@ -2489,274 +2771,6 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
               </div>
             </CardContent>
           </Card>
-        </div>
-      )}
-
-      {showVitalsModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm">
-          <div className="flex h-full w-full items-end justify-center sm:items-center sm:p-6">
-            <div className="flex h-[100dvh] w-full max-w-5xl min-h-0 flex-col overflow-hidden bg-white shadow-2xl sm:h-auto sm:max-h-[92vh] sm:rounded-3xl">
-              <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
-                <div>
-                  <h3 className="text-gray-900 text-lg font-semibold">Vitals and Trends</h3>
-                  <p className="text-sm text-gray-500">Review logged vitals and generate trend graphs only when needed.</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-2"
-                    onClick={() => setShowAddVitalForm((current) => !current)}
-                  >
-                    <Plus className="w-4 h-4" />
-                    {showAddVitalForm ? 'Hide Form' : 'Add Vitals'}
-                  </Button>
-                  <button type="button" onClick={() => setShowVitalsModal(false)} className="text-sm text-gray-500">
-                    Close
-                  </button>
-                </div>
-              </div>
-              <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 space-y-5 overscroll-contain">
-                {showAddVitalForm ? (
-                  <div className="rounded-2xl border border-gray-200 p-4 space-y-4">
-                <div>
-                  <h4 className="text-gray-900 font-medium">Log provider-checked vitals</h4>
-                  <p className="text-sm text-gray-500 mt-1">Add any values measured during a visit or hospital check.</p>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="rounded-xl bg-gray-50 p-4 space-y-3">
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">Blood Pressure</p>
-                      <p className="text-xs text-gray-500 mt-1">Enter both values if blood pressure was measured.</p>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <label className="space-y-2">
-                        <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Systolic</span>
-                        <input
-                          type="number"
-                          inputMode="numeric"
-                          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2"
-                          placeholder="120"
-                          value={vitalEntryForm.systolic}
-                          onChange={(e) => setVitalEntryForm((current) => ({ ...current, systolic: e.target.value }))}
-                        />
-                      </label>
-                      <label className="space-y-2">
-                        <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Diastolic</span>
-                        <input
-                          type="number"
-                          inputMode="numeric"
-                          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2"
-                          placeholder="80"
-                          value={vitalEntryForm.diastolic}
-                          onChange={(e) => setVitalEntryForm((current) => ({ ...current, diastolic: e.target.value }))}
-                        />
-                      </label>
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl bg-gray-50 p-4 space-y-3">
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">Heart Rate</p>
-                      <p className="text-xs text-gray-500 mt-1">Beats per minute.</p>
-                    </div>
-                    <label className="space-y-2">
-                      <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Heart Rate (bpm)</span>
-                      <input
-                        type="number"
-                        inputMode="numeric"
-                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2"
-                        placeholder="72"
-                        value={vitalEntryForm.heartRate}
-                        onChange={(e) => setVitalEntryForm((current) => ({ ...current, heartRate: e.target.value }))}
-                      />
-                    </label>
-                  </div>
-
-                  <div className="rounded-xl bg-gray-50 p-4 space-y-3">
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">Weight</p>
-                      <p className="text-xs text-gray-500 mt-1">Record the measured weight and unit.</p>
-                    </div>
-                    <div className="grid grid-cols-[minmax(0,1fr)_110px] gap-3">
-                      <label className="space-y-2">
-                        <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Weight</span>
-                        <input
-                          type="number"
-                          inputMode="decimal"
-                          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2"
-                          placeholder="165"
-                          value={vitalEntryForm.weight}
-                          onChange={(e) => setVitalEntryForm((current) => ({ ...current, weight: e.target.value }))}
-                        />
-                      </label>
-                      <label className="space-y-2">
-                        <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Unit</span>
-                        <select
-                          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2"
-                          value={vitalEntryForm.weightUnit}
-                          onChange={(e) => setVitalEntryForm((current) => ({ ...current, weightUnit: e.target.value as WeightUnit }))}
-                        >
-                          <option value="lbs">lbs</option>
-                          <option value="kg">kg</option>
-                        </select>
-                      </label>
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl bg-gray-50 p-4 space-y-3">
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">Blood Sugar</p>
-                      <p className="text-xs text-gray-500 mt-1">Use mg/dL.</p>
-                    </div>
-                    <label className="space-y-2">
-                      <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Blood Sugar (mg/dL)</span>
-                      <input
-                        type="number"
-                        inputMode="numeric"
-                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2"
-                        placeholder="98"
-                        value={vitalEntryForm.bloodSugar}
-                        onChange={(e) => setVitalEntryForm((current) => ({ ...current, bloodSugar: e.target.value }))}
-                      />
-                    </label>
-                  </div>
-
-                  <div className="rounded-xl bg-gray-50 p-4 space-y-3 md:col-span-2">
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">Recorded Time</p>
-                      <p className="text-xs text-gray-500 mt-1">Leave blank to use the current time.</p>
-                    </div>
-                    <label className="space-y-2">
-                      <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Recorded At</span>
-                      <input
-                        type="datetime-local"
-                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2"
-                        value={vitalEntryForm.recordedAt}
-                        onChange={(e) => setVitalEntryForm((current) => ({ ...current, recordedAt: e.target.value }))}
-                      />
-                    </label>
-                  </div>
-                </div>
-                <div className="flex gap-3">
-                  <Button variant="outline" onClick={() => setShowAddVitalForm(false)}>
-                    Cancel
-                  </Button>
-                  <Button className="gap-2" onClick={submitProviderVitals}>
-                    <Plus className="w-4 h-4" />
-                    Save Vitals
-                  </Button>
-                </div>
-                  </div>
-                ) : null}
-                <div className="rounded-2xl border border-gray-200 bg-gray-50/70 p-4">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-medium text-gray-700">Time range</span>
-                    {vitalRangeOptions.map((option) => (
-                      <button
-                        key={option.key}
-                        type="button"
-                        onClick={() => setVitalRange(option.key)}
-                        className={`rounded-full px-3 py-1 text-xs ${
-                          vitalRange === option.key ? 'bg-blue-600 text-white' : 'border border-gray-200 bg-white text-gray-600'
-                        }`}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                  {providerVitalSections.map((section) => (
-                    <div key={section.key} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-                      <div className="mb-3 flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm text-gray-500">{section.label}</p>
-                          <p className="text-lg font-semibold text-gray-900">{section.latest}</p>
-                        </div>
-                        <p className="text-xs text-gray-500">{latestSharedVitalAt ? `Latest: ${formatDateTime(latestSharedVitalAt)}` : 'No logs yet'}</p>
-                      </div>
-                      {generatedTrendGraphs[section.key] ? (
-                        <div className="space-y-3">
-                          <TrendChart values={section.values} labels={section.labels} />
-                          <div className="flex justify-end">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() =>
-                                setGeneratedTrendGraphs((current) => ({
-                                  ...current,
-                                  [section.key]: false,
-                                }))
-                              }
-                            >
-                              Hide Graph
-                            </Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-6 text-center">
-                          <p className="text-sm font-medium text-gray-700">Trend graph hidden</p>
-                          <p className="mt-1 text-sm text-gray-500">
-                            Generate a clean graph for {section.label.toLowerCase()} when you want to review the pattern.
-                          </p>
-                          <Button
-                            variant="outline"
-                            className="mt-4"
-                            size="sm"
-                            onClick={() =>
-                              setGeneratedTrendGraphs((current) => ({
-                                ...current,
-                                [section.key]: true,
-                              }))
-                            }
-                            disabled={section.values.length === 0}
-                          >
-                            Generate Trend Graph
-                          </Button>
-                        </div>
-                      )}
-                      <div className="mt-3 space-y-2 max-h-48 overflow-y-auto">
-                        {section.logs.length > 0 ? (
-                          section.logs.map((group) => (
-                            <div key={`${section.key}-${group.label}`} className="space-y-2">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setExpandedProviderVitalGroups((current) => ({
-                                    ...current,
-                                    [`${section.key}-${group.label}`]: !current[`${section.key}-${group.label}`],
-                                  }))
-                                }
-                                className="flex w-full items-center justify-between rounded-xl bg-gray-50 px-3 py-2 text-left"
-                              >
-                                <span className="text-xs font-medium uppercase tracking-wide text-gray-500">{group.label}</span>
-                                <span className="text-xs text-gray-500">
-                                  {group.items.length} {group.items.length === 1 ? 'entry' : 'entries'}
-                                </span>
-                              </button>
-                              {expandedProviderVitalGroups[`${section.key}-${group.label}`] ? (
-                                group.items.map((log, index) => (
-                                  <div key={`${section.key}-${group.label}-${log.date}-${index}`} className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2">
-                                    <span className="text-sm text-gray-900">{log.value}</span>
-                                    <span className="text-xs text-gray-500">{formatDateTime(log.date)}</span>
-                                  </div>
-                                ))
-                              ) : null}
-                            </div>
-                          ))
-                        ) : (
-                          <div className="rounded-xl border border-dashed border-gray-200 px-3 py-6 text-center text-sm text-gray-500">
-                            No shared logs yet.
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       )}
 
