@@ -208,6 +208,7 @@ function getEditorValuesFromEntry(entry: PatientSocialHistoryEntry): HabitEditor
 
 function HabitEditor({
   kind,
+  entryMode,
   values,
   saving,
   error,
