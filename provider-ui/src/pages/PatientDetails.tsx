@@ -366,78 +366,92 @@ function TrendChart({
     return <div className="h-20 rounded-xl border border-dashed border-gray-200 bg-gray-50" />;
   }
 
-  const width = 260;
-  const height = 102;
-  const padding = 14;
+  const width = 320;
+  const height = 168;
+  const paddingTop = 18;
+  const paddingRight = 14;
+  const paddingBottom = 26;
+  const paddingLeft = 18;
   const min = Math.min(...values);
   const max = Math.max(...values);
   const floorMin = Math.floor(min);
   const ceilMax = Math.ceil(max);
-  const span = Math.max(1, ceilMax - floorMin);
-  const tickStep = Math.max(1, Math.ceil(span / 4));
-  const paddedMin = floorMin - tickStep;
-  const paddedMax = ceilMax + tickStep;
+  const span = Math.max(2, ceilMax - floorMin);
+  const paddingValue = Math.max(2, Math.ceil(span * 0.18));
+  const paddedMin = Math.max(0, floorMin - paddingValue);
+  const paddedMax = ceilMax + paddingValue;
   const range = paddedMax - paddedMin || 1;
-  const stepX = values.length === 1 ? 0 : (width - padding * 2) / (values.length - 1);
+  const stepX = values.length === 1 ? 0 : (width - paddingLeft - paddingRight) / (values.length - 1);
   const gridLines = 4;
+  const chartHeight = height - paddingTop - paddingBottom;
   const points = values.map((value, index) => {
-    const x = padding + index * stepX;
-    const y = height - padding - ((value - paddedMin) / range) * (height - padding * 2);
+    const x = paddingLeft + index * stepX;
+    const y = height - paddingBottom - ((value - paddedMin) / range) * chartHeight;
     return `${x},${y}`;
   });
-  const areaPoints = [`${padding},${height - padding}`, ...points, `${width - padding},${height - padding}`].join(' ');
+  const areaPoints = [`${paddingLeft},${height - paddingBottom}`, ...points, `${width - paddingRight},${height - paddingBottom}`].join(' ');
   const yLabels = Array.from({ length: gridLines + 1 }, (_, index) => {
-    return `${paddedMax - tickStep * index}`;
+    const value = paddedMax - (range / gridLines) * index;
+    return `${Math.round(value)}`;
   });
-  const xLabels = labels && labels.length > 0 ? [labels[0], labels[Math.floor((labels.length - 1) / 2)], labels[labels.length - 1]] : [];
+  const xLabels =
+    labels && labels.length > 0
+      ? [labels[0], labels[Math.floor((labels.length - 1) / 2)], labels[labels.length - 1]]
+      : [];
+  const gradientId = `trend-fill-${color.replace('#', '')}`;
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-      <div className="flex items-start gap-3">
-        <div className="flex h-[80px] w-11 flex-col justify-between text-[10px] leading-none text-gray-500">
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-start gap-4">
+        <div className="flex h-[124px] w-10 shrink-0 flex-col justify-between text-[11px] font-medium leading-none text-slate-400">
           {yLabels.map((label) => (
             <span key={label}>{label}</span>
           ))}
         </div>
-        <svg viewBox={`0 0 ${width} ${height}`} className="h-[80px] w-full">
+        <svg viewBox={`0 0 ${width} ${height}`} className="h-[124px] w-full overflow-visible">
           <defs>
-            <linearGradient id={`trend-fill-${color.replace('#', '')}`} x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stopColor={color} stopOpacity="0.22" />
-              <stop offset="100%" stopColor={color} stopOpacity="0.03" />
+            <linearGradient id={gradientId} x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor={color} stopOpacity="0.18" />
+              <stop offset="100%" stopColor={color} stopOpacity="0.02" />
             </linearGradient>
           </defs>
           {Array.from({ length: gridLines + 1 }, (_, index) => {
-            const y = padding + ((height - padding * 2) / gridLines) * index;
+            const y = paddingTop + (chartHeight / gridLines) * index;
             return (
               <line
                 key={`grid-${index}`}
-                x1={padding}
-                x2={width - padding}
+                x1={paddingLeft}
+                x2={width - paddingRight}
                 y1={y}
                 y2={y}
-                stroke="#d1d5db"
-                strokeDasharray="3 3"
+                stroke="#e2e8f0"
+                strokeDasharray="4 6"
                 strokeWidth="1"
               />
             );
           })}
-          <polygon points={areaPoints} fill={`url(#trend-fill-${color.replace('#', '')})`} />
+          <polygon points={areaPoints} fill={`url(#${gradientId})`} />
           <polyline
             fill="none"
             stroke={color}
-            strokeWidth="3"
+            strokeWidth="2.75"
             strokeLinecap="round"
             strokeLinejoin="round"
             points={points.join(' ')}
           />
           {points.map((point, index) => {
             const [cx, cy] = point.split(',');
-            return <circle key={`${point}-${index}`} cx={cx} cy={cy} r="3" fill={color} />;
+            return (
+              <g key={`${point}-${index}`}>
+                <circle cx={cx} cy={cy} r="5.5" fill="white" stroke={color} strokeWidth="2.5" />
+                <circle cx={cx} cy={cy} r="2.5" fill={color} />
+              </g>
+            );
           })}
         </svg>
       </div>
       {xLabels.length === 3 ? (
-        <div className="mt-3 grid grid-cols-3 text-[10px] leading-none text-gray-500">
+        <div className="mt-4 grid grid-cols-3 text-[11px] font-medium leading-none text-slate-400">
           <span>{xLabels[0]}</span>
           <span className="text-center">{xLabels[1]}</span>
           <span className="text-right">{xLabels[2]}</span>
