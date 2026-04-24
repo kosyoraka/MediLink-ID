@@ -45,8 +45,6 @@ type ActiveEditorState = {
 } | null;
 
 const summaryIconMap: Record<string, typeof ClipboardList> = {
-  coverage: ClipboardList,
-  vitals: ClipboardList,
   exercise: Dumbbell,
   nutrition: Apple,
 };
@@ -589,7 +587,7 @@ export default function NutritionFitness({ onBack, onNavigate }: NutritionFitnes
 
       <div className="-mt-4 space-y-6 p-6">
         <div className="rounded-xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-cyan-50 p-6">
-          <div className="mb-4 flex items-start justify-between gap-4">
+          <div className="mb-4">
             <div>
               <div className="mb-2 flex items-center gap-2 text-emerald-700">
                 <Sparkles className="h-5 w-5" />
@@ -602,18 +600,9 @@ export default function NutritionFitness({ onBack, onNavigate }: NutritionFitnes
                   : data?.overview || 'Loading your current wellness data.'}
               </p>
             </div>
-            <div className="rounded-full bg-white px-4 py-3 text-center shadow-sm">
-              <p className="text-2xl text-gray-900">
-                {loading ? '...' : `${data?.coverageCount ?? 0}/${data?.coverageTotal ?? 0}`}
-              </p>
-              <p className="text-xs text-gray-500">areas tracked</p>
-            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
-            <Badge className="border-0 bg-white text-gray-700">
-              {loading ? 'Checking tracked areas...' : data?.coverageLabel}
-            </Badge>
             <Badge className="border-0 bg-white text-gray-700">
               {loading ? 'Checking updates...' : `Last updated ${data?.lastUpdatedLabel}`}
             </Badge>

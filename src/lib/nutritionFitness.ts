@@ -334,19 +334,8 @@ function buildSignals(input: {
 function buildSummaryCards(input: {
   exerciseHabits: NutritionFitnessHabitItem[];
   nutritionHabits: NutritionFitnessHabitItem[];
-  coverageCount: number;
-  coverageTotal: number;
 }) {
   return [
-    {
-      id: 'coverage',
-      label: 'Tracked areas',
-      value: `${input.coverageCount}/${input.coverageTotal}`,
-      detail: 'Vitals plus nutrition and exercise history currently on file.',
-      actionType: 'screen' as const,
-      actionLabel: 'Health Summary',
-      actionScreen: 'health-summary' as const,
-    },
     {
       id: 'exercise',
       label: 'Activity logs',
@@ -511,8 +500,6 @@ export async function fetchNutritionFitnessData(): Promise<NutritionFitnessData>
     summaryCards: buildSummaryCards({
       exerciseHabits,
       nutritionHabits,
-      coverageCount,
-      coverageTotal,
     }),
     signals,
     exerciseHabits,
