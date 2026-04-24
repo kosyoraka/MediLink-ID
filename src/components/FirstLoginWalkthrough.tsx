@@ -27,10 +27,10 @@ export default function FirstLoginWalkthrough({
   const isPrompt = tone === 'prompt';
 
   return (
-    <div className="fixed inset-x-0 top-4 z-[200] flex justify-center px-4">
-      <div className="relative w-full max-w-[360px]">
-        <div className="absolute left-10 top-0 h-4 w-4 -translate-y-1/2 rotate-45 rounded-[4px] bg-slate-900 shadow-[0_8px_24px_rgba(15,23,42,0.24)]" />
-        <div className="relative overflow-hidden rounded-[26px] bg-slate-900 text-white shadow-[0_24px_70px_rgba(15,23,42,0.32)]">
+    <div className="fixed inset-x-0 top-4 z-[300] flex justify-center px-4">
+      <div className="relative isolate w-full max-w-[360px]">
+        <div className="absolute left-10 top-0 h-4 w-4 -translate-y-1/2 rotate-45 rounded-[4px] bg-slate-950 shadow-[0_8px_24px_rgba(15,23,42,0.24)]" />
+        <div className="relative overflow-hidden rounded-[26px] border border-slate-800 bg-slate-950 text-white shadow-[0_24px_70px_rgba(15,23,42,0.36)]">
           <div className="flex items-start justify-between gap-4 px-5 pt-5">
             <div className="inline-flex items-center gap-2 text-sm font-semibold text-sky-300">
               <Sparkles className="h-4 w-4" />
@@ -70,7 +70,7 @@ export default function FirstLoginWalkthrough({
                 <button
                   type="button"
                   onClick={onBack}
-                  className="inline-flex h-12 min-w-[104px] items-center justify-center rounded-full border border-white/18 bg-white/10 px-5 text-sm font-semibold text-white transition hover:bg-white/16"
+                  className="pointer-events-auto inline-flex h-12 min-w-[104px] cursor-pointer items-center justify-center rounded-full border border-slate-600 bg-slate-800 px-5 text-sm font-semibold text-white transition hover:bg-slate-700"
                 >
                   Back
                 </button>
@@ -78,7 +78,7 @@ export default function FirstLoginWalkthrough({
               <button
                 type="button"
                 onClick={onNext}
-                className="inline-flex h-12 min-w-[112px] items-center justify-center rounded-full bg-blue-500 px-5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(59,130,246,0.35)] transition hover:bg-blue-400"
+                className="pointer-events-auto inline-flex h-12 min-w-[112px] cursor-pointer items-center justify-center rounded-full bg-blue-600 px-5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(37,99,235,0.35)] transition hover:bg-blue-500"
               >
                 {nextLabel}
               </button>
