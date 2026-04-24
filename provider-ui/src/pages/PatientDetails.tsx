@@ -1179,7 +1179,7 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <Card className="xl:col-span-2">
           <CardContent className="p-6">
-            <div className="flex flex-col lg:flex-row gap-6">
+            <div className="flex flex-col gap-6 lg:flex-row">
               {patient.photo ? (
                 <img src={patient.photo} alt={displayName} className="w-14 h-14 rounded-xl object-cover" />
               ) : (
@@ -1188,16 +1188,16 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
                 </div>
               )}
 
-              <div className="flex-1">
-                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-                  <div>
-                    <div className="flex items-center gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-3">
                       <h1 className="text-2xl font-bold text-gray-900">{displayName}</h1>
                       <Badge variant={patient.status === 'Active' ? 'success' : 'secondary'}>{patient.status}</Badge>
                     </div>
                     <p className="text-gray-600 mt-1">{patient.patientId}</p>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2 xl:justify-end">
                     <Button variant="outline" size="sm" className="gap-2">
                       <Edit className="w-4 h-4" />
                       Edit Patient
@@ -1209,8 +1209,8 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-6">
-                  <div className="rounded-xl border border-gray-200 p-4">
+                <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-2">
+                  <div className="min-w-0 rounded-xl border border-gray-200 p-4">
                     <p className="text-xs uppercase tracking-wide text-gray-500">Patient Snapshot</p>
                     <div className="mt-3 space-y-3">
                       <div className="flex items-start justify-between gap-4">
@@ -1239,15 +1239,15 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
                       </div>
                       <div className="flex items-start gap-3">
                         <MapPin className="w-4 h-4 text-gray-400 mt-0.5" />
-                        <div>
+                        <div className="min-w-0">
                           <p className="text-sm text-gray-600">Address</p>
-                          <p className="font-medium text-gray-900">{displayAddress || '—'}</p>
+                          <p className="font-medium text-gray-900 break-words">{displayAddress || '—'}</p>
                         </div>
                       </div>
                     </div>
                   </div>
 
-                  <div className="rounded-xl border border-gray-200 p-4">
+                  <div className="min-w-0 rounded-xl border border-gray-200 p-4">
                     <p className="text-xs uppercase tracking-wide text-gray-500">Care Snapshot</p>
                     <div className="mt-3 grid grid-cols-1 gap-3">
                       <div className="rounded-lg bg-gray-50 p-3">
@@ -1256,14 +1256,14 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
                       </div>
                       <div className="rounded-lg bg-gray-50 p-3">
                         <p className="text-xs text-gray-500">Next appointment</p>
-                        <p className="mt-1 font-medium text-gray-900">
+                        <p className="mt-1 font-medium text-gray-900 break-words">
                           {nextAppointment ? formatDateTime(nextAppointment.startTime) : 'None scheduled'}
                         </p>
                       </div>
-                  <div className="rounded-lg bg-gray-50 p-3">
-                    <p className="text-xs text-gray-500">Insurance</p>
-                    <p className="mt-1 font-medium text-gray-900 line-clamp-2">{insuranceSnapshot}</p>
-                  </div>
+                      <div className="rounded-lg bg-gray-50 p-3">
+                        <p className="text-xs text-gray-500">Insurance</p>
+                        <p className="mt-1 font-medium text-gray-900 break-words">{insuranceSnapshot}</p>
+                      </div>
                     </div>
                   </div>
                 </div>

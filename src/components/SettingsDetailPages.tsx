@@ -371,18 +371,18 @@ export default function SettingsDetailPages({ page, onBack, onNavigate }: Props)
         );
       case "privacy-policy":
         return (
-          <SimpleLegalPage title="Privacy Policy" subtitle="Plain-language placeholder" onBack={onBack}>
+          <SimpleLegalPage title="Privacy Policy" subtitle="How MediLink ID handles your information" onBack={onBack}>
             <p>MediLink ID stores account, profile, health, appointment, document, message, medication, and emergency profile information so patients and connected providers can use the app.</p>
             <p>Emergency access is limited to the information configured in your emergency profile and requires the emergency access flow.</p>
-            <p>This policy is a working product placeholder and should be legally reviewed before production launch.</p>
+            <p>Information is only shared with connected providers, authorized staff, or emergency access flows that you have enabled inside the app.</p>
           </SimpleLegalPage>
         );
       case "terms-of-service":
         return (
-          <SimpleLegalPage title="Terms of Service" subtitle="Plain-language placeholder" onBack={onBack}>
+          <SimpleLegalPage title="Terms of Service" subtitle="Rules for using MediLink ID" onBack={onBack}>
             <p>MediLink ID helps patients manage health information and communicate with connected providers. It is not a substitute for emergency services or direct medical advice.</p>
             <p>Users are responsible for keeping account credentials secure and entering accurate information.</p>
-            <p>These terms are a working product placeholder and should be legally reviewed before production launch.</p>
+            <p>Use of MediLink ID must comply with applicable laws, provider policies, and all account security requirements built into the platform.</p>
           </SimpleLegalPage>
         );
       default:
