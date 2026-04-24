@@ -9,7 +9,6 @@ import ResetPassword from './components/onboarding/ResetPassword';
 import ProfileSetup from './components/onboarding/ProfileSetup';
 import ConnectProviders from './components/onboarding/ConnectProviders';
 import Authorization from './components/onboarding/Authorization';
-import EmergencySetup from './components/onboarding/EmergencySetup';
 import Dashboard from './components/Dashboard';
 import MedicalRecords from './components/MedicalRecords';
 import Appointments from './components/Appointments';
@@ -45,7 +44,6 @@ type Screen =
   | 'profile-setup'
   | 'connect-providers'
   | 'authorization'
-  | 'emergency-setup'
   | 'dashboard'
   | 'records'
   | 'appointments'
@@ -128,16 +126,14 @@ export default function App() {
         ? { Authorization: `Bearer ${token}` }
         : undefined;
 
-      const [profileRes, emergencyRes, providersRes] = await Promise.all([
+      const [profileRes, providersRes] = await Promise.all([
         fetch(`${API_BASE}/api/patients/${patientId}/profile`),
-        fetch(`${API_BASE}/api/patients/${patientId}/emergency-profile`),
         fetch(`${API_BASE}/api/patient/connected-providers`, {
           headers: authHeaders,
         }),
       ]);
 
       const profile = profileRes.ok ? await profileRes.json() : null;
-      const emergency = emergencyRes.ok ? await emergencyRes.json() : null;
       const providersData = providersRes.ok ? await providersRes.json() : null;
 
       const profileComplete = Boolean(
@@ -147,7 +143,6 @@ export default function App() {
           profile?.health_card &&
           profile?.phone_number
       );
-      const emergencyComplete = Boolean(emergency?.updated_at);
       const connectedProviderIds = Array.isArray(providersData?.providers)
         ? providersData.providers.map((provider: { id: string }) => provider.id)
         : [];
@@ -177,19 +172,8 @@ export default function App() {
         localStorage.removeItem("profileComplete");
       }
 
-      if (emergencyComplete) {
-        localStorage.setItem("emergencyComplete", "true");
-      } else {
-        localStorage.removeItem("emergencyComplete");
-      }
-
       if (!profileComplete) {
         handleNavigation("profile-setup");
-        return;
-      }
-
-      if (!emergencyComplete) {
-        handleNavigation("emergency-setup");
         return;
       }
 
@@ -233,7 +217,6 @@ export default function App() {
     localStorage.removeItem('patientId');
     localStorage.removeItem('email');
     localStorage.removeItem('profileComplete');
-    localStorage.removeItem('emergencyComplete');
     setIsOnboarded(false);
     setCurrentScreen('welcome');
     setActiveNav('home');
@@ -462,7 +445,7 @@ export default function App() {
                 setConnectedProviders([...connectedProviders, providerId]);
               }
             }}
-            onNext={() => handleNavigation('emergency-setup')}
+            onNext={completeOnboarding}
             onBack={() => handleNavigation('profile-setup')}
           />
         );
@@ -479,9 +462,6 @@ export default function App() {
             }}
           />
         );
-
-      case 'emergency-setup':
-        return <EmergencySetup onFinish={completeOnboarding} />;
 
       case 'dashboard':
         return (
