@@ -385,6 +385,7 @@ function TrendChart({
     const y = height - padding - ((value - paddedMin) / range) * (height - padding * 2);
     return `${x},${y}`;
   });
+  const areaPoints = [`${padding},${height - padding}`, ...points, `${width - padding},${height - padding}`].join(' ');
   const yLabels = Array.from({ length: gridLines + 1 }, (_, index) => {
     return `${paddedMax - tickStep * index}`;
   });
@@ -399,6 +400,12 @@ function TrendChart({
           ))}
         </div>
         <svg viewBox={`0 0 ${width} ${height}`} className="h-[80px] w-full">
+          <defs>
+            <linearGradient id={`trend-fill-${color.replace('#', '')}`} x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor={color} stopOpacity="0.22" />
+              <stop offset="100%" stopColor={color} stopOpacity="0.03" />
+            </linearGradient>
+          </defs>
           {Array.from({ length: gridLines + 1 }, (_, index) => {
             const y = padding + ((height - padding * 2) / gridLines) * index;
             return (
@@ -414,6 +421,7 @@ function TrendChart({
               />
             );
           })}
+          <polygon points={areaPoints} fill={`url(#trend-fill-${color.replace('#', '')})`} />
           <polyline
             fill="none"
             stroke={color}
@@ -524,6 +532,7 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
   const [summaryEditor, setSummaryEditor] = useState<null | 'allergy' | 'blood-contact' | 'immunization' | 'family-history' | 'advance-directives'>(null);
   const [showVitalsModal, setShowVitalsModal] = useState(false);
   const [showAddVitalForm, setShowAddVitalForm] = useState(false);
+  const [generatedTrendGraphs, setGeneratedTrendGraphs] = useState<Partial<Record<ProviderVitalType, boolean>>>({});
   const [resolvingRefillRequestId, setResolvingRefillRequestId] = useState<string | null>(null);
   const [vitalRange, setVitalRange] = useState<VitalRange>('1y');
   const [expandedProviderVitalGroups, setExpandedProviderVitalGroups] = useState<Record<string, boolean>>({});
@@ -2484,30 +2493,32 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
       )}
 
       {showVitalsModal && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-4">
-          <div className="w-full max-w-5xl rounded-2xl bg-white p-5 space-y-5 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-gray-900 text-lg">Shared Vital Trends</h3>
-                <p className="text-sm text-gray-500">Patient-reported vital history and trend view</p>
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm">
+          <div className="flex h-full w-full items-end justify-center sm:items-center sm:p-6">
+            <div className="flex h-[100dvh] w-full max-w-5xl flex-col overflow-hidden bg-white shadow-2xl sm:h-auto sm:max-h-[92vh] sm:rounded-3xl">
+              <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
+                <div>
+                  <h3 className="text-gray-900 text-lg font-semibold">Vitals and Trends</h3>
+                  <p className="text-sm text-gray-500">Review logged vitals and generate trend graphs only when needed.</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => setShowAddVitalForm((current) => !current)}
+                  >
+                    <Plus className="w-4 h-4" />
+                    {showAddVitalForm ? 'Hide Form' : 'Add Vitals'}
+                  </Button>
+                  <button type="button" onClick={() => setShowVitalsModal(false)} className="text-sm text-gray-500">
+                    Close
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-3">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-2"
-                  onClick={() => setShowAddVitalForm((current) => !current)}
-                >
-                  <Plus className="w-4 h-4" />
-                  {showAddVitalForm ? 'Hide Form' : 'Add Vitals'}
-                </Button>
-                <button type="button" onClick={() => setShowVitalsModal(false)} className="text-sm text-gray-500">
-                  Close
-                </button>
-              </div>
-            </div>
-            {showAddVitalForm ? (
-              <div className="rounded-2xl border border-gray-200 p-4 space-y-4">
+              <div className="overflow-y-auto px-5 py-5 space-y-5">
+                {showAddVitalForm ? (
+                  <div className="rounded-2xl border border-gray-200 p-4 space-y-4">
                 <div>
                   <h4 className="text-gray-900 font-medium">Log provider-checked vitals</h4>
                   <p className="text-sm text-gray-500 mt-1">Add any values measured during a visit or hospital check.</p>
@@ -2636,73 +2647,114 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
                     Save Vitals
                   </Button>
                 </div>
-              </div>
-            ) : null}
-            <div className="flex flex-wrap gap-2">
-              {vitalRangeOptions.map((option) => (
-                <button
-                  key={option.key}
-                  type="button"
-                  onClick={() => setVitalRange(option.key)}
-                  className={`rounded-full px-3 py-1 text-xs ${
-                    vitalRange === option.key ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-              {providerVitalSections.map((section) => (
-                <div key={section.key} className="rounded-2xl border border-gray-200 p-4">
-                  <div className="flex items-center justify-between gap-3 mb-3">
-                    <div>
-                      <p className="text-sm text-gray-500">{section.label}</p>
-                      <p className="text-lg font-semibold text-gray-900">{section.latest}</p>
-                    </div>
-                      <p className="text-xs text-gray-500">{latestSharedVitalAt ? `Latest: ${formatDateTime(latestSharedVitalAt)}` : 'No logs yet'}</p>
                   </div>
-                  <TrendChart
-                    values={section.values}
-                    labels={section.labels}
-                  />
-                  <div className="mt-3 space-y-2 max-h-48 overflow-y-auto">
-                    {section.logs.length > 0 ? (
-                      section.logs.map((group) => (
-                        <div key={`${section.key}-${group.label}`} className="space-y-2">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setExpandedProviderVitalGroups((current) => ({
-                                ...current,
-                                [`${section.key}-${group.label}`]: !current[`${section.key}-${group.label}`],
-                              }))
-                            }
-                            className="flex w-full items-center justify-between rounded-xl bg-gray-50 px-3 py-2 text-left"
-                          >
-                            <span className="text-xs font-medium uppercase tracking-wide text-gray-500">{group.label}</span>
-                            <span className="text-xs text-gray-500">
-                              {group.items.length} {group.items.length === 1 ? 'entry' : 'entries'}
-                            </span>
-                          </button>
-                          {expandedProviderVitalGroups[`${section.key}-${group.label}`] ? (
-                            group.items.map((log, index) => (
-                              <div key={`${section.key}-${group.label}-${log.date}-${index}`} className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2">
-                                <span className="text-sm text-gray-900">{log.value}</span>
-                                <span className="text-xs text-gray-500">{formatDateTime(log.date)}</span>
-                              </div>
-                            ))
-                          ) : null}
-                        </div>
-                      ))
-                    ) : (
-                      <div className="rounded-xl border border-dashed border-gray-200 px-3 py-6 text-center text-sm text-gray-500">
-                        No shared logs yet.
-                      </div>
-                    )}
+                ) : null}
+                <div className="rounded-2xl border border-gray-200 bg-gray-50/70 p-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium text-gray-700">Time range</span>
+                    {vitalRangeOptions.map((option) => (
+                      <button
+                        key={option.key}
+                        type="button"
+                        onClick={() => setVitalRange(option.key)}
+                        className={`rounded-full px-3 py-1 text-xs ${
+                          vitalRange === option.key ? 'bg-blue-600 text-white' : 'border border-gray-200 bg-white text-gray-600'
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
                   </div>
                 </div>
-              ))}
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                  {providerVitalSections.map((section) => (
+                    <div key={section.key} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                      <div className="mb-3 flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm text-gray-500">{section.label}</p>
+                          <p className="text-lg font-semibold text-gray-900">{section.latest}</p>
+                        </div>
+                        <p className="text-xs text-gray-500">{latestSharedVitalAt ? `Latest: ${formatDateTime(latestSharedVitalAt)}` : 'No logs yet'}</p>
+                      </div>
+                      {generatedTrendGraphs[section.key] ? (
+                        <div className="space-y-3">
+                          <TrendChart values={section.values} labels={section.labels} />
+                          <div className="flex justify-end">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() =>
+                                setGeneratedTrendGraphs((current) => ({
+                                  ...current,
+                                  [section.key]: false,
+                                }))
+                              }
+                            >
+                              Hide Graph
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-6 text-center">
+                          <p className="text-sm font-medium text-gray-700">Trend graph hidden</p>
+                          <p className="mt-1 text-sm text-gray-500">
+                            Generate a clean graph for {section.label.toLowerCase()} when you want to review the pattern.
+                          </p>
+                          <Button
+                            variant="outline"
+                            className="mt-4"
+                            size="sm"
+                            onClick={() =>
+                              setGeneratedTrendGraphs((current) => ({
+                                ...current,
+                                [section.key]: true,
+                              }))
+                            }
+                            disabled={section.values.length === 0}
+                          >
+                            Generate Trend Graph
+                          </Button>
+                        </div>
+                      )}
+                      <div className="mt-3 space-y-2 max-h-48 overflow-y-auto">
+                        {section.logs.length > 0 ? (
+                          section.logs.map((group) => (
+                            <div key={`${section.key}-${group.label}`} className="space-y-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setExpandedProviderVitalGroups((current) => ({
+                                    ...current,
+                                    [`${section.key}-${group.label}`]: !current[`${section.key}-${group.label}`],
+                                  }))
+                                }
+                                className="flex w-full items-center justify-between rounded-xl bg-gray-50 px-3 py-2 text-left"
+                              >
+                                <span className="text-xs font-medium uppercase tracking-wide text-gray-500">{group.label}</span>
+                                <span className="text-xs text-gray-500">
+                                  {group.items.length} {group.items.length === 1 ? 'entry' : 'entries'}
+                                </span>
+                              </button>
+                              {expandedProviderVitalGroups[`${section.key}-${group.label}`] ? (
+                                group.items.map((log, index) => (
+                                  <div key={`${section.key}-${group.label}-${log.date}-${index}`} className="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2">
+                                    <span className="text-sm text-gray-900">{log.value}</span>
+                                    <span className="text-xs text-gray-500">{formatDateTime(log.date)}</span>
+                                  </div>
+                                ))
+                              ) : null}
+                            </div>
+                          ))
+                        ) : (
+                          <div className="rounded-xl border border-dashed border-gray-200 px-3 py-6 text-center text-sm text-gray-500">
+                            No shared logs yet.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </div>
