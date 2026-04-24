@@ -3,7 +3,6 @@ import {
   AlertCircle,
   Apple,
   ArrowLeft,
-  ClipboardList,
   Dumbbell,
   Pencil,
   Plus,
@@ -16,11 +15,9 @@ import { Badge } from './ui/badge';
 import { api, type PatientSocialHistoryEntry } from '@/lib/api';
 import {
   fetchNutritionFitnessData,
-  type NutritionFitnessActionItem,
   type NutritionFitnessData,
   type NutritionFitnessEditorKind,
   type NutritionFitnessHabitItem,
-  type NutritionFitnessSummaryCard,
 } from '@/lib/nutritionFitness';
 import type { PatientDataScreen } from '@/lib/patientDataNavigation';
 
@@ -43,26 +40,6 @@ type ActiveEditorState = {
   mode: 'create' | 'edit';
   entryId?: string;
 } | null;
-
-const summaryIconMap: Record<string, typeof ClipboardList> = {
-  exercise: Dumbbell,
-  nutrition: Apple,
-};
-
-const actionPriorityClasses = {
-  high: {
-    border: 'border-red-200',
-    badge: 'bg-red-100 text-red-700',
-  },
-  medium: {
-    border: 'border-amber-200',
-    badge: 'bg-amber-100 text-amber-700',
-  },
-  low: {
-    border: 'border-blue-200',
-    badge: 'bg-blue-100 text-blue-700',
-  },
-} as const;
 
 const editorCopy: Record<
   NutritionFitnessEditorKind,
@@ -266,35 +243,6 @@ function HabitEditor({
   );
 }
 
-function SummaryCard({
-  item,
-  onAction,
-}: {
-  item: NutritionFitnessSummaryCard;
-  onAction: (item: NutritionFitnessSummaryCard) => void;
-}) {
-  const Icon = summaryIconMap[item.id] || ClipboardList;
-
-  return (
-    <div className="rounded-xl border border-gray-200 bg-white p-4">
-      <div className="mb-3 flex items-start gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
-          <Icon className="h-5 w-5" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm text-gray-600">{item.label}</p>
-          <p className="mt-1 text-2xl text-gray-900">{item.value}</p>
-        </div>
-      </div>
-
-      <p className="mb-3 text-sm text-gray-600">{item.detail}</p>
-      <Button size="sm" variant="outline" onClick={() => onAction(item)}>
-        {item.actionLabel}
-      </Button>
-    </div>
-  );
-}
-
 function HabitCard({
   kind,
   item,
@@ -413,32 +361,6 @@ function HabitSection({
   );
 }
 
-function ActionCard({
-  item,
-  onAction,
-}: {
-  item: NutritionFitnessActionItem;
-  onAction: (item: NutritionFitnessActionItem) => void;
-}) {
-  const styles = actionPriorityClasses[item.priority];
-
-  return (
-    <div className={`rounded-xl border-2 bg-white p-5 ${styles.border}`}>
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div>
-          <h4 className="text-gray-900">{item.title}</h4>
-          <p className="mt-2 text-sm text-gray-600">{item.description}</p>
-        </div>
-        <Badge className={`border-0 ${styles.badge}`}>{item.priority}</Badge>
-      </div>
-
-      <Button size="sm" className="bg-teal-600 text-white hover:bg-teal-700" onClick={() => onAction(item)}>
-        {item.actionLabel}
-      </Button>
-    </div>
-  );
-}
-
 export default function NutritionFitness({ onBack, onNavigate }: NutritionFitnessProps) {
   const [data, setData] = useState<NutritionFitnessData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -485,24 +407,6 @@ export default function NutritionFitness({ onBack, onNavigate }: NutritionFitnes
 
   const exerciseItems = data?.exerciseHabits || [];
   const nutritionItems = data?.nutritionHabits || [];
-
-  const handleAction = (
-    item: NutritionFitnessSummaryCard | NutritionFitnessActionItem
-  ) => {
-    if (item.actionType === 'screen') {
-      onNavigate(item.actionScreen);
-      return;
-    }
-
-    const matchingItems = item.actionEditor === 'exercise' ? exerciseItems : nutritionItems;
-
-    if (matchingItems.length > 0) {
-      openEditEditor(item.actionEditor, matchingItems[0].entry);
-      return;
-    }
-
-    openCreateEditor(item.actionEditor);
-  };
 
   const handleSaveEditor = async () => {
     if (!activeEditor) return;
@@ -647,12 +551,6 @@ export default function NutritionFitness({ onBack, onNavigate }: NutritionFitnes
 
         {!loading && !error && data && (
           <>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {data.summaryCards.map((item) => (
-                <SummaryCard key={item.id} item={item} onAction={handleAction} />
-              ))}
-            </div>
-
             <HabitSection
               kind="exercise"
               title="Activity, steps & workouts"
@@ -690,15 +588,6 @@ export default function NutritionFitness({ onBack, onNavigate }: NutritionFitnes
               onEdit={(item) => openEditEditor('nutrition', item.entry)}
               onDelete={(item) => void handleDeleteEntry('nutrition', item)}
             />
-
-            <div>
-              <h3 className="mb-3 text-gray-900">Suggested next steps</h3>
-              <div className="space-y-3">
-                {data.actionItems.map((item) => (
-                  <ActionCard key={item.id} item={item} onAction={handleAction} />
-                ))}
-              </div>
-            </div>
 
             <div className="rounded-xl border border-dashed border-gray-300 bg-white p-5">
               <h3 className="text-gray-900">Where to add more data</h3>
