@@ -2495,7 +2495,7 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
       {showVitalsModal && (
         <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm">
           <div className="flex h-full w-full items-end justify-center sm:items-center sm:p-6">
-            <div className="flex h-[100dvh] w-full max-w-5xl flex-col overflow-hidden bg-white shadow-2xl sm:h-auto sm:max-h-[92vh] sm:rounded-3xl">
+            <div className="flex h-[100dvh] w-full max-w-5xl min-h-0 flex-col overflow-hidden bg-white shadow-2xl sm:h-auto sm:max-h-[92vh] sm:rounded-3xl">
               <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
                 <div>
                   <h3 className="text-gray-900 text-lg font-semibold">Vitals and Trends</h3>
@@ -2516,7 +2516,7 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
                   </button>
                 </div>
               </div>
-              <div className="overflow-y-auto px-5 py-5 space-y-5">
+              <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 space-y-5 overscroll-contain">
                 {showAddVitalForm ? (
                   <div className="rounded-2xl border border-gray-200 p-4 space-y-4">
                 <div>
