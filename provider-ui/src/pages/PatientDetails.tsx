@@ -2512,51 +2512,120 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
                   <h4 className="text-gray-900 font-medium">Log provider-checked vitals</h4>
                   <p className="text-sm text-gray-500 mt-1">Add any values measured during a visit or hospital check.</p>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                  <input
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2"
-                    placeholder="Systolic"
-                    value={vitalEntryForm.systolic}
-                    onChange={(e) => setVitalEntryForm((current) => ({ ...current, systolic: e.target.value }))}
-                  />
-                  <input
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2"
-                    placeholder="Diastolic"
-                    value={vitalEntryForm.diastolic}
-                    onChange={(e) => setVitalEntryForm((current) => ({ ...current, diastolic: e.target.value }))}
-                  />
-                  <input
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2"
-                    placeholder="Heart rate (bpm)"
-                    value={vitalEntryForm.heartRate}
-                    onChange={(e) => setVitalEntryForm((current) => ({ ...current, heartRate: e.target.value }))}
-                  />
-                  <input
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2"
-                    placeholder="Weight"
-                    value={vitalEntryForm.weight}
-                    onChange={(e) => setVitalEntryForm((current) => ({ ...current, weight: e.target.value }))}
-                  />
-                  <select
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2"
-                    value={vitalEntryForm.weightUnit}
-                    onChange={(e) => setVitalEntryForm((current) => ({ ...current, weightUnit: e.target.value as WeightUnit }))}
-                  >
-                    <option value="lbs">lbs</option>
-                    <option value="kg">kg</option>
-                  </select>
-                  <input
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2"
-                    placeholder="Blood sugar (mg/dL)"
-                    value={vitalEntryForm.bloodSugar}
-                    onChange={(e) => setVitalEntryForm((current) => ({ ...current, bloodSugar: e.target.value }))}
-                  />
-                  <input
-                    type="datetime-local"
-                    className="w-full rounded-lg border border-gray-200 px-3 py-2"
-                    value={vitalEntryForm.recordedAt}
-                    onChange={(e) => setVitalEntryForm((current) => ({ ...current, recordedAt: e.target.value }))}
-                  />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="rounded-xl bg-gray-50 p-4 space-y-3">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">Blood Pressure</p>
+                      <p className="text-xs text-gray-500 mt-1">Enter both values if blood pressure was measured.</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <label className="space-y-2">
+                        <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Systolic</span>
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2"
+                          placeholder="120"
+                          value={vitalEntryForm.systolic}
+                          onChange={(e) => setVitalEntryForm((current) => ({ ...current, systolic: e.target.value }))}
+                        />
+                      </label>
+                      <label className="space-y-2">
+                        <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Diastolic</span>
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2"
+                          placeholder="80"
+                          value={vitalEntryForm.diastolic}
+                          onChange={(e) => setVitalEntryForm((current) => ({ ...current, diastolic: e.target.value }))}
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl bg-gray-50 p-4 space-y-3">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">Heart Rate</p>
+                      <p className="text-xs text-gray-500 mt-1">Beats per minute.</p>
+                    </div>
+                    <label className="space-y-2">
+                      <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Heart Rate (bpm)</span>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2"
+                        placeholder="72"
+                        value={vitalEntryForm.heartRate}
+                        onChange={(e) => setVitalEntryForm((current) => ({ ...current, heartRate: e.target.value }))}
+                      />
+                    </label>
+                  </div>
+
+                  <div className="rounded-xl bg-gray-50 p-4 space-y-3">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">Weight</p>
+                      <p className="text-xs text-gray-500 mt-1">Record the measured weight and unit.</p>
+                    </div>
+                    <div className="grid grid-cols-[minmax(0,1fr)_110px] gap-3">
+                      <label className="space-y-2">
+                        <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Weight</span>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2"
+                          placeholder="165"
+                          value={vitalEntryForm.weight}
+                          onChange={(e) => setVitalEntryForm((current) => ({ ...current, weight: e.target.value }))}
+                        />
+                      </label>
+                      <label className="space-y-2">
+                        <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Unit</span>
+                        <select
+                          className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2"
+                          value={vitalEntryForm.weightUnit}
+                          onChange={(e) => setVitalEntryForm((current) => ({ ...current, weightUnit: e.target.value as WeightUnit }))}
+                        >
+                          <option value="lbs">lbs</option>
+                          <option value="kg">kg</option>
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl bg-gray-50 p-4 space-y-3">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">Blood Sugar</p>
+                      <p className="text-xs text-gray-500 mt-1">Use mg/dL.</p>
+                    </div>
+                    <label className="space-y-2">
+                      <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Blood Sugar (mg/dL)</span>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2"
+                        placeholder="98"
+                        value={vitalEntryForm.bloodSugar}
+                        onChange={(e) => setVitalEntryForm((current) => ({ ...current, bloodSugar: e.target.value }))}
+                      />
+                    </label>
+                  </div>
+
+                  <div className="rounded-xl bg-gray-50 p-4 space-y-3 md:col-span-2">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">Recorded Time</p>
+                      <p className="text-xs text-gray-500 mt-1">Leave blank to use the current time.</p>
+                    </div>
+                    <label className="space-y-2">
+                      <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Recorded At</span>
+                      <input
+                        type="datetime-local"
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2"
+                        value={vitalEntryForm.recordedAt}
+                        onChange={(e) => setVitalEntryForm((current) => ({ ...current, recordedAt: e.target.value }))}
+                      />
+                    </label>
+                  </div>
                 </div>
                 <div className="flex gap-3">
                   <Button variant="outline" onClick={() => setShowAddVitalForm(false)}>
