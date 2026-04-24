@@ -612,14 +612,14 @@ export default function NutritionFitness({ onBack, onNavigate }: NutritionFitnes
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="bg-gradient-to-br from-emerald-600 via-teal-600 to-cyan-700 p-6 text-white">
+      <div className="border-b border-emerald-100 bg-white p-6 text-gray-900 dark:border-white/10 dark:bg-gradient-to-br dark:from-emerald-600 dark:via-teal-600 dark:to-cyan-700 dark:text-white">
         <div className="mb-4 flex items-center gap-3">
-          <button onClick={onBack} className="text-white">
+          <button onClick={onBack} className="text-gray-700 dark:text-white">
             <ArrowLeft className="h-6 w-6" />
           </button>
-          <h1 className="text-white">Nutrition & Fitness</h1>
+          <h1 className="text-gray-900 dark:text-white">Nutrition & Fitness</h1>
         </div>
-        <p className="text-sm text-emerald-100">
+        <p className="text-sm text-gray-600 dark:text-emerald-100">
           Built from the vitals and lifestyle history currently saved in your MediLink account.
         </p>
       </div>
