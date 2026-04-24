@@ -332,12 +332,11 @@ function buildSignals(input: {
 }
 
 function buildSummaryCards(input: {
-  signals: NutritionFitnessSignalItem[];
+  exerciseHabits: NutritionFitnessHabitItem[];
+  nutritionHabits: NutritionFitnessHabitItem[];
   coverageCount: number;
   coverageTotal: number;
 }) {
-  const vitalTypesTracked = input.signals.filter((signal) => !signal.value.toLowerCase().includes('not logged')).length;
-
   return [
     {
       id: 'coverage',
@@ -349,171 +348,89 @@ function buildSummaryCards(input: {
       actionScreen: 'health-summary' as const,
     },
     {
-      id: 'vitals',
-      label: 'Vital types',
-      value: `${vitalTypesTracked}/4`,
-      detail: input.signals.some((signal) => signal.id === 'weight' && !signal.value.toLowerCase().includes('not logged'))
-        ? 'Includes your latest weight trend.'
-        : 'Add vitals in Health Summary to populate this view.',
-      actionType: 'screen' as const,
-      actionLabel: 'Open Health Summary',
-      actionScreen: 'health-summary' as const,
+      id: 'exercise',
+      label: 'Activity logs',
+      value: `${input.exerciseHabits.length}`,
+      detail:
+        input.exerciseHabits[0]?.title ||
+        'Add steps, walks, workouts, or activity routines here.',
+      actionType: 'editor' as const,
+      actionLabel: input.exerciseHabits.length > 0 ? 'Manage activity logs' : 'Add activity log',
+      actionEditor: 'exercise' as const,
+    },
+    {
+      id: 'nutrition',
+      label: 'Meal logs',
+      value: `${input.nutritionHabits.length}`,
+      detail:
+        input.nutritionHabits[0]?.title ||
+        'Add meals, snacks, calories, and nutrition notes here.',
+      actionType: 'editor' as const,
+      actionLabel: input.nutritionHabits.length > 0 ? 'Manage meal logs' : 'Add meal log',
+      actionEditor: 'nutrition' as const,
     },
   ];
 }
 
 function buildActionItems(input: {
-  summary: HealthSummaryPayload | null;
-  conditions: HealthSummaryCondition[];
   exerciseEntries: PatientSocialHistoryEntry[];
   nutritionEntries: PatientSocialHistoryEntry[];
 }) {
-  const vitals = input.summary?.vitals || [];
-  const latestWeight = getLatestVitalForType(vitals, 'weight');
-  const latestBloodPressure = getLatestVitalForType(vitals, 'bloodPressure');
-  const latestHeartRate = getLatestVitalForType(vitals, 'heartRate');
-  const latestBloodSugar = getLatestVitalForType(vitals, 'bloodSugar');
-  const normalizedConditions = input.conditions.map((condition) => normalizeText(condition.name));
-  const hasCardioFocus = normalizedConditions.some(
-    (name) => name.includes('hypertension') || name.includes('blood pressure') || name.includes('heart') || name.includes('cardio')
-  );
-  const hasGlucoseFocus = normalizedConditions.some(
-    (name) => name.includes('diabetes') || name.includes('prediabetes') || name.includes('glucose') || name.includes('insulin')
-  );
-
   const items: NutritionFitnessActionItem[] = [];
-
-  if (!latestWeight) {
-    items.push({
-      id: 'log-weight',
-      title: 'Add a weight baseline',
-      description: 'This page can show weight trends once you log at least one weight entry.',
-      priority: 'high',
-      actionType: 'screen',
-      actionLabel: 'Log weight',
-      actionScreen: 'health-summary',
-    });
-  } else if (isOlderThan(latestWeight.recordedAt, 90)) {
-    items.push({
-      id: 'refresh-weight',
-      title: 'Refresh your weight trend',
-      description: `Your latest weight log is from ${formatDateLabel(latestWeight.recordedAt)}.`,
-      priority: 'medium',
-      actionType: 'screen',
-      actionLabel: 'Update weight',
-      actionScreen: 'health-summary',
-    });
-  }
 
   if (input.exerciseEntries.length === 0) {
     items.push({
-      id: 'add-exercise',
-      title: 'Add an exercise habit',
-      description: 'Save your movement routine here so the exercise section reflects it.',
+      id: 'add-activity',
+      title: 'Add your first activity log',
+      description: 'Track steps, walks, workouts, or calories burned so this page starts reflecting your activity.',
       priority: 'high',
       actionType: 'editor',
-      actionLabel: 'Add exercise',
+      actionLabel: 'Add activity log',
       actionEditor: 'exercise',
     });
   } else if (isOlderThan(input.exerciseEntries[0]?.updatedAt || input.exerciseEntries[0]?.endDate || input.exerciseEntries[0]?.startDate, 180)) {
     items.push({
-      id: 'review-exercise',
-      title: 'Review your exercise history',
-      description: 'Your movement history looks older, so a quick update would keep this page accurate.',
+      id: 'review-activity',
+      title: 'Add a more recent activity log',
+      description: 'Your activity entries look older, so a fresh steps or workout update would keep this page current.',
       priority: 'medium',
       actionType: 'editor',
-      actionLabel: 'Review exercise history',
+      actionLabel: 'Add activity log',
       actionEditor: 'exercise',
     });
   }
 
   if (input.nutritionEntries.length === 0) {
     items.push({
-      id: 'add-nutrition',
-      title: 'Add a nutrition habit',
-      description: 'Diet-related history is not on file yet, so the nutrition section is still sparse.',
+      id: 'add-meal-log',
+      title: 'Add your first meal log',
+      description: 'Track a meal, snack, or daily calorie total so this page starts reflecting your nutrition.',
       priority: 'high',
       actionType: 'editor',
-      actionLabel: 'Add nutrition',
+      actionLabel: 'Add meal log',
       actionEditor: 'nutrition',
     });
   } else if (isOlderThan(input.nutritionEntries[0]?.updatedAt || input.nutritionEntries[0]?.endDate || input.nutritionEntries[0]?.startDate, 180)) {
     items.push({
-      id: 'review-nutrition',
-      title: 'Review your nutrition history',
-      description: 'A recent update would make the nutrition view more current.',
+      id: 'review-meal-logs',
+      title: 'Add a more recent meal log',
+      description: 'Your meal entries look older, so a new meal, snack, or calorie update would make this page feel current.',
       priority: 'medium',
       actionType: 'editor',
-      actionLabel: 'Review nutrition history',
+      actionLabel: 'Add meal log',
       actionEditor: 'nutrition',
-    });
-  }
-
-  if (!latestBloodPressure && hasCardioFocus) {
-    items.push({
-      id: 'log-blood-pressure',
-      title: 'Log a blood pressure reading',
-      description: 'A heart or blood-pressure-related condition is on file, so this signal matters here.',
-      priority: 'high',
-      actionType: 'screen',
-      actionLabel: 'Log blood pressure',
-      actionScreen: 'health-summary',
-    });
-  } else if (latestBloodPressure && isOlderThan(latestBloodPressure.recordedAt, 90) && hasCardioFocus) {
-    items.push({
-      id: 'refresh-blood-pressure',
-      title: 'Update your blood pressure reading',
-      description: `Your latest blood pressure log is from ${formatDateLabel(latestBloodPressure.recordedAt)}.`,
-      priority: 'medium',
-      actionType: 'screen',
-      actionLabel: 'Open Health Summary',
-      actionScreen: 'health-summary',
-    });
-  }
-
-  if (!latestHeartRate && !hasCardioFocus) {
-    items.push({
-      id: 'log-heart-rate',
-      title: 'Add a heart rate log',
-      description: 'Heart rate is still missing, so your fitness snapshot is incomplete.',
-      priority: 'medium',
-      actionType: 'screen',
-      actionLabel: 'Log heart rate',
-      actionScreen: 'health-summary',
-    });
-  }
-
-  if (!latestBloodSugar && hasGlucoseFocus) {
-    items.push({
-      id: 'log-blood-sugar',
-      title: 'Add a blood sugar reading',
-      description: 'A glucose-related condition is on file, so this metric may be useful to keep current.',
-      priority: 'medium',
-      actionType: 'screen',
-      actionLabel: 'Log blood sugar',
-      actionScreen: 'health-summary',
-    });
-  } else if (latestBloodSugar && isOlderThan(latestBloodSugar.recordedAt, 90) && hasGlucoseFocus) {
-    items.push({
-      id: 'refresh-blood-sugar',
-      title: 'Refresh your blood sugar history',
-      description: `Your latest blood sugar reading is from ${formatDateLabel(latestBloodSugar.recordedAt)}.`,
-      priority: 'medium',
-      actionType: 'screen',
-      actionLabel: 'Open Health Summary',
-      actionScreen: 'health-summary',
     });
   }
 
   if (items.length === 0) {
     items.push({
       id: 'review-overview',
-      title: 'Keep your wellness overview current',
-      description: 'Your current data already fills this page well. Review it any time you add new vitals or lifestyle history.',
+      title: 'Keep your activity and meal logs current',
+      description: 'You already have useful entries here. Add new activity or meal logs any time your routine changes.',
       priority: 'low',
-      actionType: 'screen',
-      actionLabel: 'Open Health Summary',
-      actionScreen: 'health-summary',
+      actionType: 'editor',
+      actionLabel: 'Add activity log',
+      actionEditor: 'exercise',
     });
   }
 
@@ -592,7 +509,8 @@ export async function fetchNutritionFitnessData(): Promise<NutritionFitnessData>
     coverageLabel: `${coverageCount} of ${coverageTotal} wellness areas currently tracked`,
     overview,
     summaryCards: buildSummaryCards({
-      signals,
+      exerciseHabits,
+      nutritionHabits,
       coverageCount,
       coverageTotal,
     }),
@@ -600,8 +518,6 @@ export async function fetchNutritionFitnessData(): Promise<NutritionFitnessData>
     exerciseHabits,
     nutritionHabits,
     actionItems: buildActionItems({
-      summary,
-      conditions: activeConditions,
       exerciseEntries,
       nutritionEntries,
     }),

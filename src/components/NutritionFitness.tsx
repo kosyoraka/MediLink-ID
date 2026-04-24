@@ -73,9 +73,15 @@ const editorCopy: Record<
     addLabel: string;
     titleLabel: string;
     titlePlaceholder: string;
+    statusLabel: string;
     statusPlaceholder: string;
+    startDateLabel: string;
+    endDateLabel: string;
     detailPlaceholder: string;
     notesPlaceholder: string;
+    helperTitle: string;
+    helperDescription: string;
+    helperExamples: string[];
   }
 > = {
   exercise: {
@@ -83,18 +89,30 @@ const editorCopy: Record<
     addLabel: 'Add activity log',
     titleLabel: 'Activity title',
     titlePlaceholder: '10,200 steps, treadmill workout, evening walk',
+    statusLabel: 'Activity type or progress',
     statusPlaceholder: 'Daily goal hit, active week, current routine',
+    startDateLabel: 'Activity date',
+    endDateLabel: 'End date (optional for routines)',
     detailPlaceholder: 'Log steps, workout type, duration, distance, calories burned, or activity changes over time',
     notesPlaceholder: 'Anything else you want to remember about this activity or movement routine',
+    helperTitle: 'What to log here',
+    helperDescription: 'Use one entry for a single activity session or for a repeating routine you want to keep on file.',
+    helperExamples: ['Steps for the day', 'Workout or walk duration', 'Calories burned', 'Distance or routine details'],
   },
   nutrition: {
     title: 'Meal or nutrition log',
     addLabel: 'Add nutrition log',
     titleLabel: 'Meal or nutrition title',
     titlePlaceholder: 'Breakfast, afternoon snack, 1,850 calorie day',
+    statusLabel: 'Meal type or nutrition status',
     statusPlaceholder: 'On plan, higher protein, meal prep week',
+    startDateLabel: 'Meal or log date',
+    endDateLabel: 'End date (optional for plans)',
     detailPlaceholder: 'Track meals, snacks, calories, portions, hydration, restrictions, or provider guidance you are following',
     notesPlaceholder: 'Anything else you want to track about this meal, snack, or nutrition plan',
+    helperTitle: 'What to log here',
+    helperDescription: 'Use one entry for a meal, snack, or a single-day nutrition summary. Longer plans can still use an end date.',
+    helperExamples: ['Calories for the meal or day', 'Foods and snacks eaten', 'Portions or hydration', 'Goals or provider guidance'],
   },
 };
 
@@ -162,6 +180,18 @@ function HabitEditor({
         </div>
       ) : null}
 
+      <div className="mb-4 rounded-lg border border-white/70 bg-white/80 p-3">
+        <p className="text-sm font-medium text-gray-900">{copy.helperTitle}</p>
+        <p className="mt-1 text-sm text-gray-600">{copy.helperDescription}</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {copy.helperExamples.map((example) => (
+            <Badge key={example} className="border-0 bg-teal-100 text-teal-800">
+              {example}
+            </Badge>
+          ))}
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 gap-3">
         <label className="text-sm text-gray-700">
           {copy.titleLabel}
@@ -174,7 +204,7 @@ function HabitEditor({
         </label>
 
         <label className="text-sm text-gray-700">
-          Status
+          {copy.statusLabel}
           <input
             className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2"
             value={values.status}
@@ -185,7 +215,7 @@ function HabitEditor({
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className="text-sm text-gray-700">
-            Start date
+            {copy.startDateLabel}
             <input
               type="date"
               className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2"
@@ -195,7 +225,7 @@ function HabitEditor({
           </label>
 
           <label className="text-sm text-gray-700">
-            End date
+            {copy.endDateLabel}
             <input
               type="date"
               className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2"
@@ -637,10 +667,10 @@ export default function NutritionFitness({ onBack, onNavigate }: NutritionFitnes
             <HabitSection
               kind="exercise"
               title="Activity, steps & workouts"
-              description="Log step counts, workouts, walks, exercise routines, and calories burned here."
+              description="Use one entry per day, workout, walk, step count, or repeating routine."
               items={exerciseItems}
               emptyTitle="No activity logs saved yet"
-              emptyDescription="Add steps, workouts, walking routines, or movement goals here so this section reflects what you actually do."
+              emptyDescription="Add entries like steps, workouts, walks, calories burned, or recurring exercise plans here."
               addLabel="Add activity log"
               createEditor={
                 activeEditor?.kind === 'exercise' && activeEditor.mode === 'create' ? renderEditor('exercise') : undefined
@@ -655,10 +685,10 @@ export default function NutritionFitness({ onBack, onNavigate }: NutritionFitnes
             <HabitSection
               kind="nutrition"
               title="Meals, calories & snacks"
-              description="Log meals, snacks, calorie totals, hydration notes, and nutrition plans here."
+              description="Use one entry per meal, snack, calorie summary, or longer nutrition plan."
               items={nutritionItems}
               emptyTitle="No meal or nutrition logs saved yet"
-              emptyDescription="Add meals, snacks, calorie notes, or eating patterns here so this section reflects your daily nutrition."
+              emptyDescription="Add entries like breakfast, lunch, dinner, snacks, calories, hydration, or meal plans here."
               addLabel="Add nutrition log"
               createEditor={
                 activeEditor?.kind === 'nutrition' && activeEditor.mode === 'create'
