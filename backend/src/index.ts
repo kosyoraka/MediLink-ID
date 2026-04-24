@@ -544,19 +544,23 @@ async function applyPatientIntakeToProfiles(
       last_name,
       dob,
       phone_number,
-      home_address,
-      insurance,
-      health_card
+      health_card,
+      home_address_line1,
+      blood_type,
+      allergies,
+      medical_conditions
     )
-    VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8)
+    VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10)
     ON CONFLICT (patient_id) DO UPDATE SET
       first_name = EXCLUDED.first_name,
       last_name = EXCLUDED.last_name,
       dob = EXCLUDED.dob,
       phone_number = EXCLUDED.phone_number,
-      home_address = EXCLUDED.home_address,
-      insurance = EXCLUDED.insurance,
-      health_card = EXCLUDED.health_card
+      health_card = EXCLUDED.health_card,
+      home_address_line1 = EXCLUDED.home_address_line1,
+      blood_type = EXCLUDED.blood_type,
+      allergies = EXCLUDED.allergies,
+      medical_conditions = EXCLUDED.medical_conditions
     `,
     [
       patientId,
@@ -564,9 +568,11 @@ async function applyPatientIntakeToProfiles(
       lastName,
       intake.dob ?? null,
       intake.phoneNumber ?? null,
-      intake.homeAddress ?? null,
-      intake.insurance ?? null,
       intake.healthCard ?? null,
+      intake.homeAddress ?? null,
+      intake.bloodType ?? null,
+      intake.allergies ?? null,
+      intake.medicalConditions ?? null,
     ]
   );
 
