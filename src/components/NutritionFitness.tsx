@@ -1,19 +1,15 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import {
-  Activity,
   AlertCircle,
   Apple,
   ArrowLeft,
   ClipboardList,
   Dumbbell,
-  Heart,
   Pencil,
   Plus,
   RefreshCw,
-  Scale,
   Sparkles,
   Trash2,
-  Waves,
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -24,7 +20,6 @@ import {
   type NutritionFitnessData,
   type NutritionFitnessEditorKind,
   type NutritionFitnessHabitItem,
-  type NutritionFitnessSignalItem,
   type NutritionFitnessSummaryCard,
 } from '@/lib/nutritionFitness';
 import type { PatientDataScreen } from '@/lib/patientDataNavigation';
@@ -51,16 +46,9 @@ type ActiveEditorState = {
 
 const summaryIconMap: Record<string, typeof ClipboardList> = {
   coverage: ClipboardList,
-  vitals: Activity,
+  vitals: ClipboardList,
   exercise: Dumbbell,
   nutrition: Apple,
-};
-
-const signalIconMap: Record<NutritionFitnessSignalItem['id'], typeof Activity> = {
-  weight: Scale,
-  bloodPressure: Heart,
-  heartRate: Activity,
-  bloodSugar: Waves,
 };
 
 const actionPriorityClasses = {
@@ -91,22 +79,22 @@ const editorCopy: Record<
   }
 > = {
   exercise: {
-    title: 'Exercise habit',
-    addLabel: 'Add exercise habit',
-    titleLabel: 'Exercise title',
-    titlePlaceholder: 'Walk 30 minutes, 5 days a week',
-    statusPlaceholder: 'Current routine',
-    detailPlaceholder: 'Cardio, strength, mobility, frequency, intensity, or changes over time',
-    notesPlaceholder: 'Anything else you want to remember about this routine',
+    title: 'Activity log',
+    addLabel: 'Add activity log',
+    titleLabel: 'Activity title',
+    titlePlaceholder: '10,200 steps, treadmill workout, evening walk',
+    statusPlaceholder: 'Daily goal hit, active week, current routine',
+    detailPlaceholder: 'Log steps, workout type, duration, distance, calories burned, or activity changes over time',
+    notesPlaceholder: 'Anything else you want to remember about this activity or movement routine',
   },
   nutrition: {
-    title: 'Nutrition habit',
-    addLabel: 'Add nutrition habit',
-    titleLabel: 'Nutrition title',
-    titlePlaceholder: 'Mediterranean-style eating plan',
-    statusPlaceholder: 'Current approach',
-    detailPlaceholder: 'Meals, restrictions, goals, or provider guidance you are following',
-    notesPlaceholder: 'Anything else you want to track about this nutrition habit',
+    title: 'Meal or nutrition log',
+    addLabel: 'Add nutrition log',
+    titleLabel: 'Meal or nutrition title',
+    titlePlaceholder: 'Breakfast, afternoon snack, 1,850 calorie day',
+    statusPlaceholder: 'On plan, higher protein, meal prep week',
+    detailPlaceholder: 'Track meals, snacks, calories, portions, hydration, restrictions, or provider guidance you are following',
+    notesPlaceholder: 'Anything else you want to track about this meal, snack, or nutrition plan',
   },
 };
 
@@ -134,29 +122,6 @@ function getEditorValuesFromEntry(entry: PatientSocialHistoryEntry): HabitEditor
 
 function getCategoryFromKind(kind: NutritionFitnessEditorKind): 'exercise' | 'diet' {
   return kind === 'exercise' ? 'exercise' : 'diet';
-}
-
-function getSignalBadgeClass(statusLabel: string) {
-  const normalized = statusLabel.toLowerCase();
-
-  if (normalized.includes('normal') || normalized.includes('improved') || normalized.includes('stable')) {
-    return 'bg-green-100 text-green-700';
-  }
-
-  if (
-    normalized.includes('high') ||
-    normalized.includes('low') ||
-    normalized.includes('missing') ||
-    normalized.includes('recommended')
-  ) {
-    return 'bg-red-100 text-red-700';
-  }
-
-  if (normalized.includes('elevated') || normalized.includes('above')) {
-    return 'bg-amber-100 text-amber-700';
-  }
-
-  return 'bg-blue-100 text-blue-700';
 }
 
 function HabitEditor({
@@ -295,38 +260,6 @@ function SummaryCard({
       </div>
 
       <p className="mb-3 text-sm text-gray-600">{item.detail}</p>
-      <Button size="sm" variant="outline" onClick={() => onAction(item)}>
-        {item.actionLabel}
-      </Button>
-    </div>
-  );
-}
-
-function SignalCard({
-  item,
-  onAction,
-}: {
-  item: NutritionFitnessSignalItem;
-  onAction: (item: NutritionFitnessSignalItem) => void;
-}) {
-  const Icon = signalIconMap[item.id];
-
-  return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5">
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-teal-100 text-teal-700">
-            <Icon className="h-5 w-5" />
-          </div>
-          <div>
-            <p className="text-sm text-gray-600">{item.label}</p>
-            <p className="mt-1 text-lg text-gray-900">{item.value}</p>
-          </div>
-        </div>
-        <Badge className={`border-0 ${getSignalBadgeClass(item.statusLabel)}`}>{item.statusLabel}</Badge>
-      </div>
-
-      <p className="mb-4 text-sm text-gray-600">{item.detail}</p>
       <Button size="sm" variant="outline" onClick={() => onAction(item)}>
         {item.actionLabel}
       </Button>
@@ -526,7 +459,7 @@ export default function NutritionFitness({ onBack, onNavigate }: NutritionFitnes
   const nutritionItems = data?.nutritionHabits || [];
 
   const handleAction = (
-    item: NutritionFitnessSummaryCard | NutritionFitnessSignalItem | NutritionFitnessActionItem
+    item: NutritionFitnessSummaryCard | NutritionFitnessActionItem
   ) => {
     if (item.actionType === 'screen') {
       onNavigate(item.actionScreen);
@@ -657,6 +590,20 @@ export default function NutritionFitness({ onBack, onNavigate }: NutritionFitnes
           </div>
         </div>
 
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+          <h3 className="text-gray-900">Current scope</h3>
+          <p className="mt-2 text-sm text-blue-900">
+            This page uses data already stored in MediLink. Device-synced daily tracking is still not connected here yet.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {(data?.unsupportedTracking || ['Steps', 'Workouts', 'Calories', 'Water intake', 'Sleep']).map((item) => (
+              <Badge key={item} className="border-0 bg-white text-blue-700">
+                {item}
+              </Badge>
+            ))}
+          </div>
+        </div>
+
         {loading && (
           <div className="rounded-xl border border-gray-200 bg-white p-6 text-sm text-gray-600">
             Loading nutrition and fitness data...
@@ -687,23 +634,14 @@ export default function NutritionFitness({ onBack, onNavigate }: NutritionFitnes
               ))}
             </div>
 
-            <div>
-              <h3 className="mb-3 text-gray-900">Wellness signals</h3>
-              <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                {data.signals.map((item) => (
-                  <SignalCard key={item.id} item={item} onAction={handleAction} />
-                ))}
-              </div>
-            </div>
-
             <HabitSection
               kind="exercise"
-              title="Movement history"
-              description="Your saved exercise routines and activity history."
+              title="Activity, steps & workouts"
+              description="Log step counts, workouts, walks, exercise routines, and calories burned here."
               items={exerciseItems}
-              emptyTitle="No exercise history saved yet"
-              emptyDescription="Add movement routines, activity changes, or provider guidance here to make this section useful."
-              addLabel="Add exercise habit"
+              emptyTitle="No activity logs saved yet"
+              emptyDescription="Add steps, workouts, walking routines, or movement goals here so this section reflects what you actually do."
+              addLabel="Add activity log"
               createEditor={
                 activeEditor?.kind === 'exercise' && activeEditor.mode === 'create' ? renderEditor('exercise') : undefined
               }
@@ -716,12 +654,12 @@ export default function NutritionFitness({ onBack, onNavigate }: NutritionFitnes
 
             <HabitSection
               kind="nutrition"
-              title="Nutrition history"
-              description="Your saved eating patterns, diet plans, and nutrition guidance."
+              title="Meals, calories & snacks"
+              description="Log meals, snacks, calorie totals, hydration notes, and nutrition plans here."
               items={nutritionItems}
-              emptyTitle="No nutrition history saved yet"
-              emptyDescription="Add diet-related history, eating patterns, or guidance here so this section reflects your current approach."
-              addLabel="Add nutrition habit"
+              emptyTitle="No meal or nutrition logs saved yet"
+              emptyDescription="Add meals, snacks, calorie notes, or eating patterns here so this section reflects your daily nutrition."
+              addLabel="Add nutrition log"
               createEditor={
                 activeEditor?.kind === 'nutrition' && activeEditor.mode === 'create'
                   ? renderEditor('nutrition')
@@ -740,6 +678,25 @@ export default function NutritionFitness({ onBack, onNavigate }: NutritionFitnes
                 {data.actionItems.map((item) => (
                   <ActionCard key={item.id} item={item} onAction={handleAction} />
                 ))}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-dashed border-gray-300 bg-white p-5">
+              <h3 className="text-gray-900">Where to add more data</h3>
+              <p className="mt-2 text-sm text-gray-600">
+                Use Health Summary for vitals like weight, blood pressure, heart rate, and blood sugar. Use this page
+                for exercise and nutrition habits.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-3">
+                <Button variant="outline" onClick={() => onNavigate('health-summary')}>
+                  Open Health Summary
+                </Button>
+                <Button variant="outline" onClick={() => openCreateEditor('exercise')}>
+                  Add activity log
+                </Button>
+                <Button variant="outline" onClick={() => openCreateEditor('nutrition')}>
+                  Add nutrition log
+                </Button>
               </div>
             </div>
           </>
