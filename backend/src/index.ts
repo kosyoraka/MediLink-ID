@@ -9135,7 +9135,7 @@ app.put("/api/staff/patients/:id/health-summary", requireStaffAuth, async (req: 
       `,
       [
         patientId,
-        JSON.stringify(refreshedCurrentSummary.vitals || vitals),
+        JSON.stringify(vitals),
         JSON.stringify(syncedConditions),
         JSON.stringify(allergies),
         bloodType ? String(bloodType).trim() : null,

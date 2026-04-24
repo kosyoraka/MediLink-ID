@@ -523,6 +523,7 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
   const [editingCondition, setEditingCondition] = useState<ProviderHealthSummaryCondition | null>(null);
   const [summaryEditor, setSummaryEditor] = useState<null | 'allergy' | 'blood-contact' | 'immunization' | 'family-history' | 'advance-directives'>(null);
   const [showVitalsModal, setShowVitalsModal] = useState(false);
+  const [showAddVitalForm, setShowAddVitalForm] = useState(false);
   const [resolvingRefillRequestId, setResolvingRefillRequestId] = useState<string | null>(null);
   const [vitalRange, setVitalRange] = useState<VitalRange>('1y');
   const [expandedProviderVitalGroups, setExpandedProviderVitalGroups] = useState<Record<string, boolean>>({});
@@ -555,6 +556,15 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
   const [immunizationForm, setImmunizationForm] = useState<ProviderHealthSummaryImmunization>(emptyProviderImmunization());
   const [familyHistoryForm, setFamilyHistoryForm] = useState<ProviderHealthSummaryFamilyHistory>(emptyProviderFamilyHistory());
   const [advanceDirectiveForm, setAdvanceDirectiveForm] = useState({ dnrStatus: '', livingWill: '' });
+  const [vitalEntryForm, setVitalEntryForm] = useState({
+    systolic: '',
+    diastolic: '',
+    heartRate: '',
+    weight: '',
+    weightUnit: 'lbs' as WeightUnit,
+    bloodSugar: '',
+    recordedAt: '',
+  });
 
   useEffect(() => {
     let alive = true;
@@ -1251,6 +1261,67 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
     }
   };
 
+  const submitProviderVitals = async () => {
+    const currentSummary: ProviderHealthSummary = patientHealthSummary || {
+      vitals: [],
+      conditions: [],
+      allergies: [],
+      bloodType: null,
+      currentMedications: [],
+      emergencyContacts: [],
+      advanceDirectives: {},
+      immunizations: [],
+      familyHistory: [],
+      updatedAt: null,
+    };
+
+    const nextEntry = {
+      recordedAt: vitalEntryForm.recordedAt
+        ? new Date(vitalEntryForm.recordedAt).toISOString()
+        : new Date().toISOString(),
+      ...(vitalEntryForm.systolic && vitalEntryForm.diastolic
+        ? {
+            type: 'bloodPressure' as const,
+            systolic: Number(vitalEntryForm.systolic),
+            diastolic: Number(vitalEntryForm.diastolic),
+          }
+        : {}),
+      ...(vitalEntryForm.heartRate ? { heartRate: Number(vitalEntryForm.heartRate) } : {}),
+      ...(vitalEntryForm.weight
+        ? {
+            weight: Number(vitalEntryForm.weight),
+            weightUnit: vitalEntryForm.weightUnit,
+          }
+        : {}),
+      ...(vitalEntryForm.bloodSugar ? { bloodSugar: Number(vitalEntryForm.bloodSugar) } : {}),
+    };
+
+    const hasValues =
+      typeof nextEntry.systolic === 'number' ||
+      typeof nextEntry.heartRate === 'number' ||
+      typeof nextEntry.weight === 'number' ||
+      typeof nextEntry.bloodSugar === 'number';
+
+    if (!hasValues) return;
+
+    await saveStructuredSummary({
+      ...currentSummary,
+      vitals: [...(currentSummary.vitals || []), nextEntry],
+    });
+
+    setVitalEntryForm({
+      systolic: '',
+      diastolic: '',
+      heartRate: '',
+      weight: '',
+      weightUnit: 'lbs',
+      bloodSugar: '',
+      recordedAt: '',
+    });
+    setShowAddVitalForm(false);
+    setShowVitalsModal(true);
+  };
+
   const allSharedVitals = patientHealthSummary?.vitals || [];
   const latestSharedBloodPressure = useMemo(
     () => getLatestProviderVitalForType(allSharedVitals, 'bloodPressure') || null,
@@ -1480,10 +1551,23 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Activity className="w-5 h-5 text-blue-600" />
-                  Vitals and Trends
-                </CardTitle>
+                <div className="flex items-center justify-between gap-3">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Activity className="w-5 h-5 text-blue-600" />
+                    Vitals and Trends
+                  </CardTitle>
+                  <Button
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => {
+                      setShowVitalsModal(true);
+                      setShowAddVitalForm(true);
+                    }}
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add Vitals
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent className="space-y-3">
                 {latestSharedBloodPressure || latestSharedHeartRate || latestSharedWeight || latestSharedBloodSugar ? (
@@ -2407,10 +2491,84 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
                 <h3 className="text-gray-900 text-lg">Shared Vital Trends</h3>
                 <p className="text-sm text-gray-500">Patient-reported vital history and trend view</p>
               </div>
-              <button type="button" onClick={() => setShowVitalsModal(false)} className="text-sm text-gray-500">
-                Close
-              </button>
+              <div className="flex items-center gap-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => setShowAddVitalForm((current) => !current)}
+                >
+                  <Plus className="w-4 h-4" />
+                  {showAddVitalForm ? 'Hide Form' : 'Add Vitals'}
+                </Button>
+                <button type="button" onClick={() => setShowVitalsModal(false)} className="text-sm text-gray-500">
+                  Close
+                </button>
+              </div>
             </div>
+            {showAddVitalForm ? (
+              <div className="rounded-2xl border border-gray-200 p-4 space-y-4">
+                <div>
+                  <h4 className="text-gray-900 font-medium">Log provider-checked vitals</h4>
+                  <p className="text-sm text-gray-500 mt-1">Add any values measured during a visit or hospital check.</p>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                  <input
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2"
+                    placeholder="Systolic"
+                    value={vitalEntryForm.systolic}
+                    onChange={(e) => setVitalEntryForm((current) => ({ ...current, systolic: e.target.value }))}
+                  />
+                  <input
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2"
+                    placeholder="Diastolic"
+                    value={vitalEntryForm.diastolic}
+                    onChange={(e) => setVitalEntryForm((current) => ({ ...current, diastolic: e.target.value }))}
+                  />
+                  <input
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2"
+                    placeholder="Heart rate (bpm)"
+                    value={vitalEntryForm.heartRate}
+                    onChange={(e) => setVitalEntryForm((current) => ({ ...current, heartRate: e.target.value }))}
+                  />
+                  <input
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2"
+                    placeholder="Weight"
+                    value={vitalEntryForm.weight}
+                    onChange={(e) => setVitalEntryForm((current) => ({ ...current, weight: e.target.value }))}
+                  />
+                  <select
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2"
+                    value={vitalEntryForm.weightUnit}
+                    onChange={(e) => setVitalEntryForm((current) => ({ ...current, weightUnit: e.target.value as WeightUnit }))}
+                  >
+                    <option value="lbs">lbs</option>
+                    <option value="kg">kg</option>
+                  </select>
+                  <input
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2"
+                    placeholder="Blood sugar (mg/dL)"
+                    value={vitalEntryForm.bloodSugar}
+                    onChange={(e) => setVitalEntryForm((current) => ({ ...current, bloodSugar: e.target.value }))}
+                  />
+                  <input
+                    type="datetime-local"
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2"
+                    value={vitalEntryForm.recordedAt}
+                    onChange={(e) => setVitalEntryForm((current) => ({ ...current, recordedAt: e.target.value }))}
+                  />
+                </div>
+                <div className="flex gap-3">
+                  <Button variant="outline" onClick={() => setShowAddVitalForm(false)}>
+                    Cancel
+                  </Button>
+                  <Button className="gap-2" onClick={submitProviderVitals}>
+                    <Plus className="w-4 h-4" />
+                    Save Vitals
+                  </Button>
+                </div>
+              </div>
+            ) : null}
             <div className="flex flex-wrap gap-2">
               {vitalRangeOptions.map((option) => (
                 <button
