@@ -177,8 +177,8 @@ export default function Recommendations({ onBack, onNavigate }: RecommendationsP
         <div className="bg-gradient-to-br from-teal-50 to-green-50 rounded-xl border border-teal-200 p-6">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="text-gray-900 dark:text-gray-100 mb-1">Care Readiness Score</h3>
-              <p className="text-sm text-gray-600 dark:text-gray-300">
+              <h3 className="text-gray-900 dark:text-gray-900 mb-1">Care Readiness Score</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-700">
                 {loading
                   ? "Reviewing your profile, records, appointments, and health summary..."
                   : data?.scoreLabel || "Loading"}
@@ -209,15 +209,15 @@ export default function Recommendations({ onBack, onNavigate }: RecommendationsP
                 />
               </svg>
               <div className="absolute inset-0 flex items-center justify-center">
-                <span className="text-xl text-gray-900 dark:text-gray-100">{loading ? "…" : `${score}%`}</span>
+                <span className="text-xl text-gray-900 dark:text-gray-900">{loading ? "…" : `${score}%`}</span>
               </div>
             </div>
           </div>
           <div className="flex items-center justify-between text-sm">
-            <span className="text-gray-600 dark:text-gray-300">
+            <span className="text-gray-600 dark:text-gray-700">
               Completed: {loading ? "…" : `${data?.completedCount ?? 0}/${data?.totalCount ?? 0}`}
             </span>
-            <span className="text-gray-600 dark:text-gray-300">
+            <span className="text-gray-600 dark:text-gray-700">
               Pending: {loading ? "…" : `${(data?.totalCount ?? 0) - (data?.completedCount ?? 0)}`}
             </span>
           </div>
@@ -321,17 +321,17 @@ export default function Recommendations({ onBack, onNavigate }: RecommendationsP
               <div className="flex items-center gap-3 mb-4">
                 <CheckCircle className="w-6 h-6 text-green-600" />
                 <div>
-                  <h3 className="text-gray-900 dark:text-gray-100">What’s Already On Track</h3>
-                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                  <h3 className="text-gray-900 dark:text-gray-900">What’s Already On Track</h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-700">
                     {data.completedCount} of {data.totalCount} account areas already look complete.
                   </p>
                 </div>
               </div>
-              <div className="space-y-2 text-sm text-gray-700 dark:text-gray-200">
+              <div className="space-y-2 text-sm text-gray-700 dark:text-gray-800">
                 {data.highlights.map((item) => (
                   <p key={item.id}>
                     ✓ {item.label}
-                    <span className="text-gray-500 dark:text-gray-400"> - {item.detail}</span>
+                    <span className="text-gray-500 dark:text-gray-700"> - {item.detail}</span>
                   </p>
                 ))}
               </div>
