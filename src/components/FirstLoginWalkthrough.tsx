@@ -1,6 +1,4 @@
 import { Sparkles, X } from 'lucide-react';
-import { Button } from './ui/button';
-
 interface FirstLoginWalkthroughProps {
   stepLabel: string;
   title: string;
@@ -31,8 +29,8 @@ export default function FirstLoginWalkthrough({
   return (
     <div className="pointer-events-none fixed inset-x-0 top-4 z-[120] flex justify-center px-3">
       <div className="pointer-events-auto relative w-full max-w-md px-1">
-        <div className="mx-auto h-4 w-4 rotate-45 rounded-[4px] border-l border-t border-slate-200 bg-white shadow-sm" />
-        <div className="-mt-2 overflow-hidden rounded-[30px] border border-slate-200 bg-white shadow-[0_24px_80px_rgba(15,23,42,0.18)]">
+        <div className="mx-auto h-4 w-4 rotate-45 rounded-[5px] border border-white/40 bg-white/75 shadow-sm backdrop-blur-md" />
+        <div className="-mt-2 overflow-hidden rounded-[32px] border border-white/45 bg-white/78 shadow-[0_24px_80px_rgba(15,23,42,0.16)] backdrop-blur-xl">
           <div className="bg-gradient-to-r from-teal-600 via-cyan-600 to-sky-600 px-5 py-4 text-white">
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -65,25 +63,23 @@ export default function FirstLoginWalkthrough({
               </div>
             )}
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 pt-1">
               {onBack ? (
-                <Button
+                <button
                   type="button"
-                  variant="outline"
                   onClick={onBack}
-                  className="flex-1 rounded-full border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  className="inline-flex h-12 flex-1 items-center justify-center rounded-full border border-slate-300 bg-white/90 px-5 text-base font-semibold text-slate-800 shadow-sm transition hover:bg-white"
                 >
                   Back
-                </Button>
+                </button>
               ) : null}
-              <Button
+              <button
                 type="button"
-                variant="secondary"
                 onClick={onNext}
-                className="flex-1 rounded-full bg-slate-900 text-white hover:bg-slate-800"
+                className="inline-flex h-12 flex-1 items-center justify-center rounded-full bg-slate-900 px-5 text-base font-semibold text-white shadow-[0_10px_30px_rgba(15,23,42,0.22)] transition hover:bg-slate-800"
               >
                 {nextLabel}
-              </Button>
+              </button>
             </div>
 
             <button
