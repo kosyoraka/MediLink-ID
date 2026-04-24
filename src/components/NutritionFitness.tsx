@@ -54,19 +54,32 @@ const trackerConfig: Record<
   {
     sectionTitle: string;
     sectionDescription: string;
+    routineSectionDescription: string;
     emptyTitle: string;
     emptyDescription: string;
+    routineEmptyTitle: string;
+    routineEmptyDescription: string;
     title: string;
     addLabel: string;
     addRoutineLabel: string;
     titleLabel: string;
     titlePlaceholder: string;
     titleOptions?: string[];
+    routineTitleLabel: string;
+    routineTitlePlaceholder: string;
+    routineTitleOptions?: string[];
     statusLabel: string;
     statusPlaceholder: string;
     statusOptions: string[];
+    routineStatusLabel: string;
+    routineStatusPlaceholder: string;
+    routineStatusOptions: string[];
     startDateLabel: string;
+    routineStartDateLabel: string;
+    detailLabel: string;
     detailPlaceholder: string;
+    routineDetailLabel: string;
+    routineDetailPlaceholder: string;
     helperTitle: string;
     helperDescription: string;
     routineHelperDescription: string;
@@ -77,19 +90,32 @@ const trackerConfig: Record<
   steps: {
     sectionTitle: 'Steps',
     sectionDescription: 'Log daily step counts or walking totals one entry at a time.',
+    routineSectionDescription: 'Set a repeating step goal or walking routine you want to follow over time.',
     emptyTitle: 'No step logs saved yet',
     emptyDescription: 'Add entries like 8,500 steps, 12,000 steps, or daily walking totals here.',
+    routineEmptyTitle: 'No step routines saved yet',
+    routineEmptyDescription: 'Add routines like 8,000 steps every weekday or a daily after-dinner walk goal.',
     title: 'Step log',
     addLabel: 'Add step log',
     addRoutineLabel: 'Add step routine',
     titleLabel: 'Step log title',
     titlePlaceholder: '10,240 steps',
     titleOptions: ['5,000 steps', '8,000 steps', '10,000 steps', '12,000+ steps'],
+    routineTitleLabel: 'Routine name',
+    routineTitlePlaceholder: '8,000 steps every weekday',
+    routineTitleOptions: ['5,000 steps daily', '8,000 steps daily', '10,000 steps daily', 'After-dinner walk'],
     statusLabel: 'Step goal or result',
     statusPlaceholder: 'Goal reached, under target, recovery day',
     statusOptions: ['Goal reached', 'Almost there', 'Under target', 'Recovery day'],
+    routineStatusLabel: 'Routine frequency',
+    routineStatusPlaceholder: 'Daily, weekdays, 3 times a week',
+    routineStatusOptions: ['Daily', 'Weekdays', 'Weekends', '3 times a week', 'Custom schedule'],
     startDateLabel: 'Log date',
+    routineStartDateLabel: 'Routine start date',
+    detailLabel: 'Details',
     detailPlaceholder: 'Track total steps, walking distance, or how the day felt physically',
+    routineDetailLabel: 'Routine plan',
+    routineDetailPlaceholder: 'Describe the target, when you will do it, and how you want to stay on track',
     helperTitle: 'What to log here',
     helperDescription: 'Use one entry per day or per walking session when you want to track steps specifically.',
     routineHelperDescription: 'Use a routine to keep a repeating step target or walking plan on file.',
@@ -99,19 +125,32 @@ const trackerConfig: Record<
   workouts: {
     sectionTitle: 'Workouts',
     sectionDescription: 'Log each workout, walk, run, gym session, or repeating exercise routine separately.',
+    routineSectionDescription: 'Set a recurring workout schedule or exercise plan you want to follow consistently.',
     emptyTitle: 'No workout logs saved yet',
     emptyDescription: 'Add entries like strength training, treadmill workout, evening walk, or bike ride here.',
+    routineEmptyTitle: 'No workout routines saved yet',
+    routineEmptyDescription: 'Add routines like gym on Mondays, yoga every morning, or a 3-day strength split.',
     title: 'Workout log',
     addLabel: 'Add workout log',
     addRoutineLabel: 'Add workout routine',
     titleLabel: 'Workout title',
     titlePlaceholder: 'Upper-body gym session',
     titleOptions: ['Walk', 'Run', 'Gym workout', 'Strength training', 'Yoga', 'Cycling'],
+    routineTitleLabel: 'Routine name',
+    routineTitlePlaceholder: '3-day strength split',
+    routineTitleOptions: ['Morning walk routine', '3-day strength split', 'Cardio plan', 'Yoga routine'],
     statusLabel: 'Workout type or intensity',
     statusPlaceholder: 'Strength, cardio, light recovery, intense session',
     statusOptions: ['Light', 'Moderate', 'Intense', 'Strength', 'Cardio', 'Recovery'],
+    routineStatusLabel: 'Routine frequency',
+    routineStatusPlaceholder: 'Daily, 3 times a week, Mondays/Wednesdays',
+    routineStatusOptions: ['Daily', 'Weekdays', 'Weekends', '3 times a week', '4 times a week', 'Custom schedule'],
     startDateLabel: 'Workout date',
+    routineStartDateLabel: 'Routine start date',
+    detailLabel: 'Details',
     detailPlaceholder: 'Track duration, workout type, calories burned, distance, or routine details',
+    routineDetailLabel: 'Routine plan',
+    routineDetailPlaceholder: 'Describe the workout plan, timing, duration, and anything you want to stay consistent with',
     helperTitle: 'What to log here',
     helperDescription: 'Use one entry for a single workout or keep a repeating routine on file with an optional end date.',
     routineHelperDescription: 'Use a routine for recurring workout plans like gym days, walk schedules, or training programs.',
@@ -121,19 +160,32 @@ const trackerConfig: Record<
   calories: {
     sectionTitle: 'Calories',
     sectionDescription: 'Log meals, snacks, or a full day of calorie intake as separate entries.',
+    routineSectionDescription: 'Set meal plans, calorie targets, or nutrition structures you want to follow regularly.',
     emptyTitle: 'No calorie logs saved yet',
     emptyDescription: 'Add entries like breakfast calories, dinner calories, snack totals, or full-day intake here.',
+    routineEmptyTitle: 'No meal routines saved yet',
+    routineEmptyDescription: 'Add routines like weekday meal prep, 1,800-calorie target, or high-protein lunch plan.',
     title: 'Calorie or meal log',
     addLabel: 'Add calorie log',
     addRoutineLabel: 'Add meal routine',
     titleLabel: 'Calorie or meal title',
     titlePlaceholder: 'Lunch - 620 calories',
     titleOptions: ['Breakfast', 'Lunch', 'Dinner', 'Snack', 'Daily calories'],
+    routineTitleLabel: 'Routine name',
+    routineTitlePlaceholder: '1,800-calorie weekday plan',
+    routineTitleOptions: ['Breakfast routine', 'Lunch routine', 'Dinner routine', 'Meal prep plan', 'Daily calorie target'],
     statusLabel: 'Meal type or nutrition status',
     statusPlaceholder: 'Breakfast, snack, on plan, higher protein',
     statusOptions: ['Breakfast', 'Lunch', 'Dinner', 'Snack', 'On plan', 'Higher protein'],
+    routineStatusLabel: 'Routine frequency',
+    routineStatusPlaceholder: 'Daily, weekdays, meal prep Sundays',
+    routineStatusOptions: ['Daily', 'Weekdays', 'Weekends', 'Meal prep weekly', 'Custom schedule'],
     startDateLabel: 'Meal or log date',
+    routineStartDateLabel: 'Routine start date',
+    detailLabel: 'Calories and foods',
     detailPlaceholder: 'Track calories, foods eaten, snacks, portions, or full-day intake',
+    routineDetailLabel: 'Routine plan',
+    routineDetailPlaceholder: 'Describe the calorie target, meal structure, snack plan, or foods you want to stick with',
     helperTitle: 'What to log here',
     helperDescription: 'Use one entry for a meal, snack, or daily calorie summary.',
     routineHelperDescription: 'Use a routine for repeating meal plans, calorie targets, or nutrition goals.',
@@ -143,19 +195,32 @@ const trackerConfig: Record<
   water: {
     sectionTitle: 'Water intake',
     sectionDescription: 'Log glasses, bottles, liters, or hydration goals as separate entries.',
+    routineSectionDescription: 'Set a repeating hydration target or water routine you want to follow each day.',
     emptyTitle: 'No water logs saved yet',
     emptyDescription: 'Add entries like 2 liters, 8 glasses, hydration goal reached, or low water intake here.',
+    routineEmptyTitle: 'No hydration routines saved yet',
+    routineEmptyDescription: 'Add routines like 8 glasses daily, one bottle before lunch, or 2 liters every day.',
     title: 'Water intake log',
     addLabel: 'Add water log',
     addRoutineLabel: 'Add hydration routine',
     titleLabel: 'Water intake title',
     titlePlaceholder: '8 glasses of water',
     titleOptions: ['4 glasses', '6 glasses', '8 glasses', '2 liters', '3 liters'],
+    routineTitleLabel: 'Routine name',
+    routineTitlePlaceholder: '2 liters every day',
+    routineTitleOptions: ['6 glasses daily', '8 glasses daily', '2 liters daily', 'Morning hydration routine'],
     statusLabel: 'Hydration status',
     statusPlaceholder: 'Goal reached, catching up, low intake',
     statusOptions: ['Goal reached', 'On track', 'Catching up', 'Low intake'],
+    routineStatusLabel: 'Routine frequency',
+    routineStatusPlaceholder: 'Daily, weekdays, every morning',
+    routineStatusOptions: ['Daily', 'Weekdays', 'Weekends', 'Morning routine', 'Custom schedule'],
     startDateLabel: 'Log date',
+    routineStartDateLabel: 'Routine start date',
+    detailLabel: 'Details',
     detailPlaceholder: 'Track total water, drinks, hydration goals, or how consistent intake was',
+    routineDetailLabel: 'Routine plan',
+    routineDetailPlaceholder: 'Describe the hydration target, timing, bottle count, or reminders you want to follow',
     helperTitle: 'What to log here',
     helperDescription: 'Use one entry per day or per hydration checkpoint when you want to track water intake.',
     routineHelperDescription: 'Use a routine for repeating hydration goals like daily bottle targets or reminder habits.',
@@ -165,19 +230,32 @@ const trackerConfig: Record<
   sleep: {
     sectionTitle: 'Sleep',
     sectionDescription: 'Log each night of sleep or a short sleep pattern period as separate entries.',
+    routineSectionDescription: 'Set a bedtime or sleep hygiene routine you want to follow consistently.',
     emptyTitle: 'No sleep logs saved yet',
     emptyDescription: 'Add entries like 7.5 hours of sleep, poor sleep night, or early bedtime routine here.',
+    routineEmptyTitle: 'No sleep routines saved yet',
+    routineEmptyDescription: 'Add routines like bedtime by 10:30 PM, no screens before bed, or 8-hour sleep goal.',
     title: 'Sleep log',
     addLabel: 'Add sleep log',
     addRoutineLabel: 'Add sleep routine',
     titleLabel: 'Sleep log title',
     titlePlaceholder: '7 hours 45 minutes of sleep',
     titleOptions: ['6 hours of sleep', '7 hours of sleep', '8 hours of sleep', 'Early bedtime', 'Interrupted night'],
+    routineTitleLabel: 'Routine name',
+    routineTitlePlaceholder: 'Bedtime by 10:30 PM',
+    routineTitleOptions: ['10:30 PM bedtime', '8-hour sleep goal', 'No screens before bed', 'Wake up at 6:30 AM'],
     statusLabel: 'Sleep quality or pattern',
     statusPlaceholder: 'Restful, interrupted, late bedtime, improved sleep',
     statusOptions: ['Restful', 'Interrupted', 'Light sleep', 'Deep sleep', 'Late bedtime', 'Improved sleep'],
+    routineStatusLabel: 'Routine frequency',
+    routineStatusPlaceholder: 'Nightly, weekdays, Sunday to Thursday',
+    routineStatusOptions: ['Nightly', 'Weekdays', 'Weekends', 'Sunday to Thursday', 'Custom schedule'],
     startDateLabel: 'Sleep date',
+    routineStartDateLabel: 'Routine start date',
+    detailLabel: 'Details',
     detailPlaceholder: 'Track hours slept, bedtime, wake time, interruptions, or how rested you felt',
+    routineDetailLabel: 'Routine plan',
+    routineDetailPlaceholder: 'Describe the bedtime plan, wake-up target, and habits you want to follow for better sleep',
     helperTitle: 'What to log here',
     helperDescription: 'Use one entry per night or for a short pattern you want to keep on file.',
     routineHelperDescription: 'Use a routine for recurring bedtime goals, sleep hygiene habits, or wake-time plans.',
@@ -230,6 +308,8 @@ function HabitEditor({
   const copy = trackerConfig[kind];
   const Icon = copy.icon;
   const isRoutine = entryMode === 'routine';
+  const titleOptions = isRoutine ? copy.routineTitleOptions : copy.titleOptions;
+  const statusOptions = isRoutine ? copy.routineStatusOptions : copy.statusOptions;
 
   return (
     <div className="rounded-xl border border-teal-200 bg-teal-50 p-4">
@@ -258,15 +338,15 @@ function HabitEditor({
 
       <div className="grid grid-cols-1 gap-3">
         <label className="text-sm text-gray-700">
-          {copy.titleLabel}
-          {copy.titleOptions ? (
+          {isRoutine ? copy.routineTitleLabel : copy.titleLabel}
+          {titleOptions ? (
             <select
               className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 bg-white"
               value={values.title}
               onChange={(event) => onChange('title', event.target.value)}
             >
               <option value="">Choose an option...</option>
-              {copy.titleOptions.map((option) => (
+              {titleOptions.map((option) => (
                 <option key={option} value={option}>
                   {option}
                 </option>
@@ -276,21 +356,21 @@ function HabitEditor({
             <input
               className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2"
               value={values.title}
-              placeholder={copy.titlePlaceholder}
+              placeholder={isRoutine ? copy.routineTitlePlaceholder : copy.titlePlaceholder}
               onChange={(event) => onChange('title', event.target.value)}
             />
           )}
         </label>
 
         <label className="text-sm text-gray-700">
-          {copy.statusLabel}
+          {isRoutine ? copy.routineStatusLabel : copy.statusLabel}
           <select
             className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 bg-white"
             value={values.status}
             onChange={(event) => onChange('status', event.target.value)}
           >
             <option value="">Choose an option...</option>
-            {copy.statusOptions.map((option) => (
+            {statusOptions.map((option) => (
               <option key={option} value={option}>
                 {option}
               </option>
@@ -299,7 +379,7 @@ function HabitEditor({
         </label>
 
         <label className="text-sm text-gray-700">
-          {copy.startDateLabel}
+          {isRoutine ? copy.routineStartDateLabel : copy.startDateLabel}
           <input
             type="date"
             className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2"
@@ -309,11 +389,11 @@ function HabitEditor({
         </label>
 
         <label className="text-sm text-gray-700">
-          {kind === 'calories' ? 'Calories and foods' : 'Details'}
+          {isRoutine ? copy.routineDetailLabel : copy.detailLabel}
           <textarea
             className="mt-1 min-h-[100px] w-full rounded-lg border border-gray-200 px-3 py-2"
             value={values.detail}
-            placeholder={copy.detailPlaceholder}
+            placeholder={isRoutine ? copy.routineDetailPlaceholder : copy.detailPlaceholder}
             onChange={(event) => onChange('detail', event.target.value)}
           />
         </label>
@@ -384,7 +464,6 @@ function TrackerSection({
   editingEntryId,
   renderEditEditor,
   onAdd,
-  onAddRoutine,
   onEdit,
   onDelete,
 }: {
@@ -395,7 +474,6 @@ function TrackerSection({
   editingEntryId?: string;
   renderEditEditor: (item: NutritionFitnessHabitItem) => ReactNode;
   onAdd: () => void;
-  onAddRoutine: () => void;
   onEdit: (item: NutritionFitnessHabitItem) => void;
   onDelete: (item: NutritionFitnessHabitItem) => void;
 }) {
@@ -417,15 +495,10 @@ function TrackerSection({
         </div>
         <div className="flex flex-wrap gap-2">
           {!isRoutine ? (
-            <>
-              <Button className="bg-teal-600 text-white hover:bg-teal-700" onClick={onAdd}>
-                <Plus className="mr-2 h-4 w-4" />
-                {copy.addLabel}
-              </Button>
-              <Button variant="outline" onClick={onAddRoutine}>
-                {copy.addRoutineLabel}
-              </Button>
-            </>
+            <Button className="bg-teal-600 text-white hover:bg-teal-700" onClick={onAdd}>
+              <Plus className="mr-2 h-4 w-4" />
+              {copy.addLabel}
+            </Button>
           ) : (
             <Button className="bg-teal-600 text-white hover:bg-teal-700" onClick={onAdd}>
               <Plus className="mr-2 h-4 w-4" />
@@ -488,13 +561,6 @@ export default function NutritionFitness({ onBack, onNavigate }: NutritionFitnes
 
   const openCreateEditor = (kind: NutritionFitnessEditorKind) => {
     setActiveEditor({ kind, entryMode: viewMode, mode: 'create' });
-    setEditorValues(emptyEditorValues());
-    setSaveError(null);
-  };
-
-  const openCreateRoutineEditor = (kind: NutritionFitnessEditorKind) => {
-    setViewMode('routine');
-    setActiveEditor({ kind, entryMode: 'routine', mode: 'create' });
     setEditorValues(emptyEditorValues());
     setSaveError(null);
   };
@@ -691,7 +757,6 @@ export default function NutritionFitness({ onBack, onNavigate }: NutritionFitnes
                 }
                 renderEditEditor={() => renderEditor(kind)}
                 onAdd={() => openCreateEditor(kind)}
-                onAddRoutine={() => openCreateRoutineEditor(kind)}
                 onEdit={(item) => openEditEditor(kind, item.entry)}
                 onDelete={(item) => void handleDeleteEntry(kind, item)}
               />
