@@ -697,6 +697,10 @@ export default function NutritionFitness({ onBack, onNavigate }: NutritionFitnes
             <Button variant="outline" onClick={() => onNavigate('health-summary')}>
               Open Health Summary
             </Button>
+            <Button variant="outline" disabled>
+              Connect data
+            </Button>
+            <Badge className="border-0 bg-amber-100 text-amber-800">Coming soon</Badge>
           </div>
         </div>
 
