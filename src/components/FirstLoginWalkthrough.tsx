@@ -28,9 +28,9 @@ export default function FirstLoginWalkthrough({
 
   return (
     <div className="fixed inset-x-0 top-4 z-[300] flex justify-center px-4">
-      <div className="relative isolate w-full max-w-[360px]">
-        <div className="absolute left-10 top-0 h-4 w-4 -translate-y-1/2 rotate-45 rounded-[4px] bg-slate-950 shadow-[0_8px_24px_rgba(15,23,42,0.24)]" />
-        <div className="relative overflow-hidden rounded-[26px] border border-slate-800 bg-slate-950 text-white shadow-[0_24px_70px_rgba(15,23,42,0.36)]">
+      <div className="relative isolate w-full max-w-[340px]">
+        <div className="absolute left-16 top-0 h-4 w-4 -translate-y-1/2 rotate-45 rounded-[4px] bg-slate-800 shadow-[0_8px_24px_rgba(15,23,42,0.24)]" />
+        <div className="relative overflow-hidden rounded-[28px] bg-slate-800 text-white shadow-[0_24px_70px_rgba(15,23,42,0.38)]">
           <div className="flex items-start justify-between gap-4 px-5 pt-5">
             <div className="inline-flex items-center gap-2 text-sm font-semibold text-sky-300">
               <Sparkles className="h-4 w-4" />
@@ -48,10 +48,10 @@ export default function FirstLoginWalkthrough({
 
           <div className="space-y-4 px-5 pb-5 pt-3">
             <div className="space-y-2">
-              <h2 className="text-[1.9rem] font-semibold leading-tight tracking-[-0.02em] text-white">
+              <h2 className="text-[1.75rem] font-semibold leading-tight tracking-[-0.02em] text-white">
                 {title}
               </h2>
-              <p className="text-base leading-7 text-white/80">{description}</p>
+              <p className="text-base leading-7 text-white/85">{description}</p>
             </div>
 
             {!isPrompt && (
@@ -70,7 +70,7 @@ export default function FirstLoginWalkthrough({
                 <button
                   type="button"
                   onClick={onBack}
-                  className="pointer-events-auto inline-flex h-12 min-w-[104px] cursor-pointer items-center justify-center rounded-full border border-slate-600 bg-slate-800 px-5 text-sm font-semibold text-white transition hover:bg-slate-700"
+                  className="pointer-events-auto inline-flex h-10 min-w-[84px] cursor-pointer items-center justify-center rounded-full border border-white/15 bg-slate-700 px-4 text-sm font-semibold text-white transition hover:bg-slate-600"
                 >
                   Back
                 </button>
@@ -78,7 +78,7 @@ export default function FirstLoginWalkthrough({
               <button
                 type="button"
                 onClick={onNext}
-                className="pointer-events-auto inline-flex h-12 min-w-[112px] cursor-pointer items-center justify-center rounded-full bg-blue-600 px-5 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(37,99,235,0.35)] transition hover:bg-blue-500"
+                className="pointer-events-auto inline-flex h-10 min-w-[92px] cursor-pointer items-center justify-center rounded-full bg-blue-600 px-4 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(37,99,235,0.35)] transition hover:bg-blue-500"
               >
                 {nextLabel}
               </button>
