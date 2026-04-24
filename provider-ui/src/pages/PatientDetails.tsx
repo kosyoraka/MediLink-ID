@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
-  Edit,
   MessageSquare,
   Plus,
   RefreshCw,
@@ -1197,11 +1196,7 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
                     <p className="text-gray-600 mt-1">{patient.patientId}</p>
                   </div>
                   <div className="flex flex-wrap gap-2 xl:justify-end">
-                    <Button variant="outline" size="sm" className="gap-2">
-                      <Edit className="w-4 h-4" />
-                      Edit Patient
-                    </Button>
-                    <Button size="sm" className="gap-2">
+                    <Button size="sm" className="gap-2" onClick={() => onNavigate("messages", { patientId: patient.id })}>
                       <MessageSquare className="w-4 h-4" />
                       Message
                     </Button>

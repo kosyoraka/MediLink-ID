@@ -32,6 +32,7 @@ function App() {
   const [currentPage, setCurrentPage] = useState<Page>("dashboard");
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [patientDetailsContext, setPatientDetailsContext] = useState<{ medicationId?: string; medicationChangeRequestId?: string } | null>(null);
+  const [messagesContext, setMessagesContext] = useState<{ patientId?: string } | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const emergencyToken = new URLSearchParams(window.location.search).get("emergencyToken");
   const emergencyReturnTo = new URLSearchParams(window.location.search).get("returnTo");
@@ -175,8 +176,17 @@ function App() {
       return;
     }
 
+    if (page === "messages") {
+      setSelectedPatient(null);
+      setPatientDetailsContext(null);
+      setMessagesContext(data?.patientId ? { patientId: data.patientId } : null);
+      setCurrentPage("messages");
+      return;
+    }
+
     setSelectedPatient(null);
     setPatientDetailsContext(null);
+    setMessagesContext(null);
     setCurrentPage(page as Page);
   };
 
@@ -226,7 +236,7 @@ function App() {
 
         {currentPage === "appointments" && <Appointments onNavigate={handleNavigate} />}
 
-        {currentPage === "messages" && <Messages onNavigate={handleNavigate} />}
+        {currentPage === "messages" && <Messages onNavigate={handleNavigate} initialPatientId={messagesContext?.patientId} />}
 
         {currentPage === "notifications" && <Notifications onNavigate={handleNavigate} />}
 

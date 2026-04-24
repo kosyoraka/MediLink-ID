@@ -43,6 +43,7 @@ type PatientListRow = {
 
 interface MessagesProps {
   onNavigate: (page: string, data?: any) => void;
+  initialPatientId?: string;
 }
 
 type ChatMessage = {
@@ -108,7 +109,7 @@ function isMedicationRefillConversation(c: StaffConversation) {
   return Number(c.open_medication_refill_count || 0) > 0;
 }
 
-export function Messages({ onNavigate }: MessagesProps) {
+export function Messages({ onNavigate, initialPatientId }: MessagesProps) {
   const [conversations, setConversations] = useState<StaffConversation[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -155,6 +156,24 @@ export function Messages({ onNavigate }: MessagesProps) {
     () => patients.filter((patient) => patient.connection_status !== "Inactive"),
     [patients]
   );
+
+  useEffect(() => {
+    if (!initialPatientId || patients.length === 0 || conversations.length === 0) return;
+
+    const existingConversation = conversations.find((conversation) => conversation.patient_id === initialPatientId);
+
+    if (existingConversation) {
+      if (selectedConversationId === existingConversation.id) return;
+      void handleSelectConversation(existingConversation);
+      return;
+    }
+
+    const matchingPatient = patients.find((patient) => patient.patient_id === initialPatientId);
+    if (matchingPatient) {
+      setShowNewConversation(true);
+      setNewConversationPatientId(initialPatientId);
+    }
+  }, [initialPatientId, patients, conversations, selectedConversationId]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
