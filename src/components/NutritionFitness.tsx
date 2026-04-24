@@ -37,6 +37,7 @@ type HabitEditorValues = {
   title: string;
   status: string;
   startDate: string;
+  endDate: string;
   detail: string;
 };
 
@@ -76,6 +77,7 @@ const trackerConfig: Record<
     routineStatusOptions: string[];
     startDateLabel: string;
     routineStartDateLabel: string;
+    routineEndDateLabel: string;
     detailLabel: string;
     detailPlaceholder: string;
     routineDetailLabel: string;
@@ -112,6 +114,7 @@ const trackerConfig: Record<
     routineStatusOptions: ['Daily', 'Weekdays', 'Weekends', '3 times a week', 'Custom schedule'],
     startDateLabel: 'Log date',
     routineStartDateLabel: 'Routine start date',
+    routineEndDateLabel: 'Routine end date (if available)',
     detailLabel: 'Details',
     detailPlaceholder: 'Track total steps, walking distance, or how the day felt physically',
     routineDetailLabel: 'Routine plan',
@@ -147,6 +150,7 @@ const trackerConfig: Record<
     routineStatusOptions: ['Daily', 'Weekdays', 'Weekends', '3 times a week', '4 times a week', 'Custom schedule'],
     startDateLabel: 'Workout date',
     routineStartDateLabel: 'Routine start date',
+    routineEndDateLabel: 'Routine end date (if available)',
     detailLabel: 'Details',
     detailPlaceholder: 'Track duration, workout type, calories burned, distance, or routine details',
     routineDetailLabel: 'Routine plan',
@@ -182,6 +186,7 @@ const trackerConfig: Record<
     routineStatusOptions: ['Daily', 'Weekdays', 'Weekends', 'Meal prep weekly', 'Custom schedule'],
     startDateLabel: 'Meal or log date',
     routineStartDateLabel: 'Routine start date',
+    routineEndDateLabel: 'Routine end date (if available)',
     detailLabel: 'Calories and foods',
     detailPlaceholder: 'Track calories, foods eaten, snacks, portions, or full-day intake',
     routineDetailLabel: 'Routine plan',
@@ -217,6 +222,7 @@ const trackerConfig: Record<
     routineStatusOptions: ['Daily', 'Weekdays', 'Weekends', 'Morning routine', 'Custom schedule'],
     startDateLabel: 'Log date',
     routineStartDateLabel: 'Routine start date',
+    routineEndDateLabel: 'Routine end date (if available)',
     detailLabel: 'Details',
     detailPlaceholder: 'Track total water, drinks, hydration goals, or how consistent intake was',
     routineDetailLabel: 'Routine plan',
@@ -252,6 +258,7 @@ const trackerConfig: Record<
     routineStatusOptions: ['Nightly', 'Weekdays', 'Weekends', 'Sunday to Thursday', 'Custom schedule'],
     startDateLabel: 'Sleep date',
     routineStartDateLabel: 'Routine start date',
+    routineEndDateLabel: 'Routine end date (if available)',
     detailLabel: 'Details',
     detailPlaceholder: 'Track hours slept, bedtime, wake time, interruptions, or how rested you felt',
     routineDetailLabel: 'Routine plan',
@@ -271,6 +278,7 @@ function emptyEditorValues(): HabitEditorValues {
     title: '',
     status: '',
     startDate: '',
+    endDate: '',
     detail: '',
   };
 }
@@ -280,6 +288,7 @@ function getEditorValuesFromEntry(entry: PatientSocialHistoryEntry): HabitEditor
     title: entry.title || '',
     status: entry.status || '',
     startDate: entry.startDate || '',
+    endDate: entry.endDate || '',
     detail: entry.detail || '',
   };
 }
@@ -387,6 +396,18 @@ function HabitEditor({
             onChange={(event) => onChange('startDate', event.target.value)}
           />
         </label>
+
+        {isRoutine ? (
+          <label className="text-sm text-gray-700">
+            {copy.routineEndDateLabel}
+            <input
+              type="date"
+              className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2"
+              value={values.endDate}
+              onChange={(event) => onChange('endDate', event.target.value)}
+            />
+          </label>
+        ) : null}
 
         <label className="text-sm text-gray-700">
           {isRoutine ? copy.routineDetailLabel : copy.detailLabel}
@@ -594,6 +615,7 @@ export default function NutritionFitness({ onBack, onNavigate }: NutritionFitnes
       title: editorValues.title.trim(),
       status: editorValues.status.trim(),
       startDate: editorValues.startDate || null,
+      endDate: activeEditor.entryMode === 'routine' ? editorValues.endDate || null : null,
       detail: editorValues.detail.trim(),
       notes: encodeNutritionFitnessTrackerNotes(activeEditor.kind, activeEditor.entryMode),
     };
