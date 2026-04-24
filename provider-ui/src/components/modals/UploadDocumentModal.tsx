@@ -12,6 +12,10 @@ interface UploadDocumentModalProps {
   onClose: () => void;
   onUploaded: (document: ProviderDocument) => void;
   initialRequest?: ProviderDocumentRequest | null;
+  initialPatient?: {
+    id: string;
+    name: string;
+  } | null;
 }
 
 type PatientOption = {
@@ -29,7 +33,13 @@ function fileToDataUrl(file: File) {
   });
 }
 
-export function UploadDocumentModal({ open, onClose, onUploaded, initialRequest = null }: UploadDocumentModalProps) {
+export function UploadDocumentModal({
+  open,
+  onClose,
+  onUploaded,
+  initialRequest = null,
+  initialPatient = null,
+}: UploadDocumentModalProps) {
   const [patients, setPatients] = useState<PatientOption[]>([]);
   const [requests, setRequests] = useState<ProviderDocumentRequest[]>([]);
   const [formData, setFormData] = useState({
@@ -86,7 +96,7 @@ export function UploadDocumentModal({ open, onClose, onUploaded, initialRequest 
     }
 
     setFormData({
-      patientId: "",
+      patientId: initialPatient?.id ?? "",
       category: "labs",
       subtype: "",
       title: "",
@@ -96,7 +106,7 @@ export function UploadDocumentModal({ open, onClose, onUploaded, initialRequest 
       requestId: "",
     });
     setFile(null);
-  }, [open, initialRequest]);
+  }, [open, initialRequest, initialPatient?.id]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -203,7 +213,7 @@ export function UploadDocumentModal({ open, onClose, onUploaded, initialRequest 
             <select
               className="w-full rounded-lg border border-gray-200 px-3 py-2 bg-white"
               value={formData.patientId}
-              disabled={Boolean(initialRequest)}
+              disabled={Boolean(initialRequest || initialPatient)}
               onChange={(e) => setFormData({ ...formData, patientId: e.target.value })}
               required
             >
@@ -214,6 +224,9 @@ export function UploadDocumentModal({ open, onClose, onUploaded, initialRequest 
                 </option>
               ))}
             </select>
+            {initialPatient ? (
+              <p className="mt-1 text-xs text-gray-500">Uploading for {initialPatient.name}</p>
+            ) : null}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

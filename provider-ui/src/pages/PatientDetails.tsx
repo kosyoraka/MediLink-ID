@@ -24,6 +24,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { UploadDocumentModal } from '@/components/modals/UploadDocumentModal';
 
 import type { Patient, EmergencyContact } from '@/lib/types';
 import { formatDate, formatDateTime } from '@/lib/utils';
@@ -558,6 +559,7 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
   const [patientAppointments, setPatientAppointments] = useState<StaffAppointmentRow[]>([]);
   const [selectedAppointment, setSelectedAppointment] = useState<StaffAppointmentRow | null>(null);
   const [patientDocuments, setPatientDocuments] = useState<ProviderDocument[]>([]);
+  const [showUploadDocumentModal, setShowUploadDocumentModal] = useState(false);
   const [patientHealthSummary, setPatientHealthSummary] = useState<ProviderHealthSummary | null>(null);
   const [patientConditions, setPatientConditions] = useState<ProviderHealthSummaryCondition[]>([]);
   const [patientMedications, setPatientMedications] = useState<ProviderMedication[]>([]);
@@ -2521,7 +2523,7 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
         <div className="space-y-4">
           <div className="flex justify-between items-center">
             <h2 className="text-xl font-semibold text-gray-900">Patient Documents</h2>
-            <Button className="gap-2">
+            <Button className="gap-2" onClick={() => setShowUploadDocumentModal(true)}>
               <Plus className="w-4 h-4" />
               Upload Document
             </Button>
@@ -2574,6 +2576,18 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
           )}
         </div>
       )}
+
+      {showUploadDocumentModal ? (
+        <UploadDocumentModal
+          open={showUploadDocumentModal}
+          initialPatient={{ id: patient.id, name: displayName }}
+          onClose={() => setShowUploadDocumentModal(false)}
+          onUploaded={(document) => {
+            setPatientDocuments((prev) => [document, ...prev]);
+            setShowUploadDocumentModal(false);
+          }}
+        />
+      ) : null}
 
       {activeTab === 'appointments' && (
         <div className="space-y-4">
