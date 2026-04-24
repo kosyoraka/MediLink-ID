@@ -1897,7 +1897,7 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
                 <div className="flex items-center justify-between gap-3">
                   <CardTitle className="text-lg flex items-center gap-2">
                     <AlertCircle className="w-5 h-5 text-rose-600" />
-                    Blood Type & Emergency Contacts
+                    Blood Type
                   </CardTitle>
                   <Button size="sm" className="gap-2" onClick={() => openSummaryEditor('blood-contact')}>
                     <Plus className="w-4 h-4" />
@@ -1910,6 +1910,49 @@ export function PatientDetails({ patient, onNavigate, medicationContext }: Patie
                   <p className="text-sm text-gray-600">Blood Type</p>
                   <p className="mt-2 text-xl font-semibold text-gray-900">{emergency.bloodType || '—'}</p>
                 </div>
+                {patientHealthSummary?.emergencyContacts?.length ? (
+                  <div className="space-y-3">
+                    {patientHealthSummary.emergencyContacts.map((contact, index) => (
+                      <div key={`${contact.name}-${index}`} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-medium text-gray-900">{contact.name}</p>
+                            <p className="text-sm text-gray-600 mt-1">{contact.relationship}</p>
+                            <p className="text-sm text-gray-600 mt-1">{contact.phone}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeSummaryItem('emergencyContacts', contact.id || `${contact.name}-${contact.phone}`)}
+                            className="text-xs text-red-600"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-dashed border-gray-300 p-4">
+                    <p className="text-sm text-gray-600">No emergency contacts have been shared yet.</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between gap-3">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <AlertCircle className="w-5 h-5 text-rose-600" />
+                    Emergency Contacts
+                  </CardTitle>
+                  <Button size="sm" className="gap-2" onClick={() => openSummaryEditor('blood-contact')}>
+                    <Plus className="w-4 h-4" />
+                    Add Contact
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
                 {patientHealthSummary?.emergencyContacts?.length ? (
                   <div className="space-y-3">
                     {patientHealthSummary.emergencyContacts.map((contact, index) => (
