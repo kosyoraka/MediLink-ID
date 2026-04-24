@@ -30,6 +30,7 @@ import EmergencyPublic from './components/EmergencyPublic';
 import PersonalInformationPage from './components/PersonalInformationPage';
 import Notifications from './components/Notifications';
 import SettingsDetailPages, { type SettingsPage } from './components/SettingsDetailPages';
+import FirstLoginWalkthrough from './components/FirstLoginWalkthrough';
 import { API_BASE } from "@/config/api";
 import type { PatientDataScreen } from '@/lib/patientDataNavigation';
 console.log("API_BASE =", API_BASE);
@@ -68,6 +69,102 @@ type Screen =
 
 type NavItem = 'home' | 'records' | 'appointments' | 'messages' | 'more';
 
+type WalkthroughPhase = 'core' | 'feature';
+
+type WalkthroughStep = {
+  title: string;
+  description: string;
+  screen: Screen;
+  navItem?: NavItem;
+  nextLabel?: string;
+};
+
+const PATIENT_WALKTHROUGH_PENDING_KEY = 'medilink_patient_walkthrough_pending';
+
+const coreWalkthroughSteps: WalkthroughStep[] = [
+  {
+    title: 'Welcome to MediLink ID',
+    description:
+      'This quick tour will show you the most important places to manage your care, records, and day-to-day health information.',
+    screen: 'dashboard',
+    navItem: 'home',
+  },
+  {
+    title: 'Emergency Profile',
+    description:
+      'Add the health details and contacts you want available in emergencies. You can control what is shown and set or update your emergency access code later in Settings.',
+    screen: 'emergency-profile',
+    navItem: 'more',
+  },
+  {
+    title: 'Connect Providers',
+    description:
+      'Link your care team here so your records, communication, and shared care tools are ready when you need them.',
+    screen: 'connect-providers',
+  },
+  {
+    title: 'Health Summary',
+    description:
+      'This is where you keep core health details up to date, including vitals, conditions, allergies, and the information providers rely on most.',
+    screen: 'health-summary',
+    navItem: 'home',
+  },
+  {
+    title: 'Documents',
+    description:
+      'Upload, organize, and review medical records here so they stay easy to find whenever you need them.',
+    screen: 'documents',
+    navItem: 'home',
+  },
+  {
+    title: 'Appointments and Messages',
+    description:
+      'Use Appointments to stay on top of upcoming visits, and Messages to keep communication with your care team in one place.',
+    screen: 'appointments',
+    navItem: 'appointments',
+    nextLabel: 'Finish core tour',
+  },
+];
+
+const featureWalkthroughSteps: WalkthroughStep[] = [
+  {
+    title: 'Find Care AI',
+    description:
+      'Use Find Care AI when you need guided next steps, symptom support, or help deciding where to seek care.',
+    screen: 'symptom-checker',
+    navItem: 'home',
+  },
+  {
+    title: 'Medications',
+    description:
+      'Keep your medication list current so doses, adherence, and ongoing treatment details are easier to follow.',
+    screen: 'medications',
+    navItem: 'home',
+  },
+  {
+    title: 'Recommendations',
+    description:
+      'Check Recommendations for personalized guidance and follow-up suggestions based on the information in your account.',
+    screen: 'recommendations',
+    navItem: 'home',
+  },
+  {
+    title: 'Care Journey',
+    description:
+      'Care Journey helps you see progress over time and understand the bigger picture of your treatment plan.',
+    screen: 'care-journeys',
+    navItem: 'home',
+  },
+  {
+    title: 'Nutrition and Fitness',
+    description:
+      'Log routines and daily wellness habits here, including workouts, steps, hydration, calories, and sleep.',
+    screen: 'nutrition-fitness',
+    navItem: 'home',
+    nextLabel: 'You’re ready',
+  },
+];
+
 function getEmergencyTokenFromPath() {
   const match = window.location.pathname.match(/^\/e\/([^/]+)\/?$/);
   return match ? decodeURIComponent(match[1]) : "";
@@ -102,6 +199,9 @@ export default function App() {
 
   const [emergencyToken, setEmergencyToken] = useState(initialEmergencyToken);
   const [bootstrappingSession, setBootstrappingSession] = useState(!initialEmergencyToken);
+  const [walkthroughPhase, setWalkthroughPhase] = useState<WalkthroughPhase | null>(null);
+  const [walkthroughStepIndex, setWalkthroughStepIndex] = useState(0);
+  const [showFeatureTourPrompt, setShowFeatureTourPrompt] = useState(false);
 
   const syncOnboardingState = async (
     email: string,
@@ -210,6 +310,62 @@ export default function App() {
     setIsOnboarded(true);
     setCurrentScreen('dashboard');
     setActiveNav('home');
+
+    if (localStorage.getItem(PATIENT_WALKTHROUGH_PENDING_KEY) === 'true') {
+      setShowFeatureTourPrompt(false);
+      setWalkthroughPhase('core');
+      setWalkthroughStepIndex(0);
+    }
+  };
+
+  const clearWalkthrough = () => {
+    localStorage.removeItem(PATIENT_WALKTHROUGH_PENDING_KEY);
+    setWalkthroughPhase(null);
+    setWalkthroughStepIndex(0);
+    setShowFeatureTourPrompt(false);
+  };
+
+  const startFeatureTour = () => {
+    setShowFeatureTourPrompt(false);
+    setWalkthroughPhase('feature');
+    setWalkthroughStepIndex(0);
+  };
+
+  const finishCurrentWalkthrough = () => {
+    if (walkthroughPhase === 'core') {
+      setWalkthroughPhase(null);
+      setWalkthroughStepIndex(0);
+      setShowFeatureTourPrompt(true);
+      handleNavigation('dashboard', 'home');
+      return;
+    }
+
+    clearWalkthrough();
+    handleNavigation('dashboard', 'home');
+  };
+
+  const handleWalkthroughNext = () => {
+    if (!walkthroughPhase) return;
+
+    const steps = walkthroughPhase === 'core' ? coreWalkthroughSteps : featureWalkthroughSteps;
+    const isLastStep = walkthroughStepIndex >= steps.length - 1;
+
+    if (isLastStep) {
+      finishCurrentWalkthrough();
+      return;
+    }
+
+    setWalkthroughStepIndex((current) => current + 1);
+  };
+
+  const handleWalkthroughBack = () => {
+    setShowFeatureTourPrompt(false);
+    setWalkthroughStepIndex((current) => Math.max(0, current - 1));
+  };
+
+  const handleWalkthroughSkip = () => {
+    clearWalkthrough();
+    handleNavigation('dashboard', 'home');
   };
 
   const handleSignOut = () => {
@@ -308,6 +464,31 @@ export default function App() {
       setCurrentScreen('reset-password');
     }
   }, [emergencyToken]);
+
+  useEffect(() => {
+    if (!walkthroughPhase) return;
+
+    const steps = walkthroughPhase === 'core' ? coreWalkthroughSteps : featureWalkthroughSteps;
+    const currentStep = steps[walkthroughStepIndex];
+
+    if (!currentStep) return;
+
+    handleNavigation(currentStep.screen, currentStep.navItem);
+  }, [walkthroughPhase, walkthroughStepIndex]);
+
+  const activeWalkthroughStep =
+    walkthroughPhase === 'core'
+      ? coreWalkthroughSteps[walkthroughStepIndex]
+      : walkthroughPhase === 'feature'
+      ? featureWalkthroughSteps[walkthroughStepIndex]
+      : null;
+
+  const activeWalkthroughSteps =
+    walkthroughPhase === 'core'
+      ? coreWalkthroughSteps
+      : walkthroughPhase === 'feature'
+      ? featureWalkthroughSteps
+      : null;
 
   useEffect(() => {
     if (emergencyToken) return;
@@ -688,6 +869,34 @@ export default function App() {
             </div>
           </nav>
         )}
+
+        {activeWalkthroughStep && activeWalkthroughSteps ? (
+          <FirstLoginWalkthrough
+            stepLabel={walkthroughPhase === 'core' ? 'Getting started' : 'Feature tour'}
+            title={activeWalkthroughStep.title}
+            description={activeWalkthroughStep.description}
+            currentStep={walkthroughStepIndex + 1}
+            totalSteps={activeWalkthroughSteps.length}
+            onBack={walkthroughStepIndex > 0 ? handleWalkthroughBack : undefined}
+            onNext={handleWalkthroughNext}
+            onSkip={handleWalkthroughSkip}
+            nextLabel={activeWalkthroughStep.nextLabel}
+          />
+        ) : null}
+
+        {showFeatureTourPrompt ? (
+          <FirstLoginWalkthrough
+            stepLabel="Optional feature tour"
+            title="Keep exploring the rest of the app"
+            description="You’ve finished the essential setup. If you want, there’s a quick second tour for Find Care AI, medications, recommendations, care journey, and nutrition tools."
+            currentStep={1}
+            totalSteps={1}
+            onNext={startFeatureTour}
+            onSkip={clearWalkthrough}
+            nextLabel="Start feature tour"
+            tone="prompt"
+          />
+        ) : null}
       </div>
     </div>
   );

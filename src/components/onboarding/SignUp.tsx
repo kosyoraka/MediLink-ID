@@ -80,6 +80,7 @@ export default function SignUp({ onBack, onGoToSignIn, onSignUp }: SignUpProps) 
 
       // ✅ store patientId for later
       localStorage.setItem('patientId', data.id);
+      localStorage.setItem('medilink_patient_walkthrough_pending', 'true');
 
       // optional but handy
       localStorage.setItem('email', data.email || normalizedEmail);
@@ -125,6 +126,7 @@ export default function SignUp({ onBack, onGoToSignIn, onSignUp }: SignUpProps) 
       localStorage.setItem("patientId", data.id);
       localStorage.setItem("email", data.email);
       localStorage.setItem("patient_token", data.token);
+      localStorage.setItem('medilink_patient_walkthrough_pending', 'true');
 
       onSignUp(
         data.email,
