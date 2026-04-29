@@ -31,7 +31,7 @@ import PersonalInformationPage from './components/PersonalInformationPage';
 import Notifications from './components/Notifications';
 import SettingsDetailPages, { type SettingsPage } from './components/SettingsDetailPages';
 import FirstLoginWalkthrough from './components/FirstLoginWalkthrough';
-import { API_BASE } from "@/config/api";
+import { API_BASE, patientAuthHeaders } from "@/config/api";
 import type { PatientDataScreen } from '@/lib/patientDataNavigation';
 console.log("API_BASE =", API_BASE);
 
@@ -228,7 +228,9 @@ export default function App() {
         : undefined;
 
       const [profileRes, providersRes] = await Promise.all([
-        fetch(`${API_BASE}/api/patients/${patientId}/profile`),
+        fetch(`${API_BASE}/api/patients/${patientId}/profile`, {
+          headers: patientAuthHeaders(),
+        }),
         fetch(`${API_BASE}/api/patient/connected-providers`, {
           headers: authHeaders,
         }),
