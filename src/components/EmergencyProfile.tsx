@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { API_BASE } from "@/config/api";
+import { API_BASE, patientAuthHeaders } from "@/config/api";
 import {
   ArrowLeft,
   AlertCircle,
@@ -61,10 +61,6 @@ type EmergencyProfileApi = {
 interface EmergencyProfileProps {
   onBack: () => void;
 }
-
-// Use API_BASE from config everywhere.
-
-
 export default function EmergencyProfile({ onBack }: EmergencyProfileProps) {
   const patientId = useMemo(() => localStorage.getItem('patientId') || '', []);
   const [isEmergencyMode, setIsEmergencyMode] = useState(false);
@@ -163,7 +159,7 @@ export default function EmergencyProfile({ onBack }: EmergencyProfileProps) {
         setLoading(true);
         const res = await fetch(`${API_BASE}/api/patients/${patientId}/emergency-profile`, {
           method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
+          headers: patientAuthHeaders({ 'Content-Type': 'application/json' }),
         });
 
         const data = (await res.json()) as EmergencyProfileApi;
@@ -254,7 +250,7 @@ export default function EmergencyProfile({ onBack }: EmergencyProfileProps) {
 
       const res = await fetch(`${API_BASE}/api/patients/${patientId}/emergency-profile`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: patientAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(payload),
       });
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { API_BASE } from "@/config/api";
+import { API_BASE, patientAuthHeaders } from "@/config/api";
 import {
   User,
   AlertCircle,
@@ -53,7 +53,7 @@ export default function More({
     (async () => {
       try {
         const res = await fetch(`${API_BASE}/api/patients/${patientId}/profile`, {
-          credentials: "include",
+          headers: patientAuthHeaders(),
         });
 
         if (!res.ok) return;

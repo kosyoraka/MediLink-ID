@@ -2,7 +2,7 @@ import { ArrowLeft } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
-import { API_BASE } from "@/config/api";
+import { API_BASE, patientAuthHeaders } from "@/config/api";
 
 interface ProfileSetupProps {
   initialFirstName?: string;
@@ -111,8 +111,7 @@ export default function ProfileSetup({
 
       const res = await fetch(`${API_BASE}/api/patients/${patientId}/profile`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
+        headers: patientAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           firstName: firstName.trim(),
           lastName: lastName.trim(),

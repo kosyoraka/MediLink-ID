@@ -2490,6 +2490,19 @@ app.use('/api/ai', aiRouter);
 
 const FRONTEND_BASE_URL = getFrontendBaseUrl();
 
+function getAuthenticatedPatientId(req: any): string | null {
+  return typeof req.user?.id === "string"
+    ? req.user.id
+    : typeof req.patientId === "string"
+      ? req.patientId
+      : null;
+}
+
+function patientOwnsResource(req: any, targetPatientId: string): boolean {
+  const requesterPatientId = getAuthenticatedPatientId(req);
+  return !!requesterPatientId && requesterPatientId === String(targetPatientId);
+}
+
 // URL-safe token without relying on Node's base64url support
 const makeUrlSafeToken = () => {
   return randomBytes(24)
@@ -2688,7 +2701,7 @@ app.get("/api/health", (_req, res) => {
  * Staff: list patients (minimal fields)
  * GET /api/patients
  */
-app.get("/api/patients", async (_req, res) => {
+app.get("/api/patients", requireStaffAuth, async (_req, res) => {
   try {
     const result = await pool.query(
       `
@@ -3568,7 +3581,7 @@ app.post("/api/staff/auth/signup", async (req, res) => {
     return res.status(201).json({
       staffId: id,
       email: emailNorm,
-      verification: { code }, // demo only
+      verification: isDev ? { code } : undefined,
     });
   } catch (e: any) {
     if (e?.code === "23505") {
@@ -3908,7 +3921,7 @@ const token = signStaffToken({
  * Create/Update patient profile (upsert)
  * PUT /api/patients/:patientId/profile
  */
-app.put("/api/patients/:patientId/profile", async (req, res) => {
+app.put("/api/patients/:patientId/profile", requirePatientAuth, async (req: any, res) => {
   const { patientId } = req.params;
 
   const {
@@ -3923,6 +3936,9 @@ app.put("/api/patients/:patientId/profile", async (req, res) => {
   } = req.body ?? {};
 
   if (!patientId) return res.status(400).json({ message: "Missing patientId" });
+  if (!patientOwnsResource(req, patientId)) {
+    return res.status(403).json({ message: "Forbidden" });
+  }
 
   if (dob && typeof dob === "string" && Number.isNaN(Date.parse(dob))) {
     return res.status(400).json({ message: "Invalid dob. Use YYYY-MM-DD" });
@@ -4019,7 +4035,7 @@ app.put("/api/patients/:patientId/profile", async (req, res) => {
  * Get patient + profile info
  * GET /api/patients/:patientId/profile
  */
-app.get("/api/patients/:id/profile", async (req, res) => {
+app.get("/api/patients/:id/profile", requireAuth, async (req: any, res) => {
   try {
     const patientId = String(req.params.id);
 
@@ -4028,6 +4044,12 @@ app.get("/api/patients/:id/profile", async (req, res) => {
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     if (!uuidRegex.test(patientId)) {
       return res.status(400).json({ message: "Invalid patient id format" });
+    }
+    if (req.user?.role === "patient" && !patientOwnsResource(req, patientId)) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+    if (req.user?.role !== "patient" && req.user?.role !== "staff") {
+      return res.status(403).json({ message: "Forbidden" });
     }
 
     const result = await pool.query(
@@ -4140,8 +4162,11 @@ app.get("/api/patients/:id/profile", async (req, res) => {
  * Get emergency profile (personal info + toggles + emergency data)
  * GET /api/patients/:patientId/emergency-profile
  */
-app.get("/api/patients/:patientId/emergency-profile", async (req, res) => {
+app.get("/api/patients/:patientId/emergency-profile", requirePatientAuth, async (req: any, res) => {
   const { patientId } = req.params;
+  if (!patientOwnsResource(req, patientId)) {
+    return res.status(403).json({ message: "Forbidden" });
+  }
 
   try {
     const { data } = await loadEmergencyProfileData(patientId);
@@ -4163,8 +4188,12 @@ app.get("/api/patients/:patientId/emergency-profile", async (req, res) => {
  * Upsert emergency profile (toggles + emergency data)
  * PUT /api/patients/:patientId/emergency-profile
  */
-app.put("/api/patients/:patientId/emergency-profile", async (req, res) => {
+app.put("/api/patients/:patientId/emergency-profile", requirePatientAuth, async (req: any, res) => {
   const { patientId } = req.params;
+
+  if (!patientOwnsResource(req, patientId)) {
+    return res.status(403).json({ message: "Forbidden" });
+  }
 
   const {
     sharePersonalInfo,
@@ -4322,7 +4351,9 @@ app.post("/api/patients/:patientId/emergency-access-code", requirePatientAuth, a
 app.get("/api/patients/:patientId/emergency-link", requirePatientAuth, async (req: any, res) => {
   const { patientId } = req.params;
   if (!patientId) return res.status(400).json({ message: "Missing patientId" });
-  if (req.patientId !== patientId) return res.status(403).json({ message: "Forbidden" });
+  if (!patientOwnsResource(req, patientId)) {
+    return res.status(403).json({ message: "Forbidden" });
+  }
 
   try {
     const exists = await pool.query(`SELECT 1 FROM patients WHERE id = $1`, [patientId]);
@@ -6034,18 +6065,24 @@ return res.json({ appointments: mapped });
 
 // Cancel an appointment
 // PATCH /api/appointments/:id/cancel
-app.patch("/api/appointments/:id/cancel", async (req, res) => {
+app.patch("/api/appointments/:id/cancel", requirePatientAuth, async (req: any, res) => {
   try {
     const { id } = req.params;
+    const patientId = req.user?.id;
+
+    if (!patientId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
 
     const result = await pool.query(
       `
       UPDATE appointments
       SET status = 'Cancelled'
       WHERE id = $1
+        AND patient_id = $2
       RETURNING id, status
       `,
-      [id]
+      [id, patientId]
     );
 
     if (result.rowCount === 0) {
@@ -6064,11 +6101,15 @@ app.patch("/api/appointments/:id/cancel", async (req, res) => {
 // GET /api/patient/providers?patientId=...
 // GET connected providers (hospitals) for a patient
 // GET /api/patient/providers?patientId=...
-app.get("/api/patient/providers", async (req, res) => {
+app.get("/api/patient/providers", requirePatientAuth, async (req: any, res) => {
   try {
-    const patientId = req.query.patientId as string;
+    const patientId = req.user?.id as string | undefined;
+    const requestedPatientId = req.query.patientId as string | undefined;
     if (!patientId) {
-      return res.status(400).json({ message: "Missing patientId" });
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    if (requestedPatientId && requestedPatientId !== patientId) {
+      return res.status(403).json({ message: "Forbidden" });
     }
 
     const result = await pool.query(
@@ -6100,24 +6141,30 @@ app.get("/api/patient/providers", async (req, res) => {
 
 // GET staff in a connected provider (hospital) for a patient
 // GET /api/patient/provider-staff?patientId=<uuid>&providerId=<hospital_uuid>
-app.get("/api/patient/provider-staff", async (req, res) => {
+app.get("/api/patient/provider-staff", requirePatientAuth, async (req: any, res) => {
   try {
-    const patientId = req.query.patientId as string;
+    const patientId = req.user?.id as string | undefined;
+    const requestedPatientId = req.query.patientId as string | undefined;
     const providerId = req.query.providerId as string; // this is hospitals.id
 
-    if (!patientId || !providerId) {
+    if (!patientId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    if (requestedPatientId && requestedPatientId !== patientId) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+    if (!providerId) {
       return res.status(400).json({ message: "Missing patientId or providerId" });
     }
 
-    // Enforce: patient must be connected to this hospital via at least one active staff connection
+    // Enforce: patient must be connected to this hospital
     const access = await pool.query(
       `
       SELECT 1
       FROM patient_provider_connections ppc
-      JOIN staff_accounts s ON s.id = ppc.provider_id
       WHERE ppc.patient_id::uuid = $1::uuid
         AND ppc.disconnected_at IS NULL
-        AND s.hospital_id = $2::uuid
+        AND ppc.provider_id = $2::uuid
       LIMIT 1;
       `,
       [patientId, providerId]
@@ -6904,12 +6951,16 @@ app.get("/api/patient/hospitals", requirePatientAuth, async (req: any, res) => {
  * Get all staff in a hospital the patient has access to
  * GET /api/patient/hospital-staff?patientId=...&hospitalId=...
  */
-app.get("/api/patient/hospital-staff", async (req, res) => {
+app.get("/api/patient/hospital-staff", requirePatientAuth, async (req: any, res) => {
   try {
-    const patientId = req.query.patientId as string;
+    const patientId = req.user?.id as string | undefined;
+    const requestedPatientId = req.query.patientId as string | undefined;
     const hospitalId = req.query.hospitalId as string;
 
-    if (!patientId) return res.status(400).json({ message: "Missing patientId" });
+    if (!patientId) return res.status(401).json({ message: "Unauthorized" });
+    if (requestedPatientId && requestedPatientId !== patientId) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
     if (!hospitalId) return res.status(400).json({ message: "Missing hospitalId" });
 
     const access = await pool.query(
@@ -6955,10 +7006,14 @@ app.get("/api/patient/hospital-staff", async (req, res) => {
 // GET /api/patient/booking/providers?patientId=...
 // GET /api/patient/booking/providers?patientId=...
 // GET /api/patient/booking/providers?patientId=...
-app.get("/api/patient/booking/providers", async (req, res) => {
+app.get("/api/patient/booking/providers", requirePatientAuth, async (req: any, res) => {
   try {
-    const patientId = req.query.patientId as string;
-    if (!patientId) return res.status(400).json({ message: "Missing patientId" });
+    const patientId = req.user?.id as string | undefined;
+    const requestedPatientId = req.query.patientId as string | undefined;
+    if (!patientId) return res.status(401).json({ message: "Unauthorized" });
+    if (requestedPatientId && requestedPatientId !== patientId) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
 
     const result = await pool.query(
       `
@@ -6989,12 +7044,19 @@ app.get("/api/patient/booking/providers", async (req, res) => {
 // GET /api/patient/booking/provider-staff?providerId=...
 // GET /api/patient/booking/provider-staff?patientId=...&providerId=...
 // GET /api/patient/booking/provider-staff?patientId=...&providerId=...
-app.get("/api/patient/booking/provider-staff", async (req, res) => {
+app.get("/api/patient/booking/provider-staff", requirePatientAuth, async (req: any, res) => {
   try {
-    const patientId = req.query.patientId as string;
+    const patientId = req.user?.id as string | undefined;
+    const requestedPatientId = req.query.patientId as string | undefined;
     const providerId = req.query.providerId as string; // hospitals.id
 
-    if (!patientId || !providerId) {
+    if (!patientId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    if (requestedPatientId && requestedPatientId !== patientId) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+    if (!providerId) {
       return res.status(400).json({ message: "Missing patientId or providerId" });
     }
 
@@ -9675,7 +9737,7 @@ app.get("/api/staff/document-requests", requireStaffAuth, async (req: any, res) 
 
 // GET connected providers for the logged-in patient
 // GET /api/patient/connected-providers
-app.get("/api/patient/connected-providers", requireAuth, async (req, res) => {
+app.get("/api/patient/connected-providers", requirePatientAuth, async (req: any, res) => {
   const patientId = req.user?.id;
 
   if (!patientId) return res.status(401).json({ message: "Unauthorized" });
@@ -9757,3 +9819,14 @@ initializeSchemas()
 // app.listen(PORT, () => {
 //   console.log(`API running on port ${PORT}`);
 // });
+if (isDev) {
+  app.get("/test-db", async (_req, res) => {
+    try {
+      const result = await pool.query("SELECT NOW()");
+      res.json({ dbTime: result.rows[0] });
+    } catch (err) {
+      console.error("DB test failed:", err);
+      res.status(500).json({ error: "Failed to connect to DB" });
+    }
+  });
+}

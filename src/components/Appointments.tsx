@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Calendar as CalendarIcon, MapPin, Plus, Video, ChevronRight } from "lucide-react";
+import { API_BASE, patientAuthHeaders } from "@/config/api";
 import { api, type AppointmentAvailabilitySlot } from "@/lib/api";
 
 type AppointmentTab = "upcoming" | "past";
@@ -35,9 +36,6 @@ type StaffUser = {
   full_name: string;
   role: string | null;
 };
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:4000";
-
 
 const APPT_TYPES = ["Consultation", "Check-up", "Follow-up", "Lab Test"] as const;
 
@@ -296,6 +294,10 @@ setAppointments(
     `${API_BASE}/api/patient/booking/provider-staff?patientId=${encodeURIComponent(
       patientId
     )}&providerId=${encodeURIComponent(nextProviderId)}`
+    ,
+    {
+      headers: patientAuthHeaders(),
+    }
   );
 
   const payload = await res.json().catch(() => ({} as any));

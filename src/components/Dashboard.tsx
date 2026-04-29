@@ -21,7 +21,7 @@ import {
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { useEffect, useMemo, useState } from 'react';
-import { API_BASE } from "@/config/api";
+import { API_BASE, patientAuthHeaders } from "@/config/api";
 import { api, type PatientAppointment } from "@/lib/api";
 import { fetchHealthTasks, getTaskTimeLabel, type HealthTask } from "@/lib/healthTasks";
 import medilinkCircle from '@/assets/medilink-circle.png';
@@ -92,7 +92,9 @@ export default function Dashboard({
 
     (async () => {
       try {
-        const res = await fetch(`${API_BASE}/api/patients/${patientId}/profile`);
+        const res = await fetch(`${API_BASE}/api/patients/${patientId}/profile`, {
+          headers: patientAuthHeaders(),
+        });
         if (!res.ok) return;
         const data = (await res.json()) as ProfileResponse;
         setProfile(data);
@@ -225,16 +227,6 @@ export default function Dashboard({
     window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, "_blank", "noopener,noreferrer");
   };
 
-  const getPatientAuthHeaders = () => {
-    const token =
-      localStorage.getItem("patient_token") ||
-      localStorage.getItem("patientToken") ||
-      localStorage.getItem("token") ||
-      "";
-
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  };
-
   const describeAccessDevice = (userAgent?: string | null) => {
     const value = String(userAgent || "").toLowerCase();
     if (!value) return "Unknown device";
@@ -269,16 +261,9 @@ export default function Dashboard({
     setWalletLoading(true);
 
     try {
-      const res = await fetch(
-        `${API_BASE}/api/patients/${patientId}/emergency-link${mode === 'regenerate' ? '/regenerate' : ''}`,
-        {
-          method: mode === 'regenerate' ? 'POST' : 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            ...getPatientAuthHeaders(),
-          },
-        }
-      );
+      const res = await fetch(`${API_BASE}/api/patients/${patientId}/emergency-link`, {
+        headers: patientAuthHeaders(),
+      });
       const data = (await res.json()) as EmergencyLinkResponse;
 
       if (!res.ok) {

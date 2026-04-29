@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Pencil, Lock, MapPin, Phone, User } from "lucide-react";
-import { API_BASE } from "@/config/api";
+import { API_BASE, patientAuthHeaders } from "@/config/api";
 
 type Address = {
   line1: string;
@@ -236,7 +236,7 @@ export default function PersonalInformationPage({ onBack }: { onBack: () => void
     if (!patientId) return;
 
     const res = await fetch(`${API_BASE}/api/patients/${patientId}/profile`, {
-      credentials: "include",
+      headers: patientAuthHeaders(),
     });
 
     if (!res.ok) throw new Error(`GET profile failed: ${res.status}`);
@@ -330,8 +330,7 @@ export default function PersonalInformationPage({ onBack }: { onBack: () => void
 
     const res = await fetch(`${API_BASE}/api/patients/${patientId}/profile`, {
       method: "PUT",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
+      headers: patientAuthHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify(body),
     });
 
